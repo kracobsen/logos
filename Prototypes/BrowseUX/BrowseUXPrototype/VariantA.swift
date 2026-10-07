@@ -165,6 +165,7 @@ private struct ASeriesList: View {
 
 private struct ADownloadedList: View {
     @Environment(Library.self) private var library
+    @State private var largestFirst = false
 
     var body: some View {
         List {
@@ -176,7 +177,10 @@ private struct ADownloadedList: View {
                 }
             }
             Section {
-                ForEach(library.downloadedBooks.sorted { (library.progress(of: $0).lastListened ?? .distantPast) > (library.progress(of: $1).lastListened ?? .distantPast) }) { book in
+                ForEach(library.downloadedBooks.sorted {
+                    largestFirst ? $0.sizeBytes > $1.sizeBytes
+                        : (library.progress(of: $0).lastListened ?? .distantPast) > (library.progress(of: $1).lastListened ?? .distantPast)
+                }) { book in
                     NavigationLink(value: book) { BookRow(book: book) }
                         .swipeActions { Button("Remove", role: .destructive) { library.removeDownload(book) } }
                 }
@@ -187,5 +191,15 @@ private struct ADownloadedList: View {
             }
         }
         .navigationTitle("Downloaded")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Picker("Sort by", selection: $largestFirst) {
+                        Text("Recently listened").tag(false)
+                        Text("Largest first").tag(true)
+                    }
+                } label: { Image(systemName: "arrow.up.arrow.down") }
+            }
+        }
     }
 }
