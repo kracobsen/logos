@@ -298,7 +298,7 @@ private enum FakeData {
                 progress[b.id] = ListenProgress(position: b.duration, finished: true, lastListened: now.addingTimeInterval(-Double.random(in: 86400...(700 * 86400), using: &rng)))
             default:
                 progress[b.id] = ListenProgress(position: b.duration * Double.random(in: 0.03...0.95, using: &rng), finished: false, lastListened: now.addingTimeInterval(-Double.random(in: 600...(60 * 86400), using: &rng)))
-                downloads[b.id] = .downloaded
+                if Int.random(in: 0..<5, using: &rng) > 0 { downloads[b.id] = .downloaded }  // the rest: progress from another device
             }
         }
         for b in books.shuffled(using: &rng).prefix(30) where downloads[b.id] == nil {

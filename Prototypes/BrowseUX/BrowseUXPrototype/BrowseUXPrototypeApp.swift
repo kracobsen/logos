@@ -5,7 +5,7 @@
 // switchable from the yellow pill at the top. The choice persists across launches (UserDefaults key
 // "variant"); `-variant B` as a launch argument overrides it.
 //
-//   A · Tabs          — tab bar: Library / Series / Downloaded / Search, mini-player as tab accessory
+//   A · Tabs          — tab bar: Library (with search) / Series / Downloaded, mini-player as tab accessory
 //   B · One list      — single stack: Continue listening shelf + one searchable list with filter chips
 //   C · Cover shelf   — cover grid where each Series collapses to one tile; downloaded-only toggle
 
