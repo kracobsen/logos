@@ -2,6 +2,7 @@
 // Each way into the Library is its own tab: In Progress (most recently listened first, tap ▶ to resume),
 // an A–Z Library with a section index and search built in, a Series list, and Downloaded (with
 // in-flight Downloads and space used).
+// A Series opens variant C's Series page (cover strip, reading order, "Continue with Book N").
 // The mini-player rides above the tab bar as the tab view's bottom accessory; the player is a sheet.
 
 import SwiftUI
@@ -13,22 +14,31 @@ struct VariantA: View {
         @Bindable var library = library
         TabView {
             Tab("In Progress", systemImage: "play.circle") {
-                NavigationStack { AInProgressList().browseDestinations() }
+                NavigationStack { AInProgressList().aDestinations() }
             }
             Tab("Library", systemImage: "books.vertical") {
-                NavigationStack { ALibraryList().browseDestinations() }
+                NavigationStack { ALibraryList().aDestinations() }
             }
             Tab("Series", systemImage: "square.stack") {
-                NavigationStack { ASeriesList().browseDestinations() }
+                NavigationStack { ASeriesList().aDestinations() }
             }
             Tab("Downloaded", systemImage: "arrow.down.circle") {
-                NavigationStack { ADownloadedList().browseDestinations() }
+                NavigationStack { ADownloadedList().aDestinations() }
             }
             .badge(library.activeDownloads.count)
         }
         .tabBarMinimizeBehavior(.onScrollDown)
         .tabViewBottomAccessory { MiniPlayer() }
         .sheet(isPresented: $library.isPlayerPresented) { PlayerView() }
+    }
+}
+
+private extension View {
+    /// Like `browseDestinations()`, but a Series opens variant C's richer Series page.
+    func aDestinations() -> some View {
+        navigationDestination(for: Book.self) { BookDetailView(book: $0) }
+            .navigationDestination(for: Series.self) { CSeriesView(series: $0) }
+            .navigationDestination(for: AuthorName.self) { AuthorView(author: $0) }
     }
 }
 

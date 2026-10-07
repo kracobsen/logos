@@ -177,7 +177,7 @@ private struct SeriesTile: View {
     }
 }
 
-private struct CSeriesView: View {
+struct CSeriesView: View {
     @Environment(Library.self) private var library
     let series: Series
 
