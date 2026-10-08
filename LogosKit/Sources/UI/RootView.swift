@@ -1,3 +1,4 @@
+import Domain
 import Playback
 import SwiftUI
 
@@ -100,19 +101,29 @@ public struct RootView: View {
         // The outbox's triggers: sends on launch, then while playing, on stops and when the network returns.
         .task { await listening?.run() }
         .task {
-            // Let the first frame go out before any sync work starts.
-            await Task.yield()
-            // The cover file check first (in the background), so this sync fetches missing covers again.
-            await covers?.checkFiles()
-            // The Downloads file check before resuming, so a Download with missing files isn't treated as done.
-            await downloads?.checkFiles()
-            // Rebuild the Download transfers from the database, alongside the launch sync.
-            async let downloadsResumed: Void = downloads?.resume() ?? ()
-            await library.syncOnLaunch()
-            await downloadsResumed
+            // Nothing starts until the first frame is on screen. Then the file checks and the sync run side by side,
+            // off the main thread (the checks in detached tasks, the sync and Downloads in their actors).
+            await FrameShown.next()
+            await withDiscardingTaskGroup { group in
+                // A cover the check finds missing is fetched by this sync's last stage, or else the next sync.
+                group.addTask { await covers?.checkFiles() }
+                group.addTask {
+                    // The Downloads file check before resuming, so a Download with missing files isn't treated as
+                    // done; then the transfers are rebuilt from the database.
+                    await downloads?.checkFiles()
+                    await downloads?.resume()
+                }
+                group.addTask { await library.syncOnLaunch() }
+            }
         }
         .onChange(of: scenePhase) { old, new in
             if old == .background, new != .background {
+                // Return from background → interactive: ends when the next frame is on screen.
+                let returning = Signposts.begin(.returnFromBackground)
+                Task {
+                    await FrameShown.next()
+                    returning.end()
+                }
                 Task { await library.syncOnForeground() }
                 Task { await downloads?.resume() }
                 listening?.enteredForeground()

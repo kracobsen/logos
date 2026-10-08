@@ -1,6 +1,6 @@
 import XCTest
 
-/// Cold launch, the last-played Book, and the sync and progress apply that launch starts (budgets in
+/// Cold launch, return from background, the last-played Book, and the sync and progress apply that launch starts (budgets in
 /// `docs/performance-budgets.md`). Measure on the iPhone with the `LogosPerformance` scheme, not in CI.
 @MainActor
 final class LaunchPerformanceTests: XCTestCase {
@@ -38,6 +38,24 @@ final class LaunchPerformanceTests: XCTestCase {
             stopMeasuring()
             app.terminate()
         }
+    }
+
+    /// Return from background → interactive: from the scene leaving the background to the next frame on screen.
+    func testReturnFromBackground() {
+        Logos.seed("library940")
+        let app = Logos.app("library940")
+        app.launch()
+        XCTAssertTrue(app.tabBars.buttons["Library"].waitForExistence(timeout: 30))
+        measure(metrics: [Logos.budget("ReturnFromBackground")], options: .manual) {
+            XCUIDevice.shared.press(.home)
+            XCTAssertTrue(app.wait(for: .runningBackground, timeout: 10), "Logos didn't go to the background")
+            startMeasuring()
+            app.activate()
+            XCTAssertTrue(app.wait(for: .runningForeground, timeout: 10), "Logos didn't come back")
+            XCTAssertTrue(app.tabBars.buttons["Library"].waitForExistence(timeout: 10))
+            stopMeasuring()
+        }
+        app.terminate()
     }
 
     func testSyncWithNoChanges940() {

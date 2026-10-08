@@ -1,6 +1,6 @@
 # Performance budgets
 
-Every budgeted path below has a signpost (`BudgetedPath` in `LogosKit/Sources/Domain/Signposts.swift`, subsystem `Logos`, category `Budgets`). From [Grilling: v1 performance budgets](https://github.com/kracobsen/logos/issues/15).
+Every timed path below has a signpost (`BudgetedPath` in `LogosKit/Sources/Domain/Signposts.swift`, subsystem `Logos`, category `Budgets`); scrolling, memory, throughput and battery are measured with XCTest metrics or by hand. From [Grilling: v1 performance budgets](https://github.com/kracobsen/logos/issues/15).
 
 ## How budgets are measured
 
@@ -31,6 +31,7 @@ The data comes from test launches (`Logos/TestLaunch.swift`): `library940` and `
 | Test | Budget | Data |
 |---|---|---|
 | `LaunchPerformanceTests/testColdLaunch940`, `testColdLaunch3000` | Cold launch → interactive Library (launch metric, and the `ColdLaunchToInteractiveLibrary` signpost) | 940, 3000 |
+| `LaunchPerformanceTests/testReturnFromBackground` | Return from background → interactive (`ReturnFromBackground` signpost: from the scene leaving the background to the next frame on screen) | 940 |
 | `LaunchPerformanceTests/testLastPlayedBookReady` | Last-played Book ready | 940 |
 | `LaunchPerformanceTests/testSyncWithNoChanges940`, `testSyncWithNoChangesAndApplyProgress3000` | Sync with no changes (local part only, against the offline fake Server), Apply fetched progress | 940, 3000 |
 | `LibraryPerformanceTests/testScrollLibrary`, `testScrollInProgress`, `testScrollSeriesTab`, `testScrollSeriesPage` | Scroll (hitch ratio), and Memory while browsing (peak physical memory) | 3000 |
@@ -45,7 +46,7 @@ The data comes from test launches (`Logos/TestLaunch.swift`): `library940` and `
 
 On the simulator the tests run, but the numbers don't count: XCUITest's automation slows launch several-fold, and hitch ratios (scroll and `XCTHitchMetric`) are only reported on a device (the simulator reports scroll durations only).
 
-Not covered by a test, measured by hand: return from background (no signpost yet), first sync after sign-in (needs a real Server on Wi-Fi), the Wi-Fi part of a sync, scrolling while a sync or Download runs, Download throughput, memory while playing in the background, battery, and when sound actually starts (the play and seek signposts end when AVPlayer reports playing or the seek has landed). Tap Book → detail is measured on 3000 Books (the table says 940; 3000 is the harder case).
+Not covered by a test, measured by hand: first sync after sign-in (needs a real Server on Wi-Fi), the Wi-Fi part of a sync, scrolling while a sync or Download runs, Download throughput, memory while playing in the background, battery, and when sound actually starts (the play and seek signposts end when AVPlayer reports playing or the seek has landed). Tap Book → detail is measured on 3000 Books (the table says 940; 3000 is the harder case).
 
 ## Budgets
 

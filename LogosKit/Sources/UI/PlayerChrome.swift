@@ -42,7 +42,7 @@ struct PlayerChrome: ViewModifier {
             .environment(player)
             .task {
                 // Off the critical path: after the first frame, once the Library is interactive. Never plays.
-                await Task.yield()
+                await FrameShown.next()
                 await player?.restoreLastPlayed()
             }
             .task { await player?.observeDownloads() }
