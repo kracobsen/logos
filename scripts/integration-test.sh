@@ -3,7 +3,8 @@
 #   1. generates the fixture Library (scripts/integration/make-fixture-library.sh) in a temp dir;
 #   2. starts the pinned Server, bound to 127.0.0.1 on a free port, with no persistent volumes;
 #   3. seeds it: root user, one book Library over the fixtures, a fixture user with local sign-in, a full scan;
-#   4. runs IntegrationTests on the simulator, failing if any test was skipped;
+#   4. runs IntegrationTests on the simulator (with --ui: the app's UI smoke test instead, LogosUITests/SmokeTests),
+#      failing if any test was skipped;
 #   5. removes the container and temp dir, whatever happened.
 #
 # The Server only ever listens on loopback, and the tests refuse any non-loopback URL, so nothing here can reach a
@@ -12,7 +13,8 @@
 # Usage:
 #   scripts/integration-test.sh [extra xcodebuild args, e.g. -only-testing:IntegrationTests/HarnessTests]
 #   scripts/integration-test.sh --serve    start and seed, print the connection details, wait until killed
-# Env: DEVICE (default "iPhone 18 Pro"), DERIVED_DATA (default .build/DerivedData)
+#   scripts/integration-test.sh --ui       run the UI smoke test (sign in, browse, download, play) against the Server
+# Env: DEVICE (default "iPhone 18 Pro"), DERIVED_DATA (default .build/DerivedData), KEEP_RESULTS (a directory)
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -28,8 +30,12 @@ PASSWORD="listenerpass"
 EXPECTED_BOOKS=6
 
 serve=0
+ui=0
 if [ "${1:-}" = "--serve" ]; then
     serve=1
+    shift
+elif [ "${1:-}" = "--ui" ]; then
+    ui=1
     shift
 fi
 
@@ -37,6 +43,8 @@ work=$(mktemp -d "${TMPDIR:-/tmp}/logos-integration.XXXXXX")
 container="logos-integration-$$-$RANDOM"
 cleanup() {
     docker rm -f "$container" >/dev/null 2>&1 || true
+    # KEEP_RESULTS=<dir> keeps the test results (xcresult) for a closer look, e.g. after a failure.
+    if [ -n "${KEEP_RESULTS:-}" ]; then mkdir -p "$KEEP_RESULTS" && cp -R "$work"/*.xcresult "$KEEP_RESULTS"/ 2>/dev/null || true; fi
     rm -rf "$work"
 }
 trap cleanup EXIT
@@ -113,26 +121,42 @@ export TEST_RUNNER_LOGOS_IT_PASSWORD="$PASSWORD"
 export TEST_RUNNER_LOGOS_IT_ADMIN_USERNAME="$ADMIN_USERNAME"
 export TEST_RUNNER_LOGOS_IT_ADMIN_PASSWORD="$ADMIN_PASSWORD"
 
-echo "Running IntegrationTests on $DEVICE..."
-(
-    cd LogosKit
+if [ "$ui" -eq 1 ]; then
+    echo "Running the UI smoke test on $DEVICE..."
+    result="$work/SmokeTests.xcresult"
     xcodebuild test \
-        -scheme LogosKit \
+        -project Logos.xcodeproj \
+        -scheme LogosUITests \
         -destination "platform=iOS Simulator,name=$DEVICE" \
-        -derivedDataPath "../$DERIVED_DATA" \
+        -derivedDataPath "$DERIVED_DATA" \
         -disableAutomaticPackageResolution \
-        -resultBundlePath "$work/IntegrationTests.xcresult" \
-        -only-testing:IntegrationTests \
+        -resultBundlePath "$result" \
+        -only-testing:LogosUITests/SmokeTests \
         -quiet \
         "$@"
-)
+else
+    echo "Running IntegrationTests on $DEVICE..."
+    result="$work/IntegrationTests.xcresult"
+    (
+        cd LogosKit
+        xcodebuild test \
+            -scheme LogosKit \
+            -destination "platform=iOS Simulator,name=$DEVICE" \
+            -derivedDataPath "../$DERIVED_DATA" \
+            -disableAutomaticPackageResolution \
+            -resultBundlePath "$result" \
+            -only-testing:IntegrationTests \
+            -quiet \
+            "$@"
+    )
+fi
 
 # A misconfigured run would skip the Server tests and still pass, so a skip counts as a failure.
-summary=$(xcrun xcresulttool get test-results summary --path "$work/IntegrationTests.xcresult")
+summary=$(xcrun xcresulttool get test-results summary --path "$result")
 passed=$(json "j['passedTests']" <<<"$summary")
 skipped=$(json "j['skippedTests']" <<<"$summary")
 if [ "$skipped" != "0" ] || [ "$passed" = "0" ]; then
-    echo "error: $passed integration tests passed and $skipped were skipped; none may be skipped" >&2
+    echo "error: $passed tests passed and $skipped were skipped; none may be skipped" >&2
     exit 1
 fi
-echo "Integration tests passed ($passed)."
+echo "Tests passed ($passed)."

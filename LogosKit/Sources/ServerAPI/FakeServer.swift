@@ -190,6 +190,11 @@ public final class FakeServer: ServerAPI {
         state.withLock { $0.refreshTokens = [:] }
     }
 
+    /// Signs `account` in without a request, as if it had signed in before: for seeding a signed-in app.
+    public func issueTokens(for account: Account) -> SignedInUser {
+        state.withLock { issue(for: account, in: &$0) }
+    }
+
     // MARK: ServerAPI
 
     public func status(of server: URL) async throws(ServerAPIError) -> ServerStatus {

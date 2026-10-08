@@ -9,7 +9,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
 
-paths=(Logos LogosKit/Package.swift LogosKit/Sources LogosKit/Tests)
+paths=(Logos LogosUITests LogosKit/Package.swift LogosKit/Sources LogosKit/Tests)
 
 if [ "${1:-}" = "--fix" ]; then
     xcrun swift-format format --in-place --recursive --parallel "${paths[@]}"

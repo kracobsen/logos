@@ -68,6 +68,7 @@ struct MiniPlayerView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityHint("Opens the player")
+                .accessibilityIdentifier("miniPlayer")
                 if player.pickedUp != nil {
                     Button("Undo") { player.undoPickUp() }
                         .font(.subheadline.weight(.semibold))

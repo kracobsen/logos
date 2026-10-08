@@ -57,6 +57,11 @@ CI (`.github/workflows/ci.yml`) runs all three on every PR. Unit tests use Swift
 - Needs Docker; CI doesn't run it. A PR touching ServerAPI or Sync attaches its result.
 - Tests get the Server from `IntegrationServer.current()`, which rejects any non-loopback URL. Never point integration tests at a real Server. The credentials above belong to the throwaway container only.
 - The `IntegrationTests` target is outside the `Logos` scheme, so `scripts/test.sh` doesn't run it, and its Server tests skip when the harness isn't running.
+- `scripts/integration-test.sh --ui` runs the app's UI smoke test instead (`LogosUITests/SmokeTests`, XCUITest: sign in, browse, download, play) against the same Server. `KEEP_RESULTS=<dir>` keeps the xcresult.
+
+### UI tests and test launches
+
+`LogosUITests` (XCUITest, in the Xcode project) holds the smoke test (scheme `LogosUITests`, Debug) and the performance tests (scheme `LogosPerformance`, the `Performance` configuration: Release plus test launches; see `docs/performance-budgets.md`). Builds with the `LOGOS_TEST_LAUNCH` condition (Debug and Performance, never Release) read `LOGOS_TEST_LAUNCH` from the launch environment (`Logos/TestLaunch.swift`): `signedOut` (fresh data, plain HTTP to a loopback Server allowed) or `library940`/`library3000` (signed in to an offline fake Server with a generated `FixtureLibrary`). Release keeps HTTPS-only sign-in and its real data. Find UI elements by what the listener sees (labels, tab titles), so the tests survive layout changes.
 
 ## Manual checklists
 

@@ -15,8 +15,20 @@ public final class SystemAudioPlayer: AudioPlayer {
         case notReady(String)
     }
 
-    /// Replaced by ``rebuild()`` after a media-services reset.
-    private var player = AVPlayer()
+    /// Made on first use rather than in `init`: the app makes its player during launch, and creating an `AVPlayer`
+    /// there cost 10–60 ms of the cold launch (simulator). Dropped by ``rebuild()`` after a media-services reset.
+    private var madePlayer: AVPlayer?
+    private var player: AVPlayer {
+        if let madePlayer { return madePlayer }
+        let made = AVPlayer()
+        madePlayer = made
+        setUp(made)
+        for (id, var observer) in timeObservers {
+            observer.token = observer.add(made)
+            timeObservers[id] = observer
+        }
+        return made
+    }
     private var itemObservers: [any NSObjectProtocol] = []
     private var itemStatusObservation: NSKeyValueObservation?
     private var timeControlObservation: NSKeyValueObservation?
@@ -28,13 +40,15 @@ public final class SystemAudioPlayer: AudioPlayer {
     private struct TimeObserver {
         /// Adds the observer to a player, returning its token.
         let add: (AVPlayer) -> Any
-        var token: Any
+        /// `nil` until the `AVPlayer` is made.
+        var token: Any?
     }
 
     public var rate: Float = 1 {
         didSet {
-            player.defaultRate = rate
-            if player.rate != 0 { player.rate = rate }
+            guard let madePlayer else { return }  // it's set up with the rate when it's made
+            madePlayer.defaultRate = rate
+            if madePlayer.rate != 0 { madePlayer.rate = rate }
         }
     }
 
@@ -42,11 +56,9 @@ public final class SystemAudioPlayer: AudioPlayer {
     public static let timePitchAlgorithm = AVAudioTimePitchAlgorithm.spectral
 
     /// The time-pitch algorithm of what's loaded (nil when nothing is).
-    public var pitchAlgorithm: AVAudioTimePitchAlgorithm? { player.currentItem?.audioTimePitchAlgorithm }
+    public var pitchAlgorithm: AVAudioTimePitchAlgorithm? { madePlayer?.currentItem?.audioTimePitchAlgorithm }
 
-    public init() {
-        setUp(player)
-    }
+    public init() {}
 
     private func setUp(_ player: AVPlayer) {
         player.automaticallyWaitsToMinimizeStalling = false
@@ -63,19 +75,19 @@ public final class SystemAudioPlayer: AudioPlayer {
     /// observers, and set the session category again on the next load.
     public func rebuild() {
         unload()
-        for observer in timeObservers.values { player.removeTimeObserver(observer.token) }
-        timeControlObservation = nil
-        player = AVPlayer()
-        setUp(player)
         for (id, var observer) in timeObservers {
-            observer.token = observer.add(player)
+            if let token = observer.token { madePlayer?.removeTimeObserver(token) }
+            observer.token = nil
             timeObservers[id] = observer
         }
+        timeControlObservation = nil
+        madePlayer = nil  // a new one, with the same observers, on next use
         hasConfiguredSession = false
     }
 
     public var currentTime: Double {
-        let seconds = player.currentTime().seconds
+        guard let madePlayer else { return 0 }
+        let seconds = madePlayer.currentTime().seconds
         return seconds.isFinite ? seconds : 0
     }
 
@@ -104,7 +116,8 @@ public final class SystemAudioPlayer: AudioPlayer {
     }
 
     public func unload() {
-        player.pause()
+        guard let madePlayer else { return }
+        madePlayer.pause()
         replaceItem(with: nil)
     }
 
@@ -115,7 +128,7 @@ public final class SystemAudioPlayer: AudioPlayer {
     }
 
     public func pause() {
-        player.pause()
+        madePlayer?.pause()
     }
 
     public func seek(to time: Double) async {
@@ -155,10 +168,10 @@ public final class SystemAudioPlayer: AudioPlayer {
 
     private func addTimeObserver(_ add: @escaping (AVPlayer) -> Any) -> AudioPlayerObservation {
         let id = UUID()
-        timeObservers[id] = TimeObserver(add: add, token: add(player))
+        timeObservers[id] = TimeObserver(add: add, token: madePlayer.map(add))
         return AudioPlayerObservation { [weak self] in
             guard let self, let observer = self.timeObservers.removeValue(forKey: id) else { return }
-            self.player.removeTimeObserver(observer.token)
+            if let token = observer.token { self.madePlayer?.removeTimeObserver(token) }
         }
     }
 
@@ -193,7 +206,7 @@ public final class SystemAudioPlayer: AudioPlayer {
     /// Playing stopped with an error mid-play. The xHE-AAC bug (FB22340742) shows up as -11821 "Cannot Decode";
     /// every mid-play failure is reported as a decode failure so the engine reloads and carries on (or gives up).
     private func failed(_ description: String) {
-        guard player.currentItem != nil else { return }
+        guard madePlayer?.currentItem != nil else { return }
         log.error("Playing failed: \(description, privacy: .public)")
         onEvent?(.decodeFailed(at: currentTime))
     }

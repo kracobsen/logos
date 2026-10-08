@@ -84,6 +84,28 @@ struct SystemAudioPlayerTests {
         player.unload()
     }
 
+    @Test("Made before anything is loaded (as at launch), it still reports time and plays at the speed set early")
+    func observersBeforeFirstLoad() async throws {
+        let player = SystemAudioPlayer()
+        player.rate = 2
+        #expect(player.currentTime == 0)
+        let ticks = AsyncStream<Double>.makeStream()
+        let observation = player.observeTime(every: 0.1) { ticks.continuation.yield($0) }
+
+        try await player.load([try audioFile("1.m4a", seconds: 2)])
+        player.play()
+
+        var reported: [Double] = []
+        for await time in ticks.stream {
+            reported.append(time)
+            if time > 0.2 { break }
+        }
+        #expect(reported.contains { $0 > 0.2 })
+        #expect(player.rate == 2)
+        observation.cancel()
+        player.unload()
+    }
+
     @Test("A missing file fails the load")
     func missingFile() async throws {
         let player = SystemAudioPlayer()

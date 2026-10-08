@@ -1,0 +1,5 @@
+// The build the performance tests measure: Release, plus UI-test launches (LOGOS_TEST_LAUNCH) so the tests can launch
+// it on generated fixture data. Never archive or ship it; see docs/performance-budgets.md.
+#include "Release.xcconfig"
+
+SWIFT_ACTIVE_COMPILATION_CONDITIONS = LOGOS_TEST_LAUNCH $(inherited)
