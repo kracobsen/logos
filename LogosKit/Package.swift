@@ -63,5 +63,9 @@ let package = Package(
         .testTarget(name: "DownloadsTests", dependencies: ["Downloads"], swiftSettings: strict),
         .testTarget(name: "PlaybackTests", dependencies: ["Playback"], swiftSettings: strict),
         .testTarget(name: "UITests", dependencies: ["UI"], swiftSettings: strict),
+
+        // Runs against a pinned audiobookshelf in Docker through scripts/integration-test.sh, never against a
+        // real Server. Not in the Logos scheme, so scripts/test.sh doesn't run it.
+        .testTarget(name: "IntegrationTests", dependencies: ["ServerAPI", "Sync"], swiftSettings: strict),
     ]
 )

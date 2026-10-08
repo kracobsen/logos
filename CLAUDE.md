@@ -50,6 +50,14 @@ Prefix Xcode tooling with `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Develo
 
 CI (`.github/workflows/ci.yml`) runs all three on every PR. Unit tests use Swift Testing, one test target per module (`<Module>Tests`).
 
+### Integration tests
+
+`scripts/integration-test.sh` runs the `IntegrationTests` target (ServerAPI and Sync against a real Server). It generates the fixture Library (`scripts/integration/make-fixture-library.sh`), starts audiobookshelf 2.37.1 (pinned by digest) in Docker on a free `127.0.0.1` port, seeds it (root `root`/`rootpass`, user `listener`/`listenerpass`, one book Library "Fixtures"), runs the tests, fails if any were skipped, and tears everything down. `--serve` starts and seeds the Server and prints its address for manual poking. Extra arguments go to xcodebuild, e.g. `-only-testing:IntegrationTests/HarnessTests`.
+
+- Needs Docker; CI doesn't run it. A PR touching ServerAPI or Sync attaches its result.
+- Tests get the Server from `IntegrationServer.current()`, which rejects any non-loopback URL. Never point integration tests at a real Server. The credentials above belong to the throwaway container only.
+- The `IntegrationTests` target is outside the `Logos` scheme, so `scripts/test.sh` doesn't run it, and its Server tests skip when the harness isn't running.
+
 ## Manual checklists
 
 A PR touching device-only behaviour (interruptions and routes; lock screen and Control Center; background Downloads and surviving a reboot; listening at 1×, 2× and 3×; battery; smoothness) must carry a manual checklist in its description that the human signs off before merge.
