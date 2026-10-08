@@ -52,11 +52,14 @@ extension AppDatabase {
     }
 
     /// Puts the Book at the end of the Download queue. A Book already queued, downloading or downloaded is left as it
-    /// is; a failed one goes to the end again, keeping its verified files.
+    /// is; a failed one goes to the end again (Retry), keeping its verified files and partial data but starting its
+    /// attempts and size mismatches afresh.
     public func queueDownload(ofBook bookID: String) throws {
         try pool.write { db in
             let state = try String.fetchOne(db, sql: "SELECT state FROM download WHERE bookID = ?", arguments: [bookID])
             guard state == nil || state == DownloadState.failed.rawValue else { return }
+            try db.execute(
+                sql: "UPDATE downloadFile SET attempts = 0, sizeMismatches = 0 WHERE bookID = ?", arguments: [bookID])
             let next = try Int.fetchOne(db, sql: "SELECT IFNULL(MAX(queuePosition), 0) + 1 FROM download") ?? 1
             try db.execute(
                 sql: """

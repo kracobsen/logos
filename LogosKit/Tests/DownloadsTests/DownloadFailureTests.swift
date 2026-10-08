@@ -138,6 +138,48 @@ struct DownloadFailureTests {
         await fixture.server.transfers.completeAll()
         #expect(try fixture.state("a") == .downloaded)
     }
+
+    @Test("Retry starts the Book's attempts afresh: one dropped transfer after it backs off instead of failing")
+    func retryResetsAttempts() async throws {
+        let fixture = try await DownloadsFixture(books: [book("a", files: [("01.mp3", 100)])])
+        let downloader = await fixture.downloader()
+        await downloader.download("a")
+        for minutes in [1, 5, 30, 30] {
+            await fixture.server.transfers.interrupt(transfer("a", "01.mp3"), receivedBytes: 10)
+            await fixture.clock.advance(by: .seconds(minutes * 60))
+            await fixture.eventually { !fixture.pending.isEmpty }
+        }
+        await fixture.server.transfers.interrupt(transfer("a", "01.mp3"), receivedBytes: 10)
+        #expect(try fixture.state("a") == .failed)
+
+        await downloader.download("a")
+        await fixture.server.transfers.interrupt(transfer("a", "01.mp3"), receivedBytes: 20)
+
+        #expect(try fixture.state("a") == .downloading)
+        await fixture.clock.advance(by: .seconds(60))
+        await fixture.eventually { !fixture.pending.isEmpty }
+        await fixture.server.transfers.completeAll()
+        #expect(try fixture.state("a") == .downloaded)
+    }
+
+    @Test("Retry forgets earlier wrong-size arrivals: one more after it starts the file again instead of failing")
+    func retryResetsSizeMismatches() async throws {
+        let fixture = try await DownloadsFixture(books: [book("a", files: [("01.mp3", 10)])])
+        fixture.server.transfers.serve(Data(count: 9), bookID: "a", ino: "ino-a-01.mp3")
+        let downloader = await fixture.downloader()
+        await downloader.download("a")
+        await fixture.server.transfers.complete(transfer("a", "01.mp3"))
+        await fixture.server.transfers.complete(transfer("a", "01.mp3"))
+        #expect(try fixture.state("a") == .failed)
+
+        await downloader.download("a")
+        await fixture.server.transfers.complete(transfer("a", "01.mp3"))
+
+        #expect(try fixture.state("a") == .downloading)
+        fixture.server.transfers.serve(Data(count: 10), bookID: "a", ino: "ino-a-01.mp3")
+        await fixture.server.transfers.complete(transfer("a", "01.mp3"))
+        #expect(try fixture.state("a") == .downloaded)
+    }
 }
 
 extension FakeServer {
