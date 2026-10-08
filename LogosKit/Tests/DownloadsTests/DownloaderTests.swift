@@ -14,6 +14,7 @@ struct DownloadsFixture {
     let database: AppDatabase
     let files: DownloadFiles
     let covers: CoverFiles
+    let storage = FakeStorageCapacity()
 
     init(books: [BookData]) async throws {
         server = FakeServer(clock: clock)
@@ -42,7 +43,7 @@ struct DownloadsFixture {
         let auth = Auth(server: server.address, api: server, tokenStore: tokens, clock: clock)
         let downloader = Downloader(
             database: database, api: server, auth: auth, transfers: server.transfers, files: files, covers: covers,
-            clock: clock, inForeground: inForeground)
+            clock: clock, inForeground: inForeground, storage: storage)
         await downloader.start()
         return downloader
     }

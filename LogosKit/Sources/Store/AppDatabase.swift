@@ -76,6 +76,7 @@ public struct AppDatabase: Sendable {
         migrator.registerMigration("v3-progress", migrate: ProgressRecord.createTable)
         registerBookDataMigration(in: &migrator)
         registerDownloadsMigration(in: &migrator)
+        registerDownloadPolicyMigration(in: &migrator)
         return migrator
     }
 

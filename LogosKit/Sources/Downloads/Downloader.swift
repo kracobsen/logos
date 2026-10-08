@@ -27,6 +27,8 @@ public actor Downloader {
     public static let maxAttempts = 5
     /// How long to wait before trying a file again after its 1st, 2nd, 3rd (and later) failed try.
     public static let backoff: [Duration] = [.seconds(60), .seconds(5 * 60), .seconds(30 * 60)]
+    /// Before a Book becomes active, the volume must have room for the bytes it still needs plus this much.
+    public static let storageMargin: Int64 = 500_000_000
     /// Progress is written to the database at most this often per file.
     static let progressInterval: TimeInterval = 1
 
@@ -37,6 +39,7 @@ public actor Downloader {
     private let files: DownloadFiles
     private let covers: CoverFiles?
     private let clock: any Clock
+    private let storage: any StorageCapacity
     private var isInForeground: Bool
     private var isStarted = false
     private var lastProgressWrite: [FileTransfer: Date] = [:]
@@ -49,6 +52,7 @@ public actor Downloader {
     ///   - covers: where the cover cache keeps covers; a Download shares its Book's cover file with it.
     ///   - inForeground: `false` when built for a background launch: transfer events are handled, but no new Book
     ///     starts until ``resume()``.
+    ///   - storage: the free-space check; by default, the volume of `files`.
     public init(
         database: AppDatabase,
         api: any ServerAPI,
@@ -57,7 +61,8 @@ public actor Downloader {
         files: DownloadFiles,
         covers: CoverFiles?,
         clock: any Clock,
-        inForeground: Bool = true
+        inForeground: Bool = true,
+        storage: (any StorageCapacity)? = nil
     ) {
         self.database = database
         self.api = api
@@ -66,6 +71,7 @@ public actor Downloader {
         self.files = files
         self.covers = covers
         self.clock = clock
+        self.storage = storage ?? VolumeStorageCapacity(volumeOf: files.directory)
         isInForeground = inForeground
     }
 
@@ -122,6 +128,7 @@ public actor Downloader {
     private func advance() async {
         guard isInForeground else { return }
         while true {
+            guard checkStorage() else { return }
             let bookID: String?
             do {
                 bookID = try database.startNextDownload()
@@ -152,9 +159,46 @@ public actor Downloader {
         case gone
     }
 
+    /// Before a Book becomes active (or the active one carries on after a storage pause), the volume must have room
+    /// for what it still needs plus ``storageMargin``. Pauses the queue as "Not enough storage" if not, and lifts the
+    /// pause once there's room (or nothing left to start).
+    private func checkStorage() -> Bool {
+        let fits: Bool
+        let paused: Bool
+        do {
+            paused = try database.downloadPolicy().isPausedForStorage
+            let candidate = try database.nextDownloadToStart() ?? (paused ? database.activeDownload() : nil)
+            fits = try candidate.map { try hasRoom(for: $0, margin: Self.storageMargin) } ?? true
+        } catch {
+            log.error("Couldn't check the free space: \(String(describing: error), privacy: .public)")
+            return false
+        }
+        if fits == paused { setPausedForStorage(!fits) }
+        return fits
+    }
+
+    private func hasRoom(for bookID: String, margin: Int64) throws -> Bool {
+        guard let available = storage.availableForImportantUsage() else { return true }
+        return try database.bytesStillNeeded(forBook: bookID) + margin <= available
+    }
+
+    private func setPausedForStorage(_ paused: Bool) {
+        if paused { log.notice("Not enough storage: the Download queue is paused") }
+        do {
+            try database.setDownloadsPausedForStorage(paused)
+        } catch {
+            log.error("Couldn't record the storage pause: \(String(describing: error), privacy: .public)")
+        }
+    }
+
+    private var isPausedForStorage: Bool {
+        (try? database.downloadPolicy().isPausedForStorage) ?? false
+    }
+
     /// Enqueues every file of the active Book that isn't verified or in flight, after making the token fresh and
     /// reading the Book's files again. Finishes the Book if nothing is left.
     private func transferMissingFiles(of bookID: String) async -> Progress {
+        guard !isPausedForStorage else { return .waiting }
         guard let server = signedInServer() else { return .waiting }
         let token: String
         let data: BookData
@@ -257,6 +301,12 @@ public actor Downloader {
             log.info("A file transfer stopped: \(reason, privacy: .public)")
             guard var file = activeFile(transfer) else { return }
             file.resumeData = resumeData
+            if (try? hasRoom(for: transfer.bookID, margin: 0)) == false {
+                // Not a network failure: wait for space instead of using up attempts.
+                save(file)
+                setPausedForStorage(true)
+                return
+            }
             await retry(file)
         }
     }
