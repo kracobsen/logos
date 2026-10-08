@@ -25,7 +25,9 @@ public enum BookDownloadAction: Sendable, Hashable {
 @Observable
 public final class DownloadsModel {
     /// The queue in FIFO order, then the downloaded Books.
-    public private(set) var list: DownloadsList
+    public internal(set) var list: DownloadsList
+    /// How the Downloaded tab sorts the downloaded Books (not kept across launches).
+    public var order: DownloadedOrder = .recentlyListened
     private var statuses: [String: DownloadStatus]
     /// The cellular setting and the storage pause.
     private var policy: DownloadPolicy
@@ -33,7 +35,7 @@ public final class DownloadsModel {
     public private(set) var isOnWiFi = true
 
     private let database: AppDatabase
-    private let downloader: Downloader?
+    let downloader: Downloader?
     private let network: (any NetworkMonitor)?
 
     /// - Parameters:

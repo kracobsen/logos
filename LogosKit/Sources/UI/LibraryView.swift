@@ -168,6 +168,9 @@ struct LibraryRowView: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
+                if row.isNotOnServer {
+                    NotOnServerLabel()
+                }
             }
         }
         .accessibilityElement(children: .combine)

@@ -98,6 +98,9 @@ struct BookDetailView: View {
                     }
                 }
             }
+            Section {
+                RemoveDownloadButton(detail: detail)
+            }
         }
         .listStyle(.plain)
     }
@@ -125,6 +128,9 @@ struct BookDetailView: View {
             Text(model.summary)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
+            if detail.isNotOnServer {
+                NotOnServerLabel()
+            }
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 8)

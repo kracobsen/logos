@@ -39,12 +39,12 @@ public actor Downloader {
     /// Progress is written to the database at most this often per file.
     static let progressInterval: TimeInterval = 1
 
-    private let database: AppDatabase
+    let database: AppDatabase
     private let api: any ServerAPI
     private let auth: Auth
     private let transfers: any FileTransfers
-    private let files: DownloadFiles
-    private let covers: CoverFiles?
+    let files: DownloadFiles
+    let covers: CoverFiles?
     private let clock: any Clock
     private let storage: any StorageCapacity
     private var isInForeground: Bool
@@ -127,12 +127,16 @@ public actor Downloader {
         await resume()
     }
 
-    /// Stops the Book's Download and deletes its files, partial ones included. The next Book starts.
+    /// Stops (or removes) the Book's Download and deletes its files straight away, partial ones included. Progress
+    /// and the Book's place in the Library are kept, except for a Not on Server Book: it's deleted entirely, cover
+    /// included. The next Book starts.
     public func cancel(_ bookID: String) async {
         stopBackoff(ofBook: bookID)
         await transfers.cancel(bookID: bookID)
         do {
-            try database.removeDownload(ofBook: bookID)
+            if try database.discardDownload(ofBook: bookID) {
+                covers?.delete(forBook: bookID)
+            }
         } catch {
             log.error("Couldn't remove a Download: \(String(describing: error), privacy: .public)")
         }

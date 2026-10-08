@@ -50,7 +50,7 @@ struct LibraryRowRecord: Decodable, FetchableRecord, TableRecord {
     static var databaseSelection: [any SQLSelectable] {
         [
             Column("id"), Column("title"), Column("authorName"), Column("narratorName"), Column("seriesName"),
-            Column("addedAt"), Column("duration"), Column("authorNameLF"),
+            Column("addedAt"), Column("duration"), Column("authorNameLF"), Column("notOnServer"),
         ]
     }
 
@@ -62,6 +62,7 @@ struct LibraryRowRecord: Decodable, FetchableRecord, TableRecord {
     var addedAt: Int64
     var duration: Double
     var authorNameLF: String
+    var notOnServer: Bool
 
     var row: LibraryRow {
         LibraryRow(
@@ -72,14 +73,16 @@ struct LibraryRowRecord: Decodable, FetchableRecord, TableRecord {
             narratorName: narratorName,
             seriesName: seriesName,
             addedAt: Date(timeIntervalSince1970: TimeInterval(addedAt) / 1000),
-            duration: duration
+            duration: duration,
+            isNotOnServer: notOnServer
         )
     }
 }
 
 /// What applying a Library list changed.
 public struct AppliedLibraryList: Sendable, Hashable {
-    /// The Books that were deleted because the Server no longer lists them.
+    /// The Books that were deleted because the Server no longer lists them. Downloaded ones are kept as Not on
+    /// Server instead, and aren't in here.
     public let removedBookIDs: Set<String>
 }
 
@@ -93,12 +96,14 @@ extension AppDatabase {
         try pool.write { db in
             let listed = Set(books.map(\.id))
             let stored = try Set(String.fetchAll(db, sql: "SELECT id FROM book"))
-            let removed = stored.subtracting(listed)
-            for id in removed {
+            var removed = Set<String>()
+            for id in stored.subtracting(listed) where try !Self.keepAsNotOnServer(db, bookID: id) {
                 try db.execute(sql: "DELETE FROM book WHERE id = ?", arguments: [id])
+                removed.insert(id)
             }
             for book in books {
                 try ListedBookRecord(book).upsert(db)
+                try Self.clearNotOnServer(db, bookID: book.id)
             }
             try db.execute(
                 sql: """

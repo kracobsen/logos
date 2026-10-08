@@ -81,6 +81,8 @@ public struct RootView: View {
             await Task.yield()
             // The cover file check first (in the background), so this sync fetches missing covers again.
             await covers?.checkFiles()
+            // The Downloads file check before resuming, so a Download with missing files isn't treated as done.
+            await downloads?.checkFiles()
             // Rebuild the Download transfers from the database, alongside the launch sync.
             async let downloadsResumed: Void = downloads?.resume() ?? ()
             await library.syncOnLaunch()

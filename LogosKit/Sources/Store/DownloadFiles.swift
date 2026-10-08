@@ -52,6 +52,13 @@ public struct DownloadFiles: Sendable {
         try? FileManager.default.removeItem(at: folder(forBook: bookID))
     }
 
+    /// The id of every Book with a folder here.
+    public func bookIDs() throws -> Set<String> {
+        let folders = try FileManager.default.contentsOfDirectory(
+            at: directory, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
+        return Set(folders.compactMap { $0.lastPathComponent.removingPercentEncoding })
+    }
+
     private static let safeCharacters = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_"))
         .intersection(CharacterSet(charactersIn: Unicode.Scalar(0)..<Unicode.Scalar(128)))
 
