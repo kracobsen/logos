@@ -53,9 +53,15 @@ extension AppDatabase {
     }
 
     /// Stage 1 for a Book the Server no longer lists: a downloaded one is kept and flagged Not on Server (`true`);
-    /// anything else is the caller's to delete (`false`).
+    /// anything else is the caller's to delete (`false`). A Not on Server Book whose Download was found damaged (it
+    /// has none now) is kept too, until the listener removes it.
     static func keepAsNotOnServer(_ db: Database, bookID: String) throws -> Bool {
         let state = try String.fetchOne(db, sql: "SELECT state FROM download WHERE bookID = ?", arguments: [bookID])
+        if state == nil,
+            try Bool.fetchOne(db, sql: "SELECT notOnServer FROM book WHERE id = ?", arguments: [bookID]) == true
+        {
+            return true
+        }
         guard state == DownloadState.downloaded.rawValue else { return false }
         try db.execute(sql: "UPDATE book SET notOnServer = 1 WHERE id = ? AND NOT notOnServer", arguments: [bookID])
         return true

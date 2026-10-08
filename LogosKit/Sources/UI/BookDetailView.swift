@@ -33,6 +33,7 @@ struct BookDetailView: View {
     @State private var model: BookDetailModel
     @State private var showsFullDescription = false
     @State private var openedSeries: BookDetailModel.SeriesLink?
+    @Environment(DownloadsModel.self) private var downloads: DownloadsModel?
     private let onAppear: () -> Void
 
     init(model: BookDetailModel, onAppear: @escaping () -> Void = {}) {
@@ -63,8 +64,15 @@ struct BookDetailView: View {
             Section {
                 header(detail)
                     .listRowSeparator(.hidden)
-                DownloadButton(bookID: detail.id, size: detail.size, resumes: model.progress.status.isStarted)
-                    .listRowSeparator(.hidden)
+                Group {
+                    if detail.isNotOnServer, downloads?.status(of: detail.id) == nil {
+                        // A Not on Server Book without its Download: it was found damaged.
+                        DamagedNotOnServerLabel()
+                    } else {
+                        DownloadButton(bookID: detail.id, size: detail.size, resumes: model.progress.status.isStarted)
+                    }
+                }
+                .listRowSeparator(.hidden)
                 BookProgressSection(model: model.progress)
             }
             if let description = model.descriptionText {
@@ -91,6 +99,7 @@ struct BookDetailView: View {
                 }
             }
             Section {
+                FinishedButton(model: model)
                 RemoveDownloadButton(detail: detail)
             }
         }

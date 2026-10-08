@@ -283,6 +283,24 @@ struct PlayerSessionTests {
         #expect(try fixture.progress("first")?.position == 1200)
     }
 
+    @Test(
+        "An interruption or route loss in the last 30 s just pauses: the Book isn't Finished",
+        arguments: [AudioSessionEvent.interrupted, .routeLost])
+    func systemPauseNearEndDoesNotFinish(event: AudioSessionEvent) async throws {
+        try fixture.addBook("first", duration: 3600)
+        let player = fixture.player()
+        await player.play(bookID: "first")
+        fixture.audio.advance(to: 3590)
+
+        fixture.session.send(event)
+
+        #expect(player.state == .paused)
+        #expect(!player.isFinished)
+        #expect(player.position == 3590)
+        #expect(try fixture.progress("first")?.isFinished == false)
+        #expect(try fixture.progress("first")?.position == 3590)
+    }
+
     @Test("A media-services reset doesn't resume after an interruption that was going on")
     func resetForgetsInterruption() async throws {
         try fixture.addBook("first")
