@@ -49,15 +49,18 @@ public actor LibrarySync {
     private let auth: Auth
     private let clock: any Clock
     private var running: Task<SyncOutcome, Never>?
+    private let coverSync: CoverSync?
     /// The progress fetch, sharing this sync's `Auth`. Each sync runs it after stage 1; a foreground return runs it
     /// even when the Library isn't due.
     public nonisolated let progress: ProgressSync
 
-    public init(database: AppDatabase, api: any ServerAPI, auth: Auth, clock: any Clock) {
+    /// - Parameter covers: where stage 3 keeps covers. Without it, covers aren't synced.
+    public init(database: AppDatabase, api: any ServerAPI, auth: Auth, clock: any Clock, covers: CoverFiles? = nil) {
         self.database = database
         self.api = api
         self.auth = auth
         self.clock = clock
+        coverSync = covers.map { CoverSync(database: database, api: api, auth: auth, covers: $0) }
         progress = ProgressSync(database: database, api: api, auth: auth)
     }
 
@@ -105,9 +108,12 @@ public actor LibrarySync {
         if let stop = await checkVersion(of: identity.serverURL) { return stop }
         let outcome = await applyList(of: identity)
         if outcome == .synced || outcome == .failed {
-            // After stage 1, so Books new in this list get their progress too.
+            // After stage 1 (so Books new in this list get their progress too) and before the slower stages.
             _ = await progress.fetch()
         }
+        guard outcome == .synced else { return outcome }
+        // Stage 3: covers. Failures leave them behind for the next sync; they don't change the outcome.
+        await coverSync?.run(on: identity.serverURL)
         return outcome
     }
 

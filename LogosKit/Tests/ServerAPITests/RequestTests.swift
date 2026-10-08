@@ -50,6 +50,14 @@ struct RequestTests {
         #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer access-1")
     }
 
+    @Test("A cover is a GET of a ~600 px JPEG, with the bearer token")
+    func cover() {
+        let request = Requests.cover(ofBook: "item-1", on: server, accessToken: "access-1")
+        #expect(request.httpMethod == "GET")
+        #expect(request.url?.absoluteString == "https://abs.example.com/api/items/item-1/cover?width=600&format=jpeg")
+        #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer access-1")
+    }
+
     @Test("The Library's Books are one authenticated GET of the whole list")
     func books() {
         let request = Requests.books(inLibrary: "lib-1", on: server, accessToken: "access-1")

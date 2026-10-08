@@ -24,7 +24,8 @@ struct LogosApp: App {
                     database: services.database,
                     signIn: services.signIn,
                     makeLibrarySync: services.makeLibrarySync,
-                    launchSignpost: launchSignpost
+                    launchSignpost: launchSignpost,
+                    covers: services.covers
                 )
             case .failure(let error):
                 // The database is never deleted automatically: say so, and keep the file.
@@ -38,6 +39,7 @@ struct LogosApp: App {
 private struct Services {
     let database: AppDatabase
     let signIn: SignIn
+    let covers: CoverFiles?
     let api: any ServerAPI = AudiobookshelfClient()
     let tokenStore: any TokenStore = KeychainTokenStore()
     let clock: any Clock = SystemClock()
@@ -52,11 +54,13 @@ private struct Services {
         // Application Support is backed up; the database must stay that way (never excluded).
         database = try AppDatabase.open(at: directory.appending(path: "Logos.sqlite"))
         signIn = SignIn(api: api, tokenStore: tokenStore, database: database)
+        // Covers are excluded from backups. Without the directory, the app still works, with placeholders.
+        covers = try? CoverFiles(directory: directory.appending(path: "Covers"))
     }
 
     /// The sync for a signed-in identity, with the `Auth` for its Server.
     func makeLibrarySync(for identity: ServerIdentity) -> LibrarySync {
         let auth = Auth(server: identity.serverURL, api: api, tokenStore: tokenStore, clock: clock)
-        return LibrarySync(database: database, api: api, auth: auth, clock: clock)
+        return LibrarySync(database: database, api: api, auth: auth, clock: clock, covers: covers)
     }
 }

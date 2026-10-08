@@ -79,20 +79,23 @@ struct LibraryView: View {
     }
 }
 
-/// One Library row: title and author, bounded height.
+/// One Library row: cover, title and author, bounded height.
 struct LibraryRowView: View {
     let row: LibraryRow
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(row.title)
-                .font(.body)
-                .lineLimit(1)
-            if !row.authorName.isEmpty {
-                Text(row.authorName)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+        HStack(spacing: 12) {
+            CoverView(bookID: row.id, side: 48)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(row.title)
+                    .font(.body)
                     .lineLimit(1)
+                if !row.authorName.isEmpty {
+                    Text(row.authorName)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
             }
         }
         .accessibilityElement(children: .combine)

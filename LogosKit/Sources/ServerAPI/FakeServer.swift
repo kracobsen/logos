@@ -34,6 +34,7 @@ public final class FakeServer: ServerAPI {
         case libraries(URL, accessToken: String)
         case books(URL, libraryID: String, accessToken: String)
         case progress(URL, accessToken: String)
+        case cover(URL, bookID: String, accessToken: String)
     }
 
     public typealias Hook = @Sendable (Request) async throws(ServerAPIError) -> Void
@@ -48,6 +49,7 @@ public final class FakeServer: ServerAPI {
         var libraries: [ServerLibrary]
         var books: [ListedBook] = []
         var progress: [FetchedProgress] = []
+        var covers: [String: Data] = [:]
         var requests: [Request] = []
         var isReachable: @Sendable (Request) -> Bool = { _ in true }
         var hook: Hook?
@@ -112,6 +114,12 @@ public final class FakeServer: ServerAPI {
     public var progress: [FetchedProgress] {
         get { state.withLock { $0.progress } }
         set { state.withLock { $0.progress = newValue } }
+    }
+
+    /// The cover data per Book id. A Book without one gets a 404. Default: none.
+    public var covers: [String: Data] {
+        get { state.withLock { $0.covers } }
+        set { state.withLock { $0.covers = newValue } }
     }
 
     /// Decides per request whether it gets through. Default: everything does.
@@ -200,6 +208,15 @@ public final class FakeServer: ServerAPI {
         return try state.withLock { (state) throws(ServerAPIError) -> [FetchedProgress] in
             try authenticate(accessToken, in: state)
             return state.progress
+        }
+    }
+
+    public func cover(ofBook bookID: String, on server: URL, accessToken: String) async throws(ServerAPIError) -> Data {
+        try await receive(.cover(server, bookID: bookID, accessToken: accessToken), at: server)
+        return try state.withLock { (state) throws(ServerAPIError) -> Data in
+            try authenticate(accessToken, in: state)
+            guard let data = state.covers[bookID] else { throw .unexpectedStatus(404) }
+            return data
         }
     }
 
