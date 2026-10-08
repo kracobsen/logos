@@ -86,6 +86,8 @@ public struct InProgressRow: Sendable, Hashable, Identifiable {
     public let duration: TimeInterval
     public let position: TimeInterval
     public let lastChanged: Date
+    /// The Server no longer lists the Book (see ``BookDetail/isNotOnServer``).
+    public let isNotOnServer: Bool
 
     public init(
         id: String,
@@ -93,7 +95,8 @@ public struct InProgressRow: Sendable, Hashable, Identifiable {
         authorName: String,
         duration: TimeInterval,
         position: TimeInterval,
-        lastChanged: Date
+        lastChanged: Date,
+        isNotOnServer: Bool = false
     ) {
         self.id = id
         self.title = title
@@ -101,5 +104,6 @@ public struct InProgressRow: Sendable, Hashable, Identifiable {
         self.duration = duration
         self.position = position
         self.lastChanged = lastChanged
+        self.isNotOnServer = isNotOnServer
     }
 }

@@ -63,6 +63,24 @@ struct ProgressStoreTests {
         )
     }
 
+    @Test("An In Progress row says when its Book is Not on Server")
+    func inProgressNotOnServer() throws {
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let database = try AppDatabase.open(at: url)
+        try database.applyLibraryList([listedBook("Kept"), listedBook("Listed")], syncedAt: now)
+        try database.queueDownload(ofBook: "Kept")
+        _ = try database.startNextDownload()
+        try database.finishDownload(ofBook: "Kept", at: now)
+        try database.saveProgress(progress("Kept", at: 100, minutesAgo: 1))
+        try database.saveProgress(progress("Listed", at: 100, minutesAgo: 2))
+
+        try database.applyLibraryList([listedBook("Listed")], syncedAt: now)
+
+        let rows = try database.inProgressRows()
+        #expect(rows.map(\.title) == ["Kept", "Listed"])
+        #expect(rows.map(\.isNotOnServer) == [true, false])
+    }
+
     @Test("Progress is kept when its Book leaves the Library, and shows again if the Book comes back")
     func keptWhenBookLeaves() throws {
         defer { try? FileManager.default.removeItem(at: directory) }

@@ -76,6 +76,12 @@ public final class DownloadsModel {
 
     public func status(of bookID: String) -> DownloadStatus? { statuses[bookID] }
 
+    /// A Not on Server Book without a Download: its Download was found damaged, and it can't be downloaded again
+    /// (only removed). Offer no Download for it.
+    public func isDamagedNotOnServer(_ bookID: String, isNotOnServer: Bool) -> Bool {
+        isNotOnServer && statuses[bookID] == nil
+    }
+
     /// The Book's Download button; `size` is the Book's size in bytes, shown on "Download".
     public func action(forBook bookID: String, size: Int64) -> BookDownloadAction {
         guard let status = statuses[bookID] else { return .download(label: "Download · \(Self.size(size))") }

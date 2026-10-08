@@ -9,6 +9,7 @@ struct InProgressView: View {
     let library: LibraryModel
     let launch: LaunchSignpost?
     @State private var opener = BookOpener()
+    @Environment(DownloadsModel.self) private var downloads: DownloadsModel?
 
     var body: some View {
         List(model.rows) { row in
@@ -19,10 +20,17 @@ struct InProgressView: View {
                     InProgressRowView(row: row)
                 }
                 .foregroundStyle(.primary)
-                // Starts the Download, or resumes a downloaded Book.
-                DownloadButton(bookID: row.id, size: 0, compact: true, resumes: true)
-                    .buttonStyle(.borderless)
-                    .frame(width: 44, height: 44)
+                Group {
+                    if downloads?.isDamagedNotOnServer(row.id, isNotOnServer: row.isNotOnServer) == true {
+                        // It can't be downloaded again: Book detail offers Remove Download.
+                        DamagedNotOnServerLabel(compact: true)
+                    } else {
+                        // Starts the Download, or resumes a downloaded Book.
+                        DownloadButton(bookID: row.id, size: 0, compact: true, resumes: true)
+                            .buttonStyle(.borderless)
+                    }
+                }
+                .frame(width: 44, height: 44)
             }
         }
         .listStyle(.plain)

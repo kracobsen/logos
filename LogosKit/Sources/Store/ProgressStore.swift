@@ -110,7 +110,8 @@ extension AppDatabase {
         try Row.fetchAll(
             db,
             sql: """
-                SELECT book.id, book.title, book.authorName, book.duration, progress.position, progress.lastChanged
+                SELECT book.id, book.title, book.authorName, book.duration, book.notOnServer, progress.position,
+                    progress.lastChanged
                 FROM progress JOIN book ON book.id = progress.bookID
                 WHERE progress.isFinished = 0 AND progress.position > 0
                 ORDER BY progress.lastChanged DESC, book.id
@@ -122,7 +123,8 @@ extension AppDatabase {
                 authorName: row["authorName"],
                 duration: row["duration"],
                 position: row["position"],
-                lastChanged: Date(millisecondsSince1970: row["lastChanged"])
+                lastChanged: Date(millisecondsSince1970: row["lastChanged"]),
+                isNotOnServer: row["notOnServer"]
             )
         }
     }

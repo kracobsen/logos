@@ -65,8 +65,7 @@ struct BookDetailView: View {
                 header(detail)
                     .listRowSeparator(.hidden)
                 Group {
-                    if detail.isNotOnServer, downloads?.status(of: detail.id) == nil {
-                        // A Not on Server Book without its Download: it was found damaged.
+                    if downloads?.isDamagedNotOnServer(detail.id, isNotOnServer: detail.isNotOnServer) == true {
                         DamagedNotOnServerLabel()
                     } else {
                         DownloadButton(bookID: detail.id, size: detail.size, resumes: model.progress.status.isStarted)

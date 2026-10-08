@@ -77,13 +77,22 @@ struct DamagedDownloadView: View {
     }
 }
 
-/// Book detail's line for a Not on Server Book whose Download was found damaged: it can't be downloaded again.
+/// Book detail's line (or, `compact`, an In Progress row's icon) for a Not on Server Book whose Download was found
+/// damaged: it can't be downloaded again.
 struct DamagedNotOnServerLabel: View {
+    var compact = false
+
     var body: some View {
-        Label(DamagedText.notOnServer, systemImage: "exclamationmark.triangle")
-            .font(.subheadline)
-            .foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity, alignment: .leading)
+        if compact {
+            Image(systemName: "exclamationmark.triangle")
+                .foregroundStyle(.secondary)
+                .accessibilityLabel(DamagedText.notOnServer)
+        } else {
+            Label(DamagedText.notOnServer, systemImage: "exclamationmark.triangle")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 }
 
