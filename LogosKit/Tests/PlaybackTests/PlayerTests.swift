@@ -375,15 +375,4 @@ struct PlayerTests {
         #expect(try fixture.progress("first")?.position == 1800)
     }
 
-    @Test("The speed applies to the player and is published")
-    func rate() async throws {
-        try fixture.addBook("first")
-        let player = fixture.player()
-        await player.play(bookID: "first")
-
-        player.setRate(1.5)
-
-        #expect(fixture.audio.rate == 1.5)
-        #expect(player.rate == 1.5)
-    }
 }

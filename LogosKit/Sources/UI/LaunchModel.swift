@@ -19,6 +19,7 @@ public final class LaunchModel {
             inProgress = identity.map { _ in InProgressModel(database: database) }
             series = identity.map { _ in SeriesListModel(database: database) }
             downloads = identity.map(makeDownloads)
+            settings = identity.map(makeSettings)
         }
     }
     /// The Library tab's model, while signed in.
@@ -60,7 +61,7 @@ public final class LaunchModel {
         inProgress = identity.map { _ in InProgressModel(database: database) }
         series = identity.map { _ in SeriesListModel(database: database) }
         downloads = identity.map(makeDownloads)
-        settings = identity.map { SettingsModel(database: database, downloader: makeDownloader?($0) ?? nil) }
+        settings = identity.map(makeSettings)
     }
 
     /// Follows the identity in the database until cancelled.
@@ -72,6 +73,12 @@ public final class LaunchModel {
         } catch {
             log.error("Stopped observing the Server identity: \(String(describing: error), privacy: .public)")
         }
+    }
+
+    private func makeSettings(for identity: ServerIdentity) -> SettingsModel {
+        let settings = SettingsModel(database: database, downloader: makeDownloader?(identity) ?? nil)
+        settings.player = player
+        return settings
     }
 
     private func makeDownloads(for identity: ServerIdentity) -> DownloadsModel {
