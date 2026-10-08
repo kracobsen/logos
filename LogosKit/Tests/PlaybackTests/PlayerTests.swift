@@ -287,6 +287,25 @@ struct PlayerTests {
         #expect(try fixture.progress("first")?.position == 90)
     }
 
+    @Test("A loaded Book whose Download goes away is stopped and saved, however it was removed")
+    func downloadRemoved() async throws {
+        try fixture.addBook("first")
+        let player = fixture.player()
+        let observing = Task { await player.observeDownloads() }
+        defer { observing.cancel() }
+        await player.play(bookID: "first")
+        fixture.audio.advance(to: 64)
+
+        try fixture.database.removeDownload(ofBook: "first")
+        for _ in 0..<200 where player.state != .idle {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+
+        #expect(player.state == .idle)
+        #expect(fixture.audio.loadedFiles == nil)
+        #expect(try fixture.progress("first")?.position == 64)
+    }
+
     @Test("At the end of the Book playing stops, saved at the end")
     func endOfBook() async throws {
         try fixture.addBook("first", duration: 3600)

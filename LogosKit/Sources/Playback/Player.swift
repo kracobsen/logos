@@ -189,6 +189,19 @@ public final class Player {
         unload(problem: nil)
     }
 
+    /// Follows Downloads until cancelled: when the loaded Book stops being downloaded (however its Download was
+    /// removed), it's stopped and saved. Removal paths should still call ``stop(bookID:)`` first.
+    public func observeDownloads() async {
+        do {
+            for try await statuses in database.downloadStatusUpdates() {
+                guard let bookID = book?.id, statuses[bookID]?.state != .downloaded else { continue }
+                stop(bookID: bookID)
+            }
+        } catch {
+            log.error("Stopped observing Downloads: \(String(describing: error), privacy: .public)")
+        }
+    }
+
     private func unload(problem: Problem?) {
         saving?.cancel()
         saving = nil
