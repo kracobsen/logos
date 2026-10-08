@@ -7,12 +7,6 @@ struct BookRoute: Hashable, Identifiable {
     var id: String { bookID }
 }
 
-/// A Series link from a Book detail. The Series page arrives with the Series tab; until then it's a placeholder.
-struct SeriesRoute: Hashable {
-    let seriesID: String
-    let name: String
-}
-
 /// Opens Book details from a list and marks tap Book → detail with its budget signpost (≤ 100 ms): the interval
 /// begins at the tap and ends when the detail appears.
 @Observable
@@ -38,6 +32,7 @@ final class BookOpener {
 struct BookDetailView: View {
     @State private var model: BookDetailModel
     @State private var showsFullDescription = false
+    @State private var openedSeries: BookDetailModel.SeriesLink?
     private let onAppear: () -> Void
 
     init(model: BookDetailModel, onAppear: @escaping () -> Void = {}) {
@@ -55,9 +50,8 @@ struct BookDetailView: View {
         }
         .navigationTitle(model.detail?.title ?? "")
         .navigationBarTitleDisplayMode(.inline)
-        .navigationDestination(for: SeriesRoute.self) { series in
-            ContentUnavailableView(series.name, systemImage: "books.vertical")
-                .navigationTitle(series.name)
+        .navigationDestination(item: $openedSeries) { link in
+            SeriesPageView(model: model.seriesPage(for: link))
         }
         .onAppear(perform: onAppear)
         .task { await model.observe() }
@@ -118,7 +112,9 @@ struct BookDetailView: View {
                     .foregroundStyle(.secondary)
             }
             ForEach(model.seriesLinks) { series in
-                NavigationLink(value: SeriesRoute(seriesID: series.seriesID, name: series.name)) {
+                Button {
+                    openedSeries = series
+                } label: {
                     Text(series.label)
                         .font(.subheadline)
                 }
