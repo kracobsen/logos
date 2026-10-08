@@ -62,6 +62,14 @@ public struct AudiobookshelfClient: ServerAPI {
         try await send(Requests.cover(ofBook: bookID, on: server, accessToken: accessToken))
     }
 
+    public func syncSessions(
+        _ sessions: [OutboxSession], device: ClientDevice, libraryID: String, on server: URL, accessToken: String
+    ) async throws(ServerAPIError) -> [SessionResult] {
+        let request = Requests.syncSessions(
+            sessions, device: device, libraryID: libraryID, on: server, accessToken: accessToken)
+        return try Responses.sessionResults(await send(request))
+    }
+
     private func send(_ request: URLRequest) async throws(ServerAPIError) -> Data {
         // Paths only: never log the host, tokens or bodies.
         let endpoint = "\(request.httpMethod ?? "GET") \(request.url?.path() ?? "")"

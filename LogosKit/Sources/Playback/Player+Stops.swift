@@ -50,6 +50,7 @@ extension Player {
     }
 
     func reportStop(_ stop: PlaybackStop) {
+        endListeningSession(after: stop)
         for observer in stopObservers.values { observer.yield(stop) }
     }
 }

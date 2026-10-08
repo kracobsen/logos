@@ -12,6 +12,7 @@ public struct RootView: View {
     let downloads: DownloadsModel?
     let player: Player?
     let settings: SettingsModel?
+    let listening: ListeningReporter?
     @State private var selection: AppTab = .inProgress
     @State private var showsSettings = false
     @Environment(\.scenePhase) private var scenePhase
@@ -24,7 +25,8 @@ public struct RootView: View {
         covers: CoverImages? = nil,
         downloads: DownloadsModel? = nil,
         player: Player? = nil,
-        settings: SettingsModel? = nil
+        settings: SettingsModel? = nil,
+        listening: ListeningReporter? = nil
     ) {
         self.library = library
         self.inProgress = inProgress
@@ -34,6 +36,7 @@ public struct RootView: View {
         self.downloads = downloads
         self.player = player
         self.settings = settings
+        self.listening = listening
     }
 
     public var body: some View {
@@ -81,6 +84,8 @@ public struct RootView: View {
         .task { await series.observe() }
         .task { await covers?.observe() }
         .task { await downloads?.observe() }
+        // The outbox's triggers: sends on launch, then while playing, on stops and when the network returns.
+        .task { await listening?.run() }
         .task {
             // Let the first frame go out before any sync work starts.
             await Task.yield()
@@ -97,8 +102,10 @@ public struct RootView: View {
             if old == .background, new != .background {
                 Task { await library.syncOnForeground() }
                 Task { await downloads?.resume() }
+                listening?.enteredForeground()
             } else if new == .background {
                 Task { await downloads?.enteredBackground() }
+                listening?.enteredBackground()
             }
         }
     }

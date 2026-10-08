@@ -65,8 +65,8 @@ extension AppDatabase {
     }
 
     /// Applies progress fetched from the Server in one transaction, by ``ProgressMerge``: last-writer-wins on when the
-    /// user acted, and only real changes are written. Records for Books not in the Library are ignored. Nothing is
-    /// ever deleted.
+    /// user acted, and only real changes are written. Records for Books not in the Library are ignored, and so are
+    /// Books with unsent outbox entries. Nothing is ever deleted.
     @discardableResult
     public func applyFetchedProgress(_ records: [FetchedProgress]) throws -> AppliedProgress {
         try pool.write { db in
@@ -75,8 +75,10 @@ extension AppDatabase {
             for record in try ProgressRecord.fetchAll(db) {
                 local[record.bookID] = record.progress
             }
+            // A Book with unsent outbox entries keeps its local progress; it's compared again once they're confirmed.
+            let unsent = try Self.bookIDsWithUnsentEntries(db)
             var changed: Set<String> = []
-            for fetched in records where books.contains(fetched.bookID) {
+            for fetched in records where books.contains(fetched.bookID) && !unsent.contains(fetched.bookID) {
                 guard let adopted = ProgressMerge.adopting(fetched, over: local[fetched.bookID]) else { continue }
                 try ProgressRecord(adopted).upsert(db)
                 local[fetched.bookID] = adopted

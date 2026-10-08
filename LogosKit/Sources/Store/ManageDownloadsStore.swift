@@ -42,13 +42,15 @@ extension AppDatabase {
         }
     }
 
-    /// Deletes the Download's rows, and the Book with its progress if it's Not on Server (then `true`).
+    /// Deletes the Download's rows, and the Book with its progress and held outbox entries if it's Not on Server (then
+    /// `true`).
     static func discardDownload(_ db: Database, bookID: String) throws -> Bool {
         try db.execute(sql: "DELETE FROM download WHERE bookID = ?", arguments: [bookID])
         guard try Bool.fetchOne(db, sql: "SELECT notOnServer FROM book WHERE id = ?", arguments: [bookID]) == true
         else { return false }
         try db.execute(sql: "DELETE FROM book WHERE id = ?", arguments: [bookID])
         try db.execute(sql: "DELETE FROM progress WHERE bookID = ?", arguments: [bookID])
+        try deleteListeningSessions(db, bookID: bookID)
         return true
     }
 

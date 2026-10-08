@@ -91,6 +91,8 @@ private final class Services {
         )
         // Application Support is backed up; the database must stay that way (never excluded).
         database = try AppDatabase.open(at: directory.appending(path: "Logos.sqlite"))
+        // Before anything can play: a listening session still open now was left open by a kill.
+        try? database.closeListeningSessionsLeftOpen()
         signIn = SignIn(api: api, tokenStore: tokenStore, database: database)
         // Covers are excluded from backups. Without the directory, the app still works, with placeholders.
         covers = try? CoverFiles(directory: directory.appending(path: "Covers"))
