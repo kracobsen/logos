@@ -58,6 +58,30 @@ struct FileRequestTests {
         #expect(rest["NSURLSessionResumeInfoTempFileName"] as? String == "CFNetworkDownload_abc.tmp")
     }
 
+    @Test("A file request keeps off cellular unless allowed, and never uses a constrained network")
+    func networkPolicy() {
+        let wifiOnly = Requests.file(ofBook: "item-1", ino: "1", on: server, accessToken: "a", allowsCellular: false)
+        let anyNetwork = Requests.file(ofBook: "item-1", ino: "1", on: server, accessToken: "a", allowsCellular: true)
+
+        #expect(!wifiOnly.allowsCellularAccess)
+        #expect(anyNetwork.allowsCellularAccess)
+        #expect(!wifiOnly.allowsConstrainedNetworkAccess)
+        #expect(!anyNetwork.allowsConstrainedNetworkAccess)
+    }
+
+    @Test("Resuming applies the fresh request's network policy")
+    func retargetNetworkPolicy() throws {
+        let old = Requests.file(ofBook: "item-1", ino: "111", on: server, accessToken: "t", allowsCellular: false)
+        let fresh = Requests.file(ofBook: "item-1", ino: "111", on: server, accessToken: "t", allowsCellular: true)
+
+        let retargeted = try #require(ResumeData.retargeting(try resumeData(for: old), to: fresh))
+
+        let (current, original, _) = try requests(in: retargeted)
+        #expect(current?.allowsCellularAccess == true)
+        #expect(original?.allowsCellularAccess == true)
+        #expect(current?.allowsConstrainedNetworkAccess == false)
+    }
+
     @Test("Resume data that can't be read isn't used")
     func unreadable() {
         let fresh = Requests.file(ofBook: "item-1", ino: "222", on: server, accessToken: "new-token")

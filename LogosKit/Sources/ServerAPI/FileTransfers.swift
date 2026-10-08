@@ -72,4 +72,8 @@ public protocol FileTransfers: AnyObject, Sendable {
 
     /// Stops every transfer of the Book. No events are delivered for them.
     func cancel(bookID: String) async
+
+    /// Whether transfers may use cellular (they never use a constrained network). Applies to running transfers too,
+    /// keeping what they've received. Until it's set, transfers are Wi-Fi only.
+    func setAllowsCellularAccess(_ allowed: Bool) async
 }

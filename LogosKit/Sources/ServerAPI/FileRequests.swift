@@ -2,11 +2,16 @@ import Foundation
 
 extension Requests {
     /// `GET /api/items/:id/file/:ino`: one audio file. The Server answers Range requests (206) and `If-Range`.
-    static func file(ofBook bookID: String, ino: String, on server: URL, accessToken: String) -> URLRequest {
+    /// Off cellular unless `allowsCellular`, and never on a constrained network (Low Data Mode).
+    static func file(
+        ofBook bookID: String, ino: String, on server: URL, accessToken: String, allowsCellular: Bool = false
+    ) -> URLRequest {
         let url = server.appending(path: "api/items").appending(path: bookID).appending(path: "file")
             .appending(path: ino)
         var request = URLRequest(url: url)
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.allowsCellularAccess = allowsCellular
+        request.allowsConstrainedNetworkAccess = false
         return request
     }
 }
@@ -20,7 +25,7 @@ extension Requests {
 enum ResumeData {
     private static let requestKeys = ["NSURLSessionResumeCurrentRequest", "NSURLSessionResumeOriginalRequest"]
 
-    /// `data` with its requests replaced by `request`'s URL and `Authorization`, or `nil` if it can't be read (then
+    /// `data` with its requests replaced by `request`'s URL, `Authorization` and network policy, or `nil` if it can't be read (then
     /// the file is downloaded from the start).
     static func retargeting(_ data: Data, to request: URLRequest) -> Data? {
         guard
@@ -35,6 +40,8 @@ enum ResumeData {
             else { return nil }
             updated.url = request.url
             updated.setValue(request.value(forHTTPHeaderField: "Authorization"), forHTTPHeaderField: "Authorization")
+            updated.allowsCellularAccess = request.allowsCellularAccess
+            updated.allowsConstrainedNetworkAccess = request.allowsConstrainedNetworkAccess
             guard
                 let rearchived = try? NSKeyedArchiver.archivedData(
                     withRootObject: updated as NSURLRequest, requiringSecureCoding: true)

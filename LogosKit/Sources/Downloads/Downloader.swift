@@ -80,9 +80,20 @@ public actor Downloader {
     public func start() async {
         guard !isStarted else { return }
         isStarted = true
+        await transfers.setAllowsCellularAccess(policy.allowsCellular)
         await transfers.setEventHandler { [weak self] event in
             await self?.handle(event)
         }
+    }
+
+    /// The "Allow downloads over cellular" setting: saved, and applied to the transfers, running ones included.
+    public func setAllowsCellular(_ allowed: Bool) async {
+        do {
+            try database.setAllowsCellularDownloads(allowed)
+        } catch {
+            log.error("Couldn't save the cellular setting: \(String(describing: error), privacy: .public)")
+        }
+        await transfers.setAllowsCellularAccess(allowed)
     }
 
     /// From the foreground (launch, return, or a tap): rebuilds the active Book's transfers from the database and
@@ -191,8 +202,15 @@ public actor Downloader {
         }
     }
 
-    private var isPausedForStorage: Bool {
-        (try? database.downloadPolicy().isPausedForStorage) ?? false
+    private var isPausedForStorage: Bool { policy.isPausedForStorage }
+
+    private var policy: DownloadPolicy {
+        do {
+            return try database.downloadPolicy()
+        } catch {
+            log.error("Couldn't read the Download policy: \(String(describing: error), privacy: .public)")
+            return .default
+        }
     }
 
     /// Enqueues every file of the active Book that isn't verified or in flight, after making the token fresh and
