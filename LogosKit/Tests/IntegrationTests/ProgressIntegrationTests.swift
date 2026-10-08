@@ -44,7 +44,7 @@ struct ProgressIntegrationTests {
                 == BookProgress(
                     bookID: book.id, position: 45, lastChanged: Date(millisecondsSince1970: lastUpdate),
                     isFinished: false))
-        // Other tests in this suite leave other Books in progress on the shared Server.
+        // Other suites leave progress on the shared Server, so only this Book is checked.
         #expect(try database.inProgressRows().map(\.id).contains(book.id))
 
         // Listening here afterwards is newer, so the next fetch keeps it.

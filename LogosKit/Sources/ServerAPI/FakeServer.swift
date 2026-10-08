@@ -37,6 +37,8 @@ public final class FakeServer: ServerAPI {
         case bookData(URL, id: String, accessToken: String)
         case progress(URL, accessToken: String)
         case cover(URL, bookID: String, accessToken: String)
+        /// `POST /api/session/local-all`, with the sent sessions.
+        case syncSessions(URL, sessions: [OutboxSession], device: ClientDevice, accessToken: String)
         /// A background file transfer being answered (``FakeFileTransfers``).
         case file(URL, bookID: String, ino: String, accessToken: String, resuming: Bool)
     }
@@ -55,6 +57,7 @@ public final class FakeServer: ServerAPI {
         var bookData: [BookData] = []
         var progress: [FetchedProgress] = []
         var covers: [String: Data] = [:]
+        var sessions: [String: ListeningSession] = [:]
         var requests: [Request] = []
         var isReachable: @Sendable (Request) -> Bool = { _ in true }
         var hook: Hook?
@@ -143,6 +146,12 @@ public final class FakeServer: ServerAPI {
     public var covers: [String: Data] {
         get { state.withLock { $0.covers } }
         set { state.withLock { $0.covers = newValue } }
+    }
+
+    /// The listening sessions received, by id, in their latest state. Default: none.
+    public var sessions: [String: ListeningSession] {
+        get { state.withLock { $0.sessions } }
+        set { state.withLock { $0.sessions = newValue } }
     }
 
     /// Decides per request whether it gets through. Default: everything does.
@@ -260,6 +269,36 @@ public final class FakeServer: ServerAPI {
             try authenticate(accessToken, in: state)
             guard let data = state.covers[bookID] else { throw .unexpectedStatus(404) }
             return data
+        }
+    }
+
+    /// Like 2.37.1: a session for a Book the Server doesn't list fails on its own ("Media item not found"); others
+    /// are stored (latest state wins) and move the Book's progress unless the progress is newer than the session's
+    /// `updatedAt`.
+    public func syncSessions(
+        _ sessions: [OutboxSession], device: ClientDevice, libraryID: String, on server: URL, accessToken: String
+    ) async throws(ServerAPIError) -> [SessionResult] {
+        try await receive(
+            .syncSessions(server, sessions: sessions, device: device, accessToken: accessToken), at: server)
+        return try state.withLock { (state) throws(ServerAPIError) -> [SessionResult] in
+            try authenticate(accessToken, in: state)
+            return sessions.map { entry in
+                let session = entry.session
+                guard state.books.contains(where: { $0.id == session.bookID }) else {
+                    return SessionResult(id: session.serverID, isDelivered: false, error: "Media item not found")
+                }
+                state.sessions[session.serverID] = session
+                let updatedAt = session.updatedAt.millisecondsSince1970
+                let index = state.progress.firstIndex { $0.bookID == session.bookID }
+                if let index, state.progress[index].lastUpdate > updatedAt {
+                    return SessionResult(id: session.serverID, isDelivered: true)
+                }
+                let progress = FetchedProgress(
+                    bookID: session.bookID, position: session.currentTime,
+                    isFinished: index.map { state.progress[$0].isFinished } ?? false, lastUpdate: updatedAt)
+                if let index { state.progress[index] = progress } else { state.progress.append(progress) }
+                return SessionResult(id: session.serverID, isDelivered: true)
+            }
         }
     }
 

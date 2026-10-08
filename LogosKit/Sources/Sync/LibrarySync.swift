@@ -55,6 +55,8 @@ public actor LibrarySync {
     /// The progress fetch, sharing this sync's `Auth`. Each sync runs it after stage 1; a foreground return runs it
     /// even when the Library isn't due.
     public nonisolated let progress: ProgressSync
+    /// The listening-sessions outbox, sharing this sync's `Auth`; it runs a progress fetch after each send.
+    public nonisolated let outbox: SessionOutbox
 
     /// - Parameter covers: where stage 3 keeps covers. Without it, covers aren't synced.
     public init(database: AppDatabase, api: any ServerAPI, auth: Auth, clock: any Clock, covers: CoverFiles? = nil) {
@@ -64,6 +66,7 @@ public actor LibrarySync {
         self.clock = clock
         coverSync = covers.map { CoverSync(database: database, api: api, auth: auth, covers: $0) }
         progress = ProgressSync(database: database, api: api, auth: auth)
+        outbox = SessionOutbox(database: database, api: api, auth: auth, clock: clock, progress: progress)
     }
 
     /// Syncs, or joins the sync already running.

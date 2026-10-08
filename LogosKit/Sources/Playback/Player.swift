@@ -524,7 +524,8 @@ public final class Player {
         let now = Date(millisecondsSince1970: clock.now.millisecondsSince1970)
         let progress = BookProgress(bookID: book.id, position: position, lastChanged: now, isFinished: isFinished)
         do {
-            try database.saveProgress(progress)
+            // The same write records it in the listening sessions (Player+Sessions.swift).
+            try database.saveProgress(progress, listening: state == .playing)
         } catch {
             log.error("Couldn't save the position: \(String(describing: error), privacy: .public)")
         }

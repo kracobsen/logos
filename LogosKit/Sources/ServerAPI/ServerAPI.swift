@@ -41,6 +41,13 @@ public protocol ServerAPI: Sendable {
     /// `GET /api/items/:id/cover?width=600&format=jpeg`: the Book's cover as JPEG data, about 600 px wide. A Book
     /// without a cover is `unexpectedStatus(404)`. (The Server doesn't require auth here; the token is harmless.)
     func cover(ofBook bookID: String, on server: URL, accessToken: String) async throws(ServerAPIError) -> Data
+
+    /// `POST /api/session/local-all`: sends listening sessions' latest states (new ids are created, known ones
+    /// updated). One result per session the Server could read; a Book it doesn't have is a per-session failure
+    /// inside a 200, never a 404.
+    func syncSessions(
+        _ sessions: [OutboxSession], device: ClientDevice, libraryID: String, on server: URL, accessToken: String
+    ) async throws(ServerAPIError) -> [SessionResult]
 }
 
 /// Why a Server call failed.

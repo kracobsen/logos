@@ -20,6 +20,7 @@ public final class LaunchModel {
             series = identity.map { _ in SeriesListModel(database: database) }
             downloads = identity.map(makeDownloads)
             settings = identity.map(makeSettings)
+            listening = library.map(makeListening)
         }
     }
     /// The Library tab's model, while signed in.
@@ -30,6 +31,8 @@ public final class LaunchModel {
     public private(set) var series: SeriesListModel?
     /// Downloads (the Downloaded tab, Download buttons), while signed in.
     public private(set) var downloads: DownloadsModel?
+    /// The listening-sessions outbox's send triggers, while signed in.
+    public private(set) var listening: ListeningReporter?
     /// The Settings screen's model, while signed in.
     public private(set) var settings: SettingsModel?
 
@@ -62,6 +65,7 @@ public final class LaunchModel {
         series = identity.map { _ in SeriesListModel(database: database) }
         downloads = identity.map(makeDownloads)
         settings = identity.map(makeSettings)
+        listening = library.map(makeListening)
     }
 
     /// Follows the identity in the database until cancelled.
@@ -86,6 +90,10 @@ public final class LaunchModel {
             database: database, downloader: makeDownloader?(identity) ?? nil, network: SystemNetworkMonitor())
         downloads.player = player
         return downloads
+    }
+
+    private func makeListening(for library: LibraryModel) -> ListeningReporter {
+        ListeningReporter(outbox: library.sync.outbox, player: player)
     }
 
     private func makeLibrary(for identity: ServerIdentity) -> LibraryModel {
