@@ -77,6 +77,8 @@ public final class Player {
     /// Seeks sent to the player and not finished yet; time reports are stale until they are.
     @ObservationIgnored private var pendingSeeks = 0
     @ObservationIgnored private var decodeRetries = 0
+    /// Reloads (``reload(_:at:)``) not finished yet: the player sits at 0 on a fresh timeline until they land.
+    @ObservationIgnored private var reloadsInFlight = 0
     @ObservationIgnored private var playToAudio: SignpostInterval?
     /// What the loaded Book had before it was picked up, for Undo.
     @ObservationIgnored var beforePickUp: (position: Double, isFinished: Bool)?
@@ -322,7 +324,9 @@ public final class Player {
                     return
                 }
                 guard let self, self.state == .playing, self.book?.id == book.id else { return }
-                if self.pendingSeeks == 0 { self.position = self.audio.currentTime }
+                // A reload's fresh timeline says nothing about where the listener is: the last save stands.
+                guard !self.isReloading else { continue }
+                self.catchUpPosition()
                 self.save()
             }
         }
@@ -368,7 +372,7 @@ public final class Player {
         saving = nil
         cancelSleepTimer()
         isFinished = true
-        seek(to: book.duration)
+        moveAndSave(to: book.duration)
         if wasPlaying { reportStop(PlaybackStop(bookID: book.id, position: position, reason: reason)) }
     }
 
@@ -376,6 +380,11 @@ public final class Player {
     /// clearing Finished moves it to 0.
     public func setFinished(_ finished: Bool, bookID: String) {
         guard book?.id == bookID, state == .paused || state == .playing else {
+            if let book, book.id == bookID, state == .loading {
+                // The load in flight goes on to the new position and keeps the new Finished.
+                isFinished = finished
+                position = finished ? book.duration : 0
+            }
             do {
                 try database.setFinished(finished, ofBook: bookID, at: clock.now)
             } catch {
@@ -386,7 +395,6 @@ public final class Player {
         if finished {
             finish(because: .endOfBook)
         } else {
-            isFinished = false
             seek(to: 0)
         }
     }
@@ -395,8 +403,16 @@ public final class Player {
         if state == .playing { pause() } else { play() }
     }
 
-    /// Moves to `time` (in Book seconds): the position moves at once, the audio follows. Saves.
+    /// Moves to `time` (in Book seconds): the position moves at once, the audio follows. Saves. A chosen position
+    /// clears Finished, so Play then plays from there rather than from 0.
     public func seek(to time: Double) {
+        guard book != nil, state != .idle else { return }
+        isFinished = false
+        moveAndSave(to: time)
+    }
+
+    /// Moves to `time` and saves, leaving Finished as it is.
+    private func moveAndSave(to time: Double) {
         guard let book, state != .idle else { return }
         clearPickUp()
         let target = min(max(time, 0), book.duration)
@@ -433,7 +449,7 @@ public final class Player {
     /// The app is going to the background: saves now if playing (a paused Book is already saved).
     public func enteredBackground() {
         guard state == .playing else { return }
-        position = audio.currentTime
+        catchUpPosition()
         save()
     }
 
@@ -474,13 +490,25 @@ public final class Player {
         log.notice("Decode failed at \(time, privacy: .public) s; reloading (try \(self.decodeRetries))")
         guard await reload(book, at: max(time - Self.decodeRetryBackoff, 0)) else { return }
         if wasPlaying, state == .playing { audio.play() }
+        pickUpPending()
     }
 
     /// Loads `book`'s timeline into the player again and moves to `time`, as a new load: returns `false` if a newer
     /// load or stop replaced it, or if the files couldn't be opened (then the Book is unloaded with `.cannotOpen`).
+    ///
+    /// The position is `time` from the start, and stays the one that counts until the reload lands: the 1 s save
+    /// skips, the player's time reports are ignored, and pick-ups wait (callers apply them with `pickUpPending()`).
+    /// A seek or Finished change meanwhile moves the position, and the reload lands there instead.
     func reload(_ book: BookDetail, at time: Double) async -> Bool {
         loadGeneration += 1
         let generation = loadGeneration
+        position = time
+        reloadsInFlight += 1
+        pendingSeeks += 1
+        defer {
+            reloadsInFlight -= 1
+            pendingSeeks -= 1
+        }
         do {
             try await audio.load(fileURLs(of: book))
         } catch {
@@ -491,12 +519,12 @@ public final class Player {
             return false
         }
         guard generation == loadGeneration else { return false }
-        position = time
-        pendingSeeks += 1
-        await audio.seek(to: time)
-        pendingSeeks -= 1
+        await audio.seek(to: position)
         return generation == loadGeneration
     }
+
+    /// Whether a reload is in flight.
+    var isReloading: Bool { reloadsInFlight > 0 }
 
     /// Moves to `time` and sets Finished without saving (for picking up from another device: the Store has it).
     func move(to time: Double, isFinished: Bool) {
@@ -511,7 +539,7 @@ public final class Player {
         }
     }
 
-    /// The live position while playing (unless a seek is landing), for saving.
+    /// The live position while playing, for saving. While a seek or reload is landing, the position is its target.
     func catchUpPosition() {
         if pendingSeeks == 0 { position = audio.currentTime }
     }

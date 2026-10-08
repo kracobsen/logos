@@ -18,7 +18,7 @@ extension Player {
             pause(because: .routeLost)
         case .routeAdded:
             guard state == .playing else { return }
-            position = audio.currentTime
+            catchUpPosition()
             save()
         case .mediaServicesReset:
             Task { await rebuildAfterReset() }
@@ -48,5 +48,6 @@ extension Player {
         if wasPlaying { reportStop(PlaybackStop(bookID: book.id, position: saved, reason: .mediaServicesReset)) }
         guard await reload(book, at: saved) else { return }
         state = .paused
+        pickUpPending()
     }
 }

@@ -4,7 +4,9 @@ import Foundation
 ///
 /// `load` checks the files exist (like the real one failing to open them). Time moves only through ``advance(to:)``
 /// and ``advance(by:)``, which fire the time observers and any boundaries crossed (only while playing). Seeks
-/// finish at once unless ``holdsSeeks`` is set; then ``finishSeeks()`` completes them.
+/// finish at once unless ``holdsSeeks`` is set; then ``finishSeeks()`` completes them. Loads finish at once unless
+/// ``holdsLoads`` is set: then, like the real player, the new timeline is in place (at 0) at once but `load` returns
+/// only on ``finishLoads()``.
 public final class FakeAudioPlayer: AudioPlayer {
     public struct LoadError: Error, Hashable {
         public let missing: URL
@@ -28,6 +30,10 @@ public final class FakeAudioPlayer: AudioPlayer {
     private var timeObservers: [UUID: (Double) -> Void] = [:]
     private var boundaryObservers: [UUID: (times: [Double], handler: (Double) -> Void)] = [:]
     private var heldSeeks: [CheckedContinuation<Void, Never>] = []
+    private var heldLoads: [CheckedContinuation<Void, Never>] = []
+
+    /// When set, loads wait for ``finishLoads()`` (after the timeline is swapped in).
+    public var holdsLoads = false
 
     /// When set, `load` fails as if the player couldn't open the files.
     public var failsToLoad = false
@@ -47,6 +53,17 @@ public final class FakeAudioPlayer: AudioPlayer {
         loadedFiles = files
         loadCount += 1
         currentTime = 0
+        if holdsLoads {
+            await withCheckedContinuation { heldLoads.append($0) }
+        }
+    }
+
+    /// Completes the loads held by ``holdsLoads``.
+    public func finishLoads() async {
+        let held = heldLoads
+        heldLoads = []
+        for load in held { load.resume() }
+        for _ in 0..<20 { await Task.yield() }
     }
 
     public func unload() {
@@ -75,10 +92,11 @@ public final class FakeAudioPlayer: AudioPlayer {
 
     public func seek(to time: Double) async {
         seeks.append(time)
-        currentTime = time
         if holdsSeeks {
+            // Like the real player, it reports where it was until the seek lands.
             await withCheckedContinuation { heldSeeks.append($0) }
         }
+        currentTime = time
         for observer in timeObservers.values { observer(currentTime) }
     }
 

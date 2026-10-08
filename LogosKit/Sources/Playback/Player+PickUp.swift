@@ -57,6 +57,11 @@ extension Player {
     }
 
     private func pickUp(_ progress: BookProgress) {
+        if isReloading {
+            // The reload would land on its own position over it: picked up once it's done.
+            pendingPickUp = progress
+            return
+        }
         switch state {
         case .idle:
             return

@@ -180,6 +180,84 @@ struct PlayerFinishedTests {
         #expect(try fixture.progress("first")?.isFinished == false)
         #expect(try fixture.progress("first")?.position == 0)
     }
+
+    @Test("A Chapter tapped on a Finished loaded Book plays from that Chapter and clears Finished")
+    func chapterOnFinishedLoaded() async throws {
+        try fixture.addBook("first", duration: 3600, chapters: PlayerFixture.chapters(3600, every: 600))
+        let player = fixture.player()
+        await player.play(bookID: "first")
+        fixture.audio.playToEnd(at: 3600)
+        #expect(player.isFinished)
+
+        await player.play(bookID: "first", from: 1200)
+        await fixture.settle()
+
+        #expect(player.state == .playing)
+        #expect(!player.isFinished)
+        #expect(player.position == 1200)
+        #expect(fixture.audio.currentTime == 1200)
+        #expect(
+            try fixture.progress("first")
+                == BookProgress(bookID: "first", position: 1200, lastChanged: fixture.clock.now, isFinished: false))
+    }
+
+    @Test("A Chapter tapped on a Finished Book that isn't loaded plays from that Chapter and clears Finished")
+    func chapterOnFinishedNotLoaded() async throws {
+        try fixture.addBook("first", duration: 3600, chapters: PlayerFixture.chapters(3600, every: 600))
+        try fixture.database.saveProgress(finishedAtEnd().with(lastChanged: fixture.clock.now - 60))
+        let player = fixture.player()
+
+        await player.play(bookID: "first", from: 1200)
+        await fixture.settle()
+
+        #expect(player.state == .playing)
+        #expect(!player.isFinished)
+        #expect(player.position == 1200)
+        #expect(fixture.audio.currentTime == 1200)
+        #expect(try fixture.progress("first")?.isFinished == false)
+        #expect(try fixture.progress("first")?.position == 1200)
+    }
+
+    @Test("Seeking on a paused Finished Book clears Finished, and Play then plays from there")
+    func seekOnFinished() async throws {
+        try fixture.addBook("first", duration: 3600)
+        let player = fixture.player()
+        await player.play(bookID: "first")
+        fixture.audio.playToEnd(at: 3600)
+
+        player.seek(to: 900)
+        await fixture.settle()
+        #expect(!player.isFinished)
+        #expect(try fixture.progress("first")?.isFinished == false)
+        player.play()
+        await fixture.settle()
+
+        #expect(player.state == .playing)
+        #expect(player.position == 900)
+        #expect(fixture.audio.currentTime == 900)
+    }
+
+    @Test("Marking the loading Book Finished by hand isn't undone when it finishes loading")
+    func byHandWhileLoading() async throws {
+        try fixture.addBook("first", duration: 3600)
+        try fixture.saveProgress("first", position: 1200, at: fixture.clock.now - 60)
+        let player = fixture.player()
+        fixture.audio.holdsLoads = true
+        let loading = Task { await player.restoreLastPlayed() }
+        await fixture.settle()
+        #expect(player.state == .loading)
+
+        player.setFinished(true, bookID: "first")
+        await fixture.audio.finishLoads()
+        await loading.value
+        await fixture.settle()
+
+        #expect(player.state == .paused)
+        #expect(player.isFinished)
+        #expect(player.position == 3600)
+        #expect(fixture.audio.currentTime == 3600)
+        #expect(try fixture.progress("first") == finishedAtEnd())
+    }
 }
 
 extension BookProgress {

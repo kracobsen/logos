@@ -165,6 +165,22 @@ struct PlayerSessionTests {
                 == BookProgress(bookID: "first", position: 300.5, lastChanged: fixture.clock.now, isFinished: false))
     }
 
+    @Test("A new route while a seek is landing saves the seek's target")
+    func newRouteMidSeek() async throws {
+        try fixture.addBook("first")
+        let player = fixture.player()
+        await player.play(bookID: "first")
+        fixture.audio.advance(to: 300)
+        fixture.audio.holdsSeeks = true
+        player.seek(to: 2000)
+        await fixture.settle()
+
+        fixture.session.send(.routeAdded)
+
+        #expect(try fixture.progress("first")?.position == 2000)
+        await fixture.audio.finishSeeks()
+    }
+
     @Test("A new route leaves a paused Book paused")
     func newRouteLeavesPausedBookPaused() async throws {
         try fixture.addBook("first")

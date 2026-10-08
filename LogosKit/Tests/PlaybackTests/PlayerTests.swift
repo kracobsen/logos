@@ -124,6 +124,22 @@ struct PlayerTests {
         #expect(fixture.audio.seeks.last == 2000)
     }
 
+    @Test("Going to the background while a seek is landing saves the seek's target")
+    func backgroundMidSeek() async throws {
+        try fixture.addBook("first")
+        let player = fixture.player()
+        await player.play(bookID: "first")
+        fixture.audio.advance(to: 100)
+        fixture.audio.holdsSeeks = true
+        player.seek(to: 2000)
+        await fixture.settle()
+
+        player.enteredBackground()
+
+        #expect(try fixture.progress("first")?.position == 2000)
+        await fixture.audio.finishSeeks()
+    }
+
     @Test("Skips move by their interval within the Book, and Chapter jumps go to the Chapter's start; each saves")
     func skipsAndChapterJumps() async throws {
         try fixture.addBook("first", duration: 3600, chapters: PlayerFixture.chapters(3600, every: 600))
