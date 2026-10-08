@@ -33,11 +33,6 @@ public final class InProgressModel {
             log.error("Stopped observing In Progress: \(String(describing: error), privacy: .public)")
         }
     }
-
-    /// The progress model for a Book's detail.
-    public func progressModel(for row: InProgressRow) -> BookProgressModel {
-        BookProgressModel(database: database, bookID: row.id, duration: row.duration)
-    }
 }
 
 /// How far the listener is in a Book, as Book detail shows it.
