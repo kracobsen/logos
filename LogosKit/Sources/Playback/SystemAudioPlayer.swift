@@ -38,6 +38,12 @@ public final class SystemAudioPlayer: AudioPlayer {
         }
     }
 
+    /// Keeps sped-up speech natural. The spec allows `.timeDomain` instead if that sounds better on a device.
+    public static let timePitchAlgorithm = AVAudioTimePitchAlgorithm.spectral
+
+    /// The time-pitch algorithm of what's loaded (nil when nothing is).
+    public var pitchAlgorithm: AVAudioTimePitchAlgorithm? { player.currentItem?.audioTimePitchAlgorithm }
+
     public init() {
         setUp(player)
     }
@@ -92,6 +98,7 @@ public final class SystemAudioPlayer: AudioPlayer {
             cursor = cursor + range.duration
         }
         let item = AVPlayerItem(asset: composition)
+        item.audioTimePitchAlgorithm = Self.timePitchAlgorithm
         replaceItem(with: item)
         try await Self.waitUntilReady(item)
     }

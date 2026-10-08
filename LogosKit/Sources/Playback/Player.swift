@@ -38,8 +38,12 @@ public final class Player {
     public internal(set) var position: Double = 0
     /// Whether the loaded Book is Finished.
     public private(set) var isFinished = false
-    /// The speed playing runs at.
-    public private(set) var rate: Float
+    /// The global speed playing runs at, one of ``PlaybackSpeed/all``. Kept in the Store across launches.
+    public internal(set) var speed: Double
+    /// How far ``skipBack()`` moves. Kept in the Store.
+    public internal(set) var skipBackInterval: SkipInterval
+    /// How far ``skipForward()`` moves. Kept in the Store.
+    public internal(set) var skipForwardInterval: SkipInterval
     public private(set) var problem: Problem?
     /// The Sleep Timer set on the loaded Book, if any (see `Player+SleepTimer.swift`).
     public internal(set) var sleepTimer: SleepTimer?
@@ -81,7 +85,11 @@ public final class Player {
         self.audio = audio
         self.clock = clock
         self.session = session
-        rate = audio.rate
+        let settings = Self.readSettings(database)
+        speed = settings.speed
+        skipBackInterval = settings.skipBack
+        skipForwardInterval = settings.skipForward
+        audio.rate = Float(settings.speed)
         timeObservation = audio.observeTime(every: Self.publishInterval) { [weak self] time in
             self?.timePassed(time)
         }
@@ -324,12 +332,6 @@ public final class Player {
     public func jump(toChapter index: Int) {
         guard let chapters = book?.chapters.chapters, chapters.indices.contains(index) else { return }
         seek(to: chapters[index].start)
-    }
-
-    /// Sets the speed playing runs at.
-    public func setRate(_ rate: Float) {
-        audio.rate = rate
-        self.rate = rate
     }
 
     /// The app is going to the background: saves now if playing (a paused Book is already saved).

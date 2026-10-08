@@ -72,6 +72,18 @@ struct SystemAudioPlayerTests {
         player.unload()
     }
 
+    @Test("Sped-up speech keeps its pitch: the timeline uses the spectral time-pitch algorithm")
+    func spectralPitch() async throws {
+        let player = SystemAudioPlayer()
+        player.rate = 1.5
+
+        try await player.load([try audioFile("1.m4a", seconds: 1)])
+
+        #expect(player.pitchAlgorithm == .spectral)
+        #expect(player.rate == 1.5)
+        player.unload()
+    }
+
     @Test("A missing file fails the load")
     func missingFile() async throws {
         let player = SystemAudioPlayer()
