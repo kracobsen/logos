@@ -15,6 +15,12 @@ public struct PlaybackStop: Sendable, Hashable {
         case stopped
         /// The Book's files couldn't be played any more.
         case failed
+        /// A call or other interruption took the audio session (playing may resume when it ends).
+        case interrupted
+        /// The headphones, Bluetooth or car playing went away.
+        case routeLost
+        /// The media services were reset; the player was rebuilt paused at the saved position.
+        case mediaServicesReset
     }
 
     public let bookID: String

@@ -46,6 +46,32 @@ struct SystemAudioPlayerTests {
         player.unload()
     }
 
+    @Test("After a rebuild nothing is loaded; the Book loads and seeks again, and observers and rate carry over")
+    func rebuild() async throws {
+        let files = [try audioFile("1.m4a", seconds: 2), try audioFile("2.m4a", seconds: 3)]
+        let player = SystemAudioPlayer()
+        player.rate = 1.5
+        var reported: [Double] = []
+        let observation = player.observeTime(every: 0.25) { reported.append($0) }
+        try await player.load(files)
+        await player.seek(to: 1)
+
+        player.rebuild()
+        #expect(player.currentTime == 0)
+        reported = []
+        try await player.load(files)
+        await player.seek(to: 3.5)
+
+        #expect(abs(player.currentTime - 3.5) < 0.001)
+        #expect(player.rate == 1.5)
+        for _ in 0..<100 where !reported.contains(where: { abs($0 - 3.5) < 0.001 }) {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(reported.contains { abs($0 - 3.5) < 0.001 })
+        observation.cancel()
+        player.unload()
+    }
+
     @Test("Sped-up speech keeps its pitch: the timeline uses the spectral time-pitch algorithm")
     func spectralPitch() async throws {
         let player = SystemAudioPlayer()

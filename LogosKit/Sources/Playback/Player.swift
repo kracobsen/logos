@@ -33,11 +33,11 @@ public final class Player {
         case damagedFiles
     }
 
-    public private(set) var state: State = .idle
+    public internal(set) var state: State = .idle
     /// The loaded Book, from the moment it starts loading.
     public private(set) var book: BookDetail?
     /// In Book seconds. Moves to a seek's target straight away.
-    public private(set) var position: Double = 0
+    public internal(set) var position: Double = 0
     /// Whether the loaded Book is Finished.
     public private(set) var isFinished = false
     /// The global speed playing runs at, one of ``PlaybackSpeed/all``. Kept in the Store across launches.
@@ -69,7 +69,7 @@ public final class Player {
     @ObservationIgnored let audio: any AudioPlayer
     @ObservationIgnored private let clock: any Clock
     @ObservationIgnored private var timeObservation: AudioPlayerObservation?
-    @ObservationIgnored private var saving: Task<Void, Never>?
+    @ObservationIgnored var saving: Task<Void, Never>?
     /// Bumped by every load, so an older load that finishes late is ignored.
     @ObservationIgnored private var loadGeneration = 0
     /// Seeks sent to the player and not finished yet; time reports are stale until they are.
@@ -82,12 +82,20 @@ public final class Player {
     @ObservationIgnored var pendingPickUp: BookProgress?
     @ObservationIgnored var sleepTimerObservation: AudioPlayerObservation?
     @ObservationIgnored var stopObservers: [UUID: AsyncStream<PlaybackStop>.Continuation] = [:]
+    @ObservationIgnored private let session: (any AudioSession)?
+    /// Set when an interruption paused playing, so it may resume when the interruption ends.
+    @ObservationIgnored var resumesAfterInterruption = false
 
-    public init(database: AppDatabase, files: DownloadFiles, audio: any AudioPlayer, clock: any Clock) {
+    /// `session` reports interruptions, route changes and media-services resets (see Player+AudioSession.swift).
+    public init(
+        database: AppDatabase, files: DownloadFiles, audio: any AudioPlayer, clock: any Clock,
+        session: (any AudioSession)? = nil
+    ) {
         self.database = database
         self.files = files
         self.audio = audio
         self.clock = clock
+        self.session = session
         let settings = Self.readSettings(database)
         speed = settings.speed
         skipBackInterval = settings.skipBack
@@ -97,6 +105,7 @@ public final class Player {
             self?.timePassed(time)
         }
         audio.onEvent = { [weak self] event in self?.handle(event) }
+        session?.onEvent = { [weak self] event in self?.handle(event) }
     }
 
     /// The index of the Chapter the position is in, if a Book is loaded.
@@ -261,6 +270,7 @@ public final class Player {
         cancelSleepTimer()
         saving?.cancel()
         saving = nil
+        resumesAfterInterruption = false
         audio.unload()
         clearPickUp()
         book = nil
@@ -289,6 +299,7 @@ public final class Player {
             return
         }
         clearPickUp()
+        resumesAfterInterruption = false
         if isFinished {
             isFinished = false
             seek(to: 0)
@@ -325,7 +336,9 @@ public final class Player {
     func pause(because reason: PlaybackStop.Reason, landingAt landing: Double? = nil) {
         guard let book, state == .playing else { return }
         let stoppedAt = landing ?? (pendingSeeks == 0 ? audio.currentTime : position)
-        if FinishRule.finishes(at: stoppedAt, duration: book.duration) {
+        // The system pausing (an interruption, a lost route) isn't the listener stopping, so it never finishes.
+        let isSystemPause = reason == .interrupted || reason == .routeLost
+        if !isSystemPause, FinishRule.finishes(at: stoppedAt, duration: book.duration) {
             finish(because: reason)
             return
         }
@@ -457,25 +470,30 @@ public final class Player {
         }
         decodeRetries += 1
         log.notice("Decode failed at \(time, privacy: .public) s; reloading (try \(self.decodeRetries))")
+        guard await reload(book, at: max(time - Self.decodeRetryBackoff, 0)) else { return }
+        if wasPlaying, state == .playing { audio.play() }
+    }
+
+    /// Loads `book`'s timeline into the player again and moves to `time`, as a new load: returns `false` if a newer
+    /// load or stop replaced it, or if the files couldn't be opened (then the Book is unloaded with `.cannotOpen`).
+    func reload(_ book: BookDetail, at time: Double) async -> Bool {
         loadGeneration += 1
         let generation = loadGeneration
-        let resumeAt = max(time - Self.decodeRetryBackoff, 0)
         do {
             try await audio.load(fileURLs(of: book))
         } catch {
-            guard generation == loadGeneration else { return }
+            guard generation == loadGeneration else { return false }
             pause(because: .failed)
             unload(problem: .cannotOpen)
             discardDamaged(book, reports: true)
-            return
+            return false
         }
-        guard generation == loadGeneration else { return }
-        position = resumeAt
+        guard generation == loadGeneration else { return false }
+        position = time
         pendingSeeks += 1
-        await audio.seek(to: resumeAt)
+        await audio.seek(to: time)
         pendingSeeks -= 1
-        guard generation == loadGeneration else { return }
-        if wasPlaying, state == .playing { audio.play() }
+        return generation == loadGeneration
     }
 
     /// Moves to `time` and sets Finished without saving (for picking up from another device: the Store has it).
