@@ -50,7 +50,7 @@ struct LibraryRowRecord: Decodable, FetchableRecord, TableRecord {
     static var databaseSelection: [any SQLSelectable] {
         [
             Column("id"), Column("title"), Column("authorName"), Column("narratorName"), Column("seriesName"),
-            Column("addedAt"), Column("duration"),
+            Column("addedAt"), Column("duration"), Column("authorNameLF"),
         ]
     }
 
@@ -61,12 +61,14 @@ struct LibraryRowRecord: Decodable, FetchableRecord, TableRecord {
     var seriesName: String
     var addedAt: Int64
     var duration: Double
+    var authorNameLF: String
 
     var row: LibraryRow {
         LibraryRow(
             id: id,
             title: title,
             authorName: authorName,
+            authorNameLF: authorNameLF,
             narratorName: narratorName,
             seriesName: seriesName,
             addedAt: Date(timeIntervalSince1970: TimeInterval(addedAt) / 1000),

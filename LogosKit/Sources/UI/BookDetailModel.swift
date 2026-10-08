@@ -28,8 +28,8 @@ public final class BookDetailModel {
     public let progress: BookProgressModel
 
     public let bookID: String
-    private let database: AppDatabase
-    private let sync: LibrarySync
+    let database: AppDatabase
+    let sync: LibrarySync
 
     public init(bookID: String, database: AppDatabase, sync: LibrarySync) {
         self.bookID = bookID

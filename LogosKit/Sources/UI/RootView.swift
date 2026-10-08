@@ -5,6 +5,7 @@ import SwiftUI
 public struct RootView: View {
     let library: LibraryModel
     let inProgress: InProgressModel
+    let series: SeriesListModel
     let launch: LaunchSignpost?
     let covers: CoverImages?
     @State private var selection: AppTab = .inProgress
@@ -13,11 +14,13 @@ public struct RootView: View {
     public init(
         library: LibraryModel,
         inProgress: InProgressModel,
+        series: SeriesListModel,
         launch: LaunchSignpost? = nil,
         covers: CoverImages? = nil
     ) {
         self.library = library
         self.inProgress = inProgress
+        self.series = series
         self.launch = launch
         self.covers = covers
     }
@@ -32,6 +35,8 @@ public struct RootView: View {
                             InProgressView(model: inProgress, library: library, launch: launch)
                         case .library:
                             LibraryView(model: library, launch: launch)
+                        case .series:
+                            SeriesListView(model: series, library: library)
                         default:
                             ContentUnavailableView(tab.title, systemImage: tab.systemImage)
                                 .navigationTitle(tab.title)
@@ -43,6 +48,7 @@ public struct RootView: View {
         .environment(covers)
         .task { await library.observe() }
         .task { await inProgress.observe() }
+        .task { await series.observe() }
         .task { await covers?.observe() }
         .task {
             // Let the first frame go out before any sync work starts.
