@@ -42,7 +42,7 @@ public struct AppRootView: View {
             if let library = launch.library, let inProgress = launch.inProgress, let series = launch.series {
                 RootView(
                     library: library, inProgress: inProgress, series: series, launch: launchSignpost, covers: covers,
-                    downloads: launch.downloads, player: player)
+                    downloads: launch.downloads, player: player, settings: launch.settings)
             } else {
                 SignInView(model: signIn)
                     .onAppear { launchSignpost?.end() }

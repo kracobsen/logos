@@ -14,6 +14,7 @@ struct DownloadsFixture {
     let database: AppDatabase
     let files: DownloadFiles
     let covers: CoverFiles
+    let storage = FakeStorageCapacity()
 
     init(books: [BookData]) async throws {
         server = FakeServer(clock: clock)
@@ -42,7 +43,7 @@ struct DownloadsFixture {
         let auth = Auth(server: server.address, api: server, tokenStore: tokens, clock: clock)
         let downloader = Downloader(
             database: database, api: server, auth: auth, transfers: server.transfers, files: files, covers: covers,
-            clock: clock, inForeground: inForeground)
+            clock: clock, inForeground: inForeground, storage: storage)
         await downloader.start()
         return downloader
     }
@@ -71,7 +72,7 @@ struct DownloadsFixture {
     }
 }
 
-func book(_ id: String, files: [(String, Int64)], cover: Bool = false) -> BookData {
+func book(_ id: String, files: [(String, Int64)], cover: Bool = false, ino: String? = nil) -> BookData {
     var listed = FakeServer.book(id.capitalized, id: id)
     listed = ListedBook(
         id: listed.id, mediaID: listed.mediaID, title: listed.title, subtitle: nil, authorName: listed.authorName,
@@ -80,7 +81,7 @@ func book(_ id: String, files: [(String, Int64)], cover: Bool = false) -> BookDa
         size: files.reduce(0) { $0 + $1.1 }, hasCover: cover)
     let tracks = files.enumerated().map { index, file in
         AudioTrack(
-            index: index + 1, ino: "ino-\(id)-\(file.0)", relPath: file.0, size: file.1, duration: 60,
+            index: index + 1, ino: ino ?? "ino-\(id)-\(file.0)", relPath: file.0, size: file.1, duration: 60,
             startOffset: 60 * Double(index), mimeType: "audio/mpeg")
     }
     return BookData(book: listed, chapters: [], tracks: tracks, series: [])
@@ -165,7 +166,7 @@ struct DownloaderTests {
                         try fixture.tokens.load()?.accessToken))))
     }
 
-    @Test("A transfer that stops part-way resumes from its partial data, with the ino read again")
+    @Test("A transfer that stops part-way resumes from its partial data after a backoff, with the ino read again")
     func resumes() async throws {
         let fixture = try await DownloadsFixture(books: [book("a", files: [("01.mp3", 100)])])
         let downloader = await fixture.downloader()
@@ -173,6 +174,8 @@ struct DownloaderTests {
         let bookDataRequests = fixture.server.requests.count { if case .bookData = $0 { true } else { false } }
 
         await fixture.server.transfers.interrupt(transfer("a", "01.mp3"), receivedBytes: 40)
+        await fixture.clock.advance(by: Downloader.backoff[0])
+        await fixture.eventually { fixture.pending.contains(transfer("a", "01.mp3")) }
 
         let resumed = try #require(fixture.server.transfers.pending.first)
         #expect(resumed.transfer == transfer("a", "01.mp3"))
@@ -213,6 +216,8 @@ struct DownloaderTests {
         let downloader = await fixture.downloader()
         await downloader.download("a")
         await fixture.server.transfers.interrupt(transfer("a", "01.mp3"), receivedBytes: 4)
+        await fixture.clock.advance(by: Downloader.backoff[0])
+        await fixture.eventually { fixture.pending.contains(transfer("a", "01.mp3")) }
         let enqueuedBefore = fixture.server.transfers.enqueued.count
 
         // More 401s than a file has attempts.
@@ -237,6 +242,8 @@ struct DownloaderTests {
         let downloader = await fixture.downloader()
         await downloader.download("a")
         await fixture.server.transfers.interrupt(transfer("a", "01.mp3"), receivedBytes: 4)
+        await fixture.clock.advance(by: Downloader.backoff[0])
+        await fixture.eventually { fixture.pending.contains(transfer("a", "01.mp3")) }
         await fixture.server.transfers.complete(transfer("a", "01.mp3"))
 
         #expect(fixture.onDisk("a", "01.mp3") == nil)

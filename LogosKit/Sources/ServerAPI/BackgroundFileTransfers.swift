@@ -34,6 +34,8 @@ public final class BackgroundFileTransfers: NSObject, FileTransfers, Sendable {
         var silenced: Set<Int> = []
         var lastProgress: [Int: Date] = [:]
         var backgroundCompletion: (@Sendable () -> Void)?
+        /// Set per request (a background session's own setting can't change); Wi-Fi only until told otherwise.
+        var allowsCellularAccess = false
     }
 
     private let state = Mutex(State())
@@ -42,12 +44,14 @@ public final class BackgroundFileTransfers: NSObject, FileTransfers, Sendable {
     private let continuation: AsyncStream<Item>.Continuation
 
     /// A background configuration for Downloads: launches the app for events, not discretionary, never on
-    /// constrained networks (Low Data Mode), no cookies.
+    /// constrained networks (Low Data Mode), no cookies. Cellular is decided per request
+    /// (``setAllowsCellularAccess(_:)``), so the configuration allows it.
     public static func backgroundConfiguration(identifier: String) -> URLSessionConfiguration {
         let configuration = URLSessionConfiguration.background(withIdentifier: identifier)
         configuration.sessionSendsLaunchEvents = true
         configuration.isDiscretionary = false
         configuration.allowsConstrainedNetworkAccess = false
+        configuration.allowsCellularAccess = true
         configuration.httpShouldSetCookies = false
         configuration.httpCookieAcceptPolicy = .never
         return configuration
@@ -104,7 +108,8 @@ public final class BackgroundFileTransfers: NSObject, FileTransfers, Sendable {
             task.cancel()
         }
         let urlRequest = Requests.file(
-            ofBook: transfer.bookID, ino: request.ino, on: request.server, accessToken: request.accessToken)
+            ofBook: transfer.bookID, ino: request.ino, on: request.server, accessToken: request.accessToken,
+            allowsCellular: state.withLock { $0.allowsCellularAccess })
         let task: URLSessionDownloadTask
         if let resumeData = request.resumeData, let retargeted = ResumeData.retargeting(resumeData, to: urlRequest) {
             task = session.downloadTask(withResumeData: retargeted)
@@ -131,6 +136,30 @@ public final class BackgroundFileTransfers: NSObject, FileTransfers, Sendable {
         for task in await tasks(where: { $0.bookID == bookID }) {
             silence(task)
             task.cancel()
+        }
+    }
+
+    public func setAllowsCellularAccess(_ allowed: Bool) async {
+        let changed = state.withLock { state in
+            defer { state.allowsCellularAccess = allowed }
+            return state.allowsCellularAccess != allowed
+        }
+        guard changed else { return }
+        // A task's request can't change: replace each running one, resuming from what it has received.
+        for task in await tasks(where: { _ in true }) {
+            guard let task = task as? URLSessionDownloadTask, var request = task.originalRequest else { continue }
+            let description = task.taskDescription
+            silence(task)
+            let resumeData = await task.cancelByProducingResumeData()
+            request.allowsCellularAccess = allowed
+            let replacement: URLSessionDownloadTask
+            if let resumeData, let retargeted = ResumeData.retargeting(resumeData, to: request) {
+                replacement = session.downloadTask(withResumeData: retargeted)
+            } else {
+                replacement = session.downloadTask(with: request)
+            }
+            replacement.taskDescription = description
+            replacement.resume()
         }
     }
 

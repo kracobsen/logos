@@ -13,6 +13,9 @@ struct DownloadsView: View {
 
     var body: some View {
         List {
+            if let notice = model.notice {
+                DownloadsNoticeView(notice: notice)
+            }
             if !model.list.queue.isEmpty {
                 Section("Queue") {
                     ForEach(model.list.queue) { row in
@@ -72,7 +75,7 @@ struct DownloadsView: View {
         Button {
             opener.open(row.id)
         } label: {
-            DownloadRowView(row: row)
+            DownloadRowView(row: row, notice: model.notice)
         }
         .foregroundStyle(.primary)
         .swipeActions(edge: .trailing) {
@@ -88,6 +91,8 @@ struct DownloadsView: View {
 /// One Downloaded row: title and author, with the size, or progress while in the queue. Bounded height.
 struct DownloadRowView: View {
     let row: DownloadRow
+    /// Why the queue waits, shown on waiting rows instead of "Waiting".
+    var notice: DownloadsNotice?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -119,10 +124,15 @@ struct DownloadRowView: View {
     private var detail: String {
         switch row.state {
         case .downloaded: DownloadsModel.size(row.totalBytes)
-        case .queued: "Waiting"
-        case .downloading: row.status.fractionDone.formatted(.percent.precision(.fractionLength(0)))
+        case .queued: notice?.text ?? "Waiting"
+        case .downloading:
+            notice.map { "\($0.text) · " + percent } ?? percent
         case .failed: "Failed"
         }
+    }
+
+    private var percent: String {
+        row.status.fractionDone.formatted(.percent.precision(.fractionLength(0)))
     }
 }
 
@@ -162,12 +172,14 @@ struct DownloadButton: View {
             HStack(spacing: 12) {
                 if case .downloading(let fraction) = action {
                     ProgressView(value: fraction) {
-                        Text("Downloading \(fraction.formatted(.percent.precision(.fractionLength(0))))")
-                            .font(.subheadline)
-                            .monospacedDigit()
+                        Text(
+                            "\(downloads.notice?.text ?? "Downloading") \(fraction.formatted(.percent.precision(.fractionLength(0))))"
+                        )
+                        .font(.subheadline)
+                        .monospacedDigit()
                     }
                 } else {
-                    Label("Waiting to download", systemImage: "clock")
+                    Label(downloads.notice?.text ?? "Waiting to download", systemImage: "clock")
                         .font(.subheadline)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }

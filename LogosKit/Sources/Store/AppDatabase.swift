@@ -77,6 +77,7 @@ public struct AppDatabase: Sendable {
         registerBookDataMigration(in: &migrator)
         registerDownloadsMigration(in: &migrator)
         registerManageDownloadsMigration(in: &migrator)
+        registerDownloadPolicyMigration(in: &migrator)
         return migrator
     }
 

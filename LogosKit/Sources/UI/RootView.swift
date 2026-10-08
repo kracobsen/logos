@@ -11,7 +11,9 @@ public struct RootView: View {
     let covers: CoverImages?
     let downloads: DownloadsModel?
     let player: Player?
+    let settings: SettingsModel?
     @State private var selection: AppTab = .inProgress
+    @State private var showsSettings = false
     @Environment(\.scenePhase) private var scenePhase
 
     public init(
@@ -21,7 +23,8 @@ public struct RootView: View {
         launch: LaunchSignpost? = nil,
         covers: CoverImages? = nil,
         downloads: DownloadsModel? = nil,
-        player: Player? = nil
+        player: Player? = nil,
+        settings: SettingsModel? = nil
     ) {
         self.library = library
         self.inProgress = inProgress
@@ -30,6 +33,7 @@ public struct RootView: View {
         self.covers = covers
         self.downloads = downloads
         self.player = player
+        self.settings = settings
     }
 
     public var body: some View {
@@ -37,19 +41,28 @@ public struct RootView: View {
             ForEach(AppTab.allCases, id: \.self) { tab in
                 Tab(tab.title, systemImage: tab.systemImage, value: tab) {
                     NavigationStack {
-                        switch tab {
-                        case .inProgress:
-                            InProgressView(model: inProgress, library: library, launch: launch)
-                        case .library:
-                            LibraryView(model: library, launch: launch)
-                        case .series:
-                            SeriesListView(model: series, library: library)
-                        case .downloaded:
-                            if let downloads {
-                                DownloadsView(model: downloads, library: library)
-                            } else {
-                                ContentUnavailableView(tab.title, systemImage: tab.systemImage)
-                                    .navigationTitle(tab.title)
+                        Group {
+                            switch tab {
+                            case .inProgress:
+                                InProgressView(model: inProgress, library: library, launch: launch)
+                            case .library:
+                                LibraryView(model: library, launch: launch)
+                            case .series:
+                                SeriesListView(model: series, library: library)
+                            case .downloaded:
+                                if let downloads {
+                                    DownloadsView(model: downloads, library: library)
+                                } else {
+                                    ContentUnavailableView(tab.title, systemImage: tab.systemImage)
+                                        .navigationTitle(tab.title)
+                                }
+                            }
+                        }
+                        .toolbar {
+                            if settings != nil {
+                                ToolbarItem(placement: .topBarLeading) {
+                                    Button("Settings", systemImage: "gearshape") { showsSettings = true }
+                                }
                             }
                         }
                     }
@@ -58,6 +71,9 @@ public struct RootView: View {
             }
         }
         .modifier(PlayerChrome(player: player))
+        .sheet(isPresented: $showsSettings) {
+            if let settings { SettingsView(model: settings) }
+        }
         .environment(covers)
         .environment(downloads)
         .task { await library.observe() }

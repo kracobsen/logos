@@ -21,6 +21,7 @@ public final class FakeFileTransfers: FileTransfers {
         var enqueued: [FileTransferRequest] = []
         var handler: (@Sendable (FileTransferEvent) async -> Void)?
         var held: [FileTransferEvent] = []
+        var allowsCellularAccess = false
     }
 
     private unowned let server: FakeServer
@@ -40,6 +41,12 @@ public final class FakeFileTransfers: FileTransfers {
     /// Stops serving the Book's file with this `ino` (404 from now on).
     public func stopServing(bookID: String, ino: String) {
         state.withLock { _ = $0.files.removeValue(forKey: Self.key(bookID, ino)) }
+    }
+
+    /// What ``setAllowsCellularAccess(_:)`` last set (`false` at first). Set it to stand for a new process.
+    public var allowsCellularAccess: Bool {
+        get { state.withLock { $0.allowsCellularAccess } }
+        set { state.withLock { $0.allowsCellularAccess = newValue } }
     }
 
     /// Every request ever enqueued, in order.
@@ -107,6 +114,10 @@ public final class FakeFileTransfers: FileTransfers {
 
     public func cancel(bookID: String) async {
         state.withLock { $0.pending.removeAll { $0.transfer.bookID == bookID } }
+    }
+
+    public func setAllowsCellularAccess(_ allowed: Bool) async {
+        allowsCellularAccess = allowed
     }
 
     // MARK: Internals
