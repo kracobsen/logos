@@ -1,3 +1,4 @@
+import Domain
 import Foundation
 
 /// The real ``ServerAPI``: audiobookshelf over `URLSession`.
@@ -35,6 +36,12 @@ public struct AudiobookshelfClient: ServerAPI {
 
     public func libraries(on server: URL, accessToken: String) async throws(ServerAPIError) -> [ServerLibrary] {
         try Responses.libraries(await send(Requests.libraries(server, accessToken: accessToken)))
+    }
+
+    public func books(inLibrary libraryID: String, on server: URL, accessToken: String) async throws(ServerAPIError)
+        -> [ListedBook]
+    {
+        try Responses.books(await send(Requests.books(inLibrary: libraryID, on: server, accessToken: accessToken)))
     }
 
     private func send(_ request: URLRequest) async throws(ServerAPIError) -> Data {

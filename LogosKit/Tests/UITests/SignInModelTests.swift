@@ -105,8 +105,19 @@ struct LaunchModelTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let database = try AppDatabase.open(at: directory.appending(path: "logos.sqlite"))
 
-        let model = LaunchModel(database: database)
+        let clock = TestClock()
+        let server = FakeServer(clock: clock)
+        let makeSync = { (identity: ServerIdentity) in
+            LibrarySync(
+                database: database,
+                api: server,
+                auth: Auth(server: identity.serverURL, api: server, tokenStore: InMemoryTokenStore(), clock: clock),
+                clock: clock
+            )
+        }
+        let model = LaunchModel(database: database, makeLibrarySync: makeSync)
         #expect(model.identity == nil)
+        #expect(model.library == nil)
         let observing = Task { await model.observe() }
         defer { observing.cancel() }
 
@@ -122,8 +133,11 @@ struct LaunchModelTests {
             try await Task.sleep(for: .milliseconds(10))
         }
         #expect(model.identity == identity)
+        #expect(model.library != nil)
 
         // A later launch skips sign-in straight away.
-        #expect(LaunchModel(database: database).identity == identity)
+        let relaunched = LaunchModel(database: database, makeLibrarySync: makeSync)
+        #expect(relaunched.identity == identity)
+        #expect(relaunched.library != nil)
     }
 }

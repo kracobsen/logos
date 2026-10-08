@@ -1,3 +1,4 @@
+import Domain
 import Foundation
 import Testing
 
@@ -10,6 +11,47 @@ struct DecodingTests {
     static func payload(_ name: String) throws -> Data {
         let url = try #require(Bundle.module.url(forResource: name, withExtension: "json", subdirectory: "Payloads"))
         return try Data(contentsOf: url)
+    }
+
+    @Test("The Library list gives every Book with its list data")
+    func books() throws {
+        let books = try Responses.books(Self.payload("library-items"))
+        #expect(books.count == 6)
+        let first = try #require(books.first { $0.title == "The First Light" })
+        #expect(
+            first
+                == ListedBook(
+                    id: "5b8aa451-bf47-4116-b9d5-bab96e27a494",
+                    mediaID: "cf01d58e-9b9f-4490-9fbf-caee9e978544",
+                    title: "The First Light",
+                    subtitle: nil,
+                    authorName: "Ada Fixture",
+                    authorNameLF: "Fixture, Ada",
+                    narratorName: "Nell Narrator",
+                    seriesName: "Fixture Saga #1",
+                    description: first.description,
+                    publishedYear: "2001",
+                    genres: ["Fixture"],
+                    addedAt: Date(timeIntervalSince1970: 1_791_465_521.154),
+                    updatedAt: 1_791_465_521_154,
+                    duration: 120,
+                    size: 480_462,
+                    hasCover: true
+                )
+        )
+        #expect(first.description?.hasPrefix("First Book of the Fixture Saga") == true)
+        let plain = try #require(books.first { $0.title == "Plain Silence" })
+        #expect(plain.hasCover == false)
+        #expect(plain.seriesName == "")
+        #expect(plain.narratorName == "")
+        #expect(plain.description == nil)
+    }
+
+    @Test("A list with a Book missing its id or title can't be read, so it's never applied")
+    func undecodableBooks() throws {
+        let data = Data(#"{"results":[{"id":"x","addedAt":1,"updatedAt":1,"media":{"metadata":{}}}],"total":1}"#.utf8)
+        #expect(throws: ServerAPIError.unreadableResponse) { try Responses.books(data) }
+        #expect(throws: ServerAPIError.unreadableResponse) { try Responses.books(Data("[]".utf8)) }
     }
 
     @Test("Status gives the version and whether local sign-in is allowed")

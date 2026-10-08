@@ -50,6 +50,14 @@ struct RequestTests {
         #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer access-1")
     }
 
+    @Test("The Library's Books are one authenticated GET of the whole list")
+    func books() {
+        let request = Requests.books(inLibrary: "lib-1", on: server, accessToken: "access-1")
+        #expect(request.httpMethod == "GET")
+        #expect(request.url?.absoluteString == "https://abs.example.com/api/libraries/lib-1/items?limit=0")
+        #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer access-1")
+    }
+
     @Test(
         "Status codes map to errors the callers act on",
         arguments: [

@@ -46,23 +46,6 @@ extension AppDatabase {
 
     /// The identity now, then again each time it changes.
     public func serverIdentityUpdates() -> AsyncThrowingStream<ServerIdentity?, any Error> {
-        let values =
-            ValueObservation
-            .tracking { db in try ServerIdentityRecord.fetchOne(db)?.identity }
-            .removeDuplicates()
-            .values(in: pool)
-        return AsyncThrowingStream { continuation in
-            let task = Task {
-                do {
-                    for try await value in values {
-                        continuation.yield(value)
-                    }
-                    continuation.finish()
-                } catch {
-                    continuation.finish(throwing: error)
-                }
-            }
-            continuation.onTermination = { _ in task.cancel() }
-        }
+        observe { db in try ServerIdentityRecord.fetchOne(db)?.identity }
     }
 }

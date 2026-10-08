@@ -1,3 +1,4 @@
+import Domain
 import Foundation
 
 /// The network seam: every call Logos makes to the Server.
@@ -21,6 +22,11 @@ public protocol ServerAPI: Sendable {
 
     /// `GET /api/libraries`: every Library the user can access, podcast ones included.
     func libraries(on server: URL, accessToken: String) async throws(ServerAPIError) -> [ServerLibrary]
+
+    /// `GET /api/libraries/:id/items?limit=0`: every Book in the Library, as list data. A list that can't be read
+    /// as a whole is `unreadableResponse`.
+    func books(inLibrary libraryID: String, on server: URL, accessToken: String) async throws(ServerAPIError)
+        -> [ListedBook]
 }
 
 /// Why a Server call failed.

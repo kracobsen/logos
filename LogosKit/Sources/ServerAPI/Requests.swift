@@ -1,3 +1,4 @@
+import Domain
 import Foundation
 
 /// Builds the audiobookshelf requests. Paths are appended to the Server URL, so a Server under a path works.
@@ -25,6 +26,12 @@ enum Requests {
 
     static func libraries(_ server: URL, accessToken: String) -> URLRequest {
         authorized(URLRequest(url: server.appending(path: "api/libraries")), accessToken)
+    }
+
+    static func books(inLibrary libraryID: String, on server: URL, accessToken: String) -> URLRequest {
+        let url = server.appending(path: "api/libraries").appending(path: libraryID).appending(path: "items")
+            .appending(queryItems: [URLQueryItem(name: "limit", value: "0")])
+        return authorized(URLRequest(url: url), accessToken)
     }
 
     private static func authorized(_ request: URLRequest, _ accessToken: String) -> URLRequest {
@@ -91,6 +98,58 @@ enum Responses {
                 default: .other(library.mediaType)
                 }
             return ServerLibrary(id: library.id, name: library.name, mediaType: mediaType)
+        }
+    }
+
+    /// Reads the Library list. Strict: if any Book can't be read, the whole list can't, so it's never applied.
+    static func books(_ data: Data) throws(ServerAPIError) -> [ListedBook] {
+        struct Body: Decodable {
+            struct Item: Decodable {
+                struct Media: Decodable {
+                    struct Metadata: Decodable {
+                        let title: String
+                        let subtitle: String?
+                        let authorName: String?
+                        let authorNameLF: String?
+                        let narratorName: String?
+                        let seriesName: String?
+                        let description: String?
+                        let publishedYear: String?
+                        let genres: [String]?
+                    }
+                    let id: String
+                    let metadata: Metadata
+                    let coverPath: String?
+                    let duration: Double?
+                    let size: Int64?
+                }
+                let id: String
+                let addedAt: Int64
+                let updatedAt: Int64
+                let media: Media
+            }
+            let results: [Item]
+        }
+        return try decode(Body.self, data).results.map { item in
+            let metadata = item.media.metadata
+            return ListedBook(
+                id: item.id,
+                mediaID: item.media.id,
+                title: metadata.title,
+                subtitle: metadata.subtitle,
+                authorName: metadata.authorName ?? "",
+                authorNameLF: metadata.authorNameLF ?? "",
+                narratorName: metadata.narratorName ?? "",
+                seriesName: metadata.seriesName ?? "",
+                description: metadata.description,
+                publishedYear: metadata.publishedYear,
+                genres: metadata.genres ?? [],
+                addedAt: Date(timeIntervalSince1970: TimeInterval(item.addedAt) / 1000),
+                updatedAt: item.updatedAt,
+                duration: item.media.duration ?? 0,
+                size: item.media.size ?? 0,
+                hasCover: item.media.coverPath != nil
+            )
         }
     }
 

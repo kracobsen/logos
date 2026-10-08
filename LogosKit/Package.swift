@@ -59,11 +59,15 @@ let package = Package(
         .testTarget(name: "DomainTests", dependencies: ["Domain"], swiftSettings: strict),
         .testTarget(
             name: "ServerAPITests",
-            dependencies: ["ServerAPI"],
+            dependencies: ["ServerAPI", "Domain"],
             resources: [.copy("Payloads")],
             swiftSettings: strict
         ),
-        .testTarget(name: "StoreTests", dependencies: ["Store"], swiftSettings: strict),
+        .testTarget(
+            name: "StoreTests",
+            dependencies: ["Store", "Domain", .product(name: "GRDB", package: "GRDB.swift")],
+            swiftSettings: strict
+        ),
         .testTarget(name: "SyncTests", dependencies: ["Sync", "ServerAPI", "Store", "Domain"], swiftSettings: strict),
         .testTarget(name: "DownloadsTests", dependencies: ["Downloads"], swiftSettings: strict),
         .testTarget(name: "PlaybackTests", dependencies: ["Playback"], swiftSettings: strict),

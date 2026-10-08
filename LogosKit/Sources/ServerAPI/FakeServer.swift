@@ -32,6 +32,7 @@ public final class FakeServer: ServerAPI {
         case logIn(URL, username: String)
         case refresh(URL, refreshToken: String)
         case libraries(URL, accessToken: String)
+        case books(URL, libraryID: String, accessToken: String)
     }
 
     public typealias Hook = @Sendable (Request) async throws(ServerAPIError) -> Void
@@ -44,6 +45,7 @@ public final class FakeServer: ServerAPI {
         var authMethods: [String]
         var accounts: [Account]
         var libraries: [ServerLibrary]
+        var books: [ListedBook] = []
         var requests: [Request] = []
         var isReachable: @Sendable (Request) -> Bool = { _ in true }
         var hook: Hook?
@@ -96,6 +98,12 @@ public final class FakeServer: ServerAPI {
     public var libraries: [ServerLibrary] {
         get { state.withLock { $0.libraries } }
         set { state.withLock { $0.libraries = newValue } }
+    }
+
+    /// The Books in every book Library the Server lists. Default: none.
+    public var books: [ListedBook] {
+        get { state.withLock { $0.books } }
+        set { state.withLock { $0.books = newValue } }
     }
 
     /// Decides per request whether it gets through. Default: everything does.
@@ -166,6 +174,19 @@ public final class FakeServer: ServerAPI {
         }
     }
 
+    public func books(inLibrary libraryID: String, on server: URL, accessToken: String) async throws(ServerAPIError)
+        -> [ListedBook]
+    {
+        try await receive(.books(server, libraryID: libraryID, accessToken: accessToken), at: server)
+        return try state.withLock { (state) throws(ServerAPIError) -> [ListedBook] in
+            try authenticate(accessToken, in: state)
+            guard state.libraries.contains(where: { $0.id == libraryID && $0.mediaType == .book }) else {
+                throw .unexpectedStatus(404)
+            }
+            return state.books
+        }
+    }
+
     // MARK: Internals
 
     private func receive(_ request: Request, at server: URL) async throws(ServerAPIError) {
@@ -223,5 +244,34 @@ public final class FakeServer: ServerAPI {
     private static func seconds(_ duration: Duration) -> TimeInterval {
         let (seconds, attoseconds) = duration.components
         return TimeInterval(seconds) + TimeInterval(attoseconds) / 1e18
+    }
+}
+
+extension FakeServer {
+    /// A Book for scripting ``books``, with list data made up from the title.
+    public static func book(
+        _ title: String,
+        id: String? = nil,
+        authorName: String = "Ada Fixture",
+        updatedAt: Int64 = 1_700_000_000_000
+    ) -> ListedBook {
+        ListedBook(
+            id: id ?? "book-\(title.lowercased().replacingOccurrences(of: " ", with: "-"))",
+            mediaID: "media-\(id ?? title)",
+            title: title,
+            subtitle: nil,
+            authorName: authorName,
+            authorNameLF: authorName,
+            narratorName: "",
+            seriesName: "",
+            description: nil,
+            publishedYear: nil,
+            genres: [],
+            addedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            updatedAt: updatedAt,
+            duration: 3600,
+            size: 1_000_000,
+            hasCover: false
+        )
     }
 }
