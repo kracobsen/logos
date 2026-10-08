@@ -64,13 +64,21 @@ let package = Package(
             swiftSettings: strict
         ),
         .testTarget(name: "StoreTests", dependencies: ["Store"], swiftSettings: strict),
-        .testTarget(name: "SyncTests", dependencies: ["Sync"], swiftSettings: strict),
+        .testTarget(name: "SyncTests", dependencies: ["Sync", "ServerAPI", "Store", "Domain"], swiftSettings: strict),
         .testTarget(name: "DownloadsTests", dependencies: ["Downloads"], swiftSettings: strict),
         .testTarget(name: "PlaybackTests", dependencies: ["Playback"], swiftSettings: strict),
-        .testTarget(name: "UITests", dependencies: ["UI"], swiftSettings: strict),
+        .testTarget(
+            name: "UITests",
+            dependencies: ["UI", "Sync", "ServerAPI", "Store", "Domain"],
+            swiftSettings: strict
+        ),
 
         // Runs against a pinned audiobookshelf in Docker through scripts/integration-test.sh, never against a
         // real Server. Not in the Logos scheme, so scripts/test.sh doesn't run it.
-        .testTarget(name: "IntegrationTests", dependencies: ["ServerAPI", "Sync"], swiftSettings: strict),
+        .testTarget(
+            name: "IntegrationTests",
+            dependencies: ["ServerAPI", "Sync", "Store", "Domain"],
+            swiftSettings: strict
+        ),
     ]
 )

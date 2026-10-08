@@ -16,4 +16,15 @@ struct AppDatabaseTests {
 
         _ = try AppDatabase.open(at: url)
     }
+
+    @Test("a path with spaces (like Application Support) opens")
+    func pathWithSpaces() throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: "Application Support \(UUID())")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appending(path: "Logos.sqlite")
+
+        _ = try AppDatabase.open(at: url)
+        #expect(FileManager.default.fileExists(atPath: url.path(percentEncoded: false)))
+    }
 }

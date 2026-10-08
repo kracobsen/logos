@@ -10,7 +10,7 @@ public struct AppDatabase: Sendable {
     /// Opens (creating if needed) the database at `url` and runs pending migrations.
     /// Never deletes the file: if it can't be opened or migrated, the error is thrown and the file is kept.
     public static func open(at url: URL) throws -> AppDatabase {
-        let pool = try DatabasePool(path: url.path())
+        let pool = try DatabasePool(path: url.path(percentEncoded: false))
         try migrator.migrate(pool)
         return AppDatabase(pool: pool)
     }
