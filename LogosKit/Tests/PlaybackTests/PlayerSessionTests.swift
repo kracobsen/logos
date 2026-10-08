@@ -3,6 +3,19 @@ import Foundation
 import Playback
 import Testing
 
+/// Collects the stops the engine reports.
+@MainActor
+final class StopRecorder {
+    private(set) var received: [PlaybackStop] = []
+    private(set) var task: Task<Void, Never>!
+
+    init(_ stops: AsyncStream<PlaybackStop>) {
+        task = Task { [weak self] in
+            for await stop in stops { self?.received.append(stop) }
+        }
+    }
+}
+
 @Suite("The player engine around interruptions, routes and media-services resets")
 @MainActor
 struct PlayerSessionTests {
@@ -224,6 +237,50 @@ struct PlayerSessionTests {
         #expect(fixture.audio.rebuildCount == 1)
         #expect(fixture.audio.loadCount == 0)
         #expect(player.state == .idle)
+    }
+
+    @Test(
+        "Each way the system stops playing is reported with its reason, after saving",
+        arguments: [
+            (AudioSessionEvent.interrupted, PlaybackStop.Reason.interrupted),
+            (.routeLost, .routeLost),
+            (.mediaServicesReset, .mediaServicesReset),
+        ])
+    func reportsStops(event: AudioSessionEvent, reason: PlaybackStop.Reason) async throws {
+        try fixture.addBook("first")
+        let player = fixture.player()
+        let stops = StopRecorder(player.stops())
+        await player.play(bookID: "first")
+        fixture.audio.advance(to: 12)
+        await fixture.advance(by: .seconds(1))
+
+        fixture.session.send(event)
+        await fixture.settle()
+
+        #expect(stops.received == [PlaybackStop(bookID: "first", position: 12, reason: reason)])
+        stops.task.cancel()
+    }
+
+    @Test("The Sleep Timer survives an interruption and a media-services reset, and still stops at its Chapter's end")
+    func sleepTimerSurvives() async throws {
+        try fixture.addBook("first", chapters: PlayerFixture.chapters(3600, every: 600))
+        let player = fixture.player()
+        await player.play(bookID: "first")
+        fixture.audio.advance(to: 900)
+        player.setSleepTimer(chapters: 1)
+
+        fixture.session.send(.interrupted)
+        fixture.session.send(.interruptionEnded(shouldResume: true))
+        fixture.session.send(.mediaServicesReset)
+        await fixture.settle()
+        #expect(player.sleepTimer != nil)
+
+        player.play()
+        fixture.audio.advance(to: 1200.2)
+        await fixture.settle()
+
+        #expect(player.state == .paused)
+        #expect(try fixture.progress("first")?.position == 1200)
     }
 
     @Test("A media-services reset doesn't resume after an interruption that was going on")

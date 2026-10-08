@@ -6,15 +6,16 @@ extension Player {
         switch event {
         case .interrupted:
             guard state == .playing else { return }
-            pause()
+            pause(because: .interrupted)
             resumesAfterInterruption = true
         case .interruptionEnded(let shouldResume):
             let resumes = resumesAfterInterruption && shouldResume
             resumesAfterInterruption = false
             if resumes { play() }
         case .routeLost:
+            // Never resumes by itself, not even when an interruption going on ends.
             resumesAfterInterruption = false
-            pause()
+            pause(because: .routeLost)
         case .routeAdded:
             guard state == .playing else { return }
             position = audio.currentTime
@@ -33,15 +34,18 @@ extension Player {
         saving = nil
         audio.rebuild()
         guard let book, state != .idle else { return }
+        let wasPlaying = state == .playing
         state = .loading
-        let saved: Double
+        var saved = position
         do {
             saved = try database.progress(ofBook: book.id)?.position ?? position
         } catch {
             log.error("Couldn't read the saved position: \(String(describing: error), privacy: .public)")
-            saved = position
         }
-        guard await reload(book, at: min(max(saved, 0), book.duration)) else { return }
+        saved = min(max(saved, 0), book.duration)
+        // Not through `pause(because:)`: the dead player's time can't be trusted, and the saved position stands.
+        if wasPlaying { reportStop(PlaybackStop(bookID: book.id, position: saved, reason: .mediaServicesReset)) }
+        guard await reload(book, at: saved) else { return }
         state = .paused
     }
 }
