@@ -269,10 +269,10 @@ struct NowPlayingTests {
 
     // MARK: - The system adapter
 
-    @Test("The system gets a BookContent with the Chapter as title and the Book and author as author line")
+    @Test("The system gets a BookContent with the Chapter as title, the Book and author as author line, no narrator")
     func bookContent() {
         let item = NowPlayingItem(
-            bookID: "first", title: "Chapter 2", subtitle: "Title · Author", narratorName: "Nell",
+            bookID: "first", title: "Chapter 2", subtitle: "Title · Author",
             chapterNumber: 2, chapterCount: 6, chapterStart: 600, duration: 600, coverURL: nil)
 
         let content = SystemNowPlayingCenter.content(for: item)
@@ -280,7 +280,7 @@ struct NowPlayingTests {
         #expect(content.id == "first")
         #expect(content.title == "Chapter 2")
         #expect(content.authorName == "Title · Author")
-        #expect(content.narratorName == "Nell")
+        #expect(content.narratorName == nil)
         #expect(content.chapter?.current == 2)
         #expect(content.chapter?.total == 6)
         guard case .finite(let duration) = content.duration else {
@@ -294,7 +294,7 @@ struct NowPlayingTests {
     func systemSession() {
         let system = SystemNowPlayingCenter()
         let item = NowPlayingItem(
-            bookID: "first", title: "Chapter 2", subtitle: "Title · Author", narratorName: nil,
+            bookID: "first", title: "Chapter 2", subtitle: "Title · Author",
             chapterNumber: 2, chapterCount: 6, chapterStart: 600, duration: 600, coverURL: nil)
         let date = Date(timeIntervalSince1970: 1_800_000_000)
         let playback = NowPlayingPlayback(status: .playing(rate: 1.5), speed: 1.5, elapsed: 100, date: date)

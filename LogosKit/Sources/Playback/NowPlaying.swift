@@ -82,7 +82,6 @@ public final class NowPlaying {
             bookID: book.id,
             title: chapter.title,
             subtitle: book.authorName.isEmpty ? book.title : "\(book.title) · \(book.authorName)",
-            narratorName: book.narratorName.isEmpty ? nil : book.narratorName,
             chapterNumber: index + 1,
             chapterCount: chapters.count,
             chapterStart: chapter.start,

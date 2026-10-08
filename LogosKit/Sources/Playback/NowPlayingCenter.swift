@@ -20,7 +20,6 @@ public struct NowPlayingItem: Sendable, Hashable {
     public var title: String
     /// The Book title and author ("Title · Author"), or the title alone.
     public var subtitle: String
-    public var narratorName: String?
     /// 1-based.
     public var chapterNumber: Int
     public var chapterCount: Int
@@ -35,7 +34,6 @@ public struct NowPlayingItem: Sendable, Hashable {
         bookID: String,
         title: String,
         subtitle: String,
-        narratorName: String?,
         chapterNumber: Int,
         chapterCount: Int,
         chapterStart: Double,
@@ -45,7 +43,6 @@ public struct NowPlayingItem: Sendable, Hashable {
         self.bookID = bookID
         self.title = title
         self.subtitle = subtitle
-        self.narratorName = narratorName
         self.chapterNumber = chapterNumber
         self.chapterCount = chapterCount
         self.chapterStart = chapterStart

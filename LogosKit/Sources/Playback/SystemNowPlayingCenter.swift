@@ -75,7 +75,7 @@ public final class SystemNowPlayingCenter: NowPlayingCenter, MediaSessionReprese
             id: item.bookID,
             title: item.title,
             authorName: item.subtitle,
-            narratorName: item.narratorName,
+            narratorName: nil,
             duration: .finite(item.duration),
             artwork: item.coverURL.map { artwork(bookID: item.bookID, file: $0) })
         content.chapter = (current: item.chapterNumber, total: item.chapterCount)
