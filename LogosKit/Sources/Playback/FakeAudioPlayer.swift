@@ -48,6 +48,14 @@ public final class FakeAudioPlayer: AudioPlayer {
         currentTime = 0
     }
 
+    /// How many times the player was rebuilt (after a media-services reset).
+    public private(set) var rebuildCount = 0
+
+    public func rebuild() {
+        rebuildCount += 1
+        unload()
+    }
+
     public func play() {
         guard loadedFiles != nil else { return }
         isPlaying = true

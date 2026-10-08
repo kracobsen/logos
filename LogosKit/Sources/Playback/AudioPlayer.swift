@@ -34,6 +34,10 @@ public protocol AudioPlayer: AnyObject {
     /// cancelled.
     func observeBoundaries(_ times: [Double], _ handler: @escaping (Double) -> Void) -> AudioPlayerObservation
 
+    /// Replaces everything underneath with new audio objects after a media-services reset: nothing loaded, paused.
+    /// ``rate``, the observers and ``onEvent`` carry over.
+    func rebuild()
+
     /// Things that happen to the player on its own. Set by the engine.
     var onEvent: ((AudioPlayerEvent) -> Void)? { get set }
 }

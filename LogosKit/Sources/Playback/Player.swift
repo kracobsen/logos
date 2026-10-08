@@ -31,11 +31,11 @@ public final class Player {
         case cannotDecode
     }
 
-    public private(set) var state: State = .idle
+    public internal(set) var state: State = .idle
     /// The loaded Book, from the moment it starts loading.
     public private(set) var book: BookDetail?
     /// In Book seconds. Moves to a seek's target straight away.
-    public private(set) var position: Double = 0
+    public internal(set) var position: Double = 0
     /// Whether the loaded Book is Finished.
     public private(set) var isFinished = false
     /// The speed playing runs at.
@@ -51,29 +51,38 @@ public final class Player {
     /// How far before a decode failure playing restarts after reloading, in seconds.
     public static let decodeRetryBackoff = 1.0
 
-    @ObservationIgnored private let database: AppDatabase
+    @ObservationIgnored let database: AppDatabase
     @ObservationIgnored private let files: DownloadFiles
-    @ObservationIgnored private let audio: any AudioPlayer
+    @ObservationIgnored let audio: any AudioPlayer
     @ObservationIgnored private let clock: any Clock
     @ObservationIgnored private var timeObservation: AudioPlayerObservation?
-    @ObservationIgnored private var saving: Task<Void, Never>?
+    @ObservationIgnored var saving: Task<Void, Never>?
     /// Bumped by every load, so an older load that finishes late is ignored.
     @ObservationIgnored private var loadGeneration = 0
     /// Seeks sent to the player and not finished yet; time reports are stale until they are.
     @ObservationIgnored private var pendingSeeks = 0
     @ObservationIgnored private var decodeRetries = 0
     @ObservationIgnored private var playToAudio: SignpostInterval?
+    @ObservationIgnored private let session: (any AudioSession)?
+    /// Set when an interruption paused playing, so it may resume when the interruption ends.
+    @ObservationIgnored var resumesAfterInterruption = false
 
-    public init(database: AppDatabase, files: DownloadFiles, audio: any AudioPlayer, clock: any Clock) {
+    /// `session` reports interruptions, route changes and media-services resets (see Player+AudioSession.swift).
+    public init(
+        database: AppDatabase, files: DownloadFiles, audio: any AudioPlayer, clock: any Clock,
+        session: (any AudioSession)? = nil
+    ) {
         self.database = database
         self.files = files
         self.audio = audio
         self.clock = clock
+        self.session = session
         rate = audio.rate
         timeObservation = audio.observeTime(every: Self.publishInterval) { [weak self] time in
             self?.timePassed(time)
         }
         audio.onEvent = { [weak self] event in self?.handle(event) }
+        session?.onEvent = { [weak self] event in self?.handle(event) }
     }
 
     /// The index of the Chapter the position is in, if a Book is loaded.
@@ -205,6 +214,7 @@ public final class Player {
     private func unload(problem: Problem?) {
         saving?.cancel()
         saving = nil
+        resumesAfterInterruption = false
         audio.unload()
         book = nil
         position = 0
@@ -231,6 +241,7 @@ public final class Player {
             signpost.end()
             return
         }
+        resumesAfterInterruption = false
         if isFinished {
             isFinished = false
             seek(to: 0)
@@ -348,30 +359,35 @@ public final class Player {
         }
         decodeRetries += 1
         log.notice("Decode failed at \(time, privacy: .public) s; reloading (try \(self.decodeRetries))")
+        guard await reload(book, at: max(time - Self.decodeRetryBackoff, 0)) else { return }
+        if wasPlaying, state == .playing { audio.play() }
+    }
+
+    /// Loads `book`'s timeline into the player again and moves to `time`, as a new load: returns `false` if a newer
+    /// load or stop replaced it, or if the files couldn't be opened (then the Book is unloaded with `.cannotOpen`).
+    func reload(_ book: BookDetail, at time: Double) async -> Bool {
         loadGeneration += 1
         let generation = loadGeneration
-        let resumeAt = max(time - Self.decodeRetryBackoff, 0)
         do {
             try await audio.load(fileURLs(of: book))
         } catch {
-            guard generation == loadGeneration else { return }
+            guard generation == loadGeneration else { return false }
             pause()
             unload(problem: .cannotOpen)
-            return
+            return false
         }
-        guard generation == loadGeneration else { return }
-        position = resumeAt
+        guard generation == loadGeneration else { return false }
+        position = time
         pendingSeeks += 1
-        await audio.seek(to: resumeAt)
+        await audio.seek(to: time)
         pendingSeeks -= 1
-        guard generation == loadGeneration else { return }
-        if wasPlaying, state == .playing { audio.play() }
+        return generation == loadGeneration
     }
 
     // MARK: - Saving
 
     /// Writes the position, now as the last-changed time, and Finished.
-    private func save() {
+    func save() {
         guard let book else { return }
         let now = Date(millisecondsSince1970: clock.now.millisecondsSince1970)
         let progress = BookProgress(bookID: book.id, position: position, lastChanged: now, isFinished: isFinished)

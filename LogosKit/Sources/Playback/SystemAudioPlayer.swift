@@ -15,12 +15,21 @@ public final class SystemAudioPlayer: AudioPlayer {
         case notReady(String)
     }
 
-    private let player = AVPlayer()
+    /// Replaced by ``rebuild()`` after a media-services reset.
+    private var player = AVPlayer()
     private var itemObservers: [any NSObjectProtocol] = []
     private var itemStatusObservation: NSKeyValueObservation?
     private var timeControlObservation: NSKeyValueObservation?
+    /// The time and boundary observers, kept so ``rebuild()`` can add them to the new `AVPlayer`.
+    private var timeObservers: [UUID: TimeObserver] = [:]
     private var hasConfiguredSession = false
     public var onEvent: ((AudioPlayerEvent) -> Void)?
+
+    private struct TimeObserver {
+        /// Adds the observer to a player, returning its token.
+        let add: (AVPlayer) -> Any
+        var token: Any
+    }
 
     public var rate: Float = 1 {
         didSet {
@@ -30,13 +39,33 @@ public final class SystemAudioPlayer: AudioPlayer {
     }
 
     public init() {
+        setUp(player)
+    }
+
+    private func setUp(_ player: AVPlayer) {
         player.automaticallyWaitsToMinimizeStalling = false
         player.actionAtItemEnd = .pause
+        player.defaultRate = rate
         timeControlObservation = player.observe(\.timeControlStatus, options: [.new]) {
             @Sendable [weak self] player, _ in
             guard player.timeControlStatus == .playing else { return }
             Task { @MainActor in self?.onEvent?(.startedPlaying) }
         }
+    }
+
+    /// After a media-services reset every audio object is dead: drop the `AVPlayer` for a new one with the same
+    /// observers, and set the session category again on the next load.
+    public func rebuild() {
+        unload()
+        for observer in timeObservers.values { player.removeTimeObserver(observer.token) }
+        timeControlObservation = nil
+        player = AVPlayer()
+        setUp(player)
+        for (id, var observer) in timeObservers {
+            observer.token = observer.add(player)
+            timeObservers[id] = observer
+        }
+        hasConfiguredSession = false
     }
 
     public var currentTime: Double {
@@ -89,32 +118,41 @@ public final class SystemAudioPlayer: AudioPlayer {
 
     public func observeTime(every interval: Double, _ handler: @escaping (Double) -> Void) -> AudioPlayerObservation {
         nonisolated(unsafe) let handler = handler
-        let token = player.addPeriodicTimeObserver(
-            forInterval: CMTime(seconds: interval, preferredTimescale: 600), queue: .main
-        ) { @Sendable time in
-            let seconds = time.seconds
-            guard seconds.isFinite else { return }
-            MainActor.assumeIsolated { handler(seconds) }
+        return addTimeObserver { player in
+            player.addPeriodicTimeObserver(
+                forInterval: CMTime(seconds: interval, preferredTimescale: 600), queue: .main
+            ) { @Sendable time in
+                let seconds = time.seconds
+                guard seconds.isFinite else { return }
+                MainActor.assumeIsolated { handler(seconds) }
+            }
         }
-        nonisolated(unsafe) let observer = token
-        return AudioPlayerObservation { [player] in player.removeTimeObserver(observer) }
     }
 
     public func observeBoundaries(_ times: [Double], _ handler: @escaping (Double) -> Void) -> AudioPlayerObservation {
         guard !times.isEmpty else { return AudioPlayerObservation {} }
         nonisolated(unsafe) let handler = handler
         let values = times.map { NSValue(time: CMTime(seconds: $0, preferredTimescale: 44_100)) }
-        let token = player.addBoundaryTimeObserver(forTimes: values, queue: .main) { @Sendable [weak self] in
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                // AVPlayer doesn't say which boundary; it's the one closest to now.
-                let now = self.currentTime
-                let crossed = times.min { abs($0 - now) < abs($1 - now) } ?? now
-                handler(crossed)
+        return addTimeObserver { [weak self] player in
+            player.addBoundaryTimeObserver(forTimes: values, queue: .main) { @Sendable [weak self] in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    // AVPlayer doesn't say which boundary; it's the one closest to now.
+                    let now = self.currentTime
+                    let crossed = times.min { abs($0 - now) < abs($1 - now) } ?? now
+                    handler(crossed)
+                }
             }
         }
-        nonisolated(unsafe) let observer = token
-        return AudioPlayerObservation { [player] in player.removeTimeObserver(observer) }
+    }
+
+    private func addTimeObserver(_ add: @escaping (AVPlayer) -> Any) -> AudioPlayerObservation {
+        let id = UUID()
+        timeObservers[id] = TimeObserver(add: add, token: add(player))
+        return AudioPlayerObservation { [weak self] in
+            guard let self, let observer = self.timeObservers.removeValue(forKey: id) else { return }
+            self.player.removeTimeObserver(observer.token)
+        }
     }
 
     // MARK: - Private

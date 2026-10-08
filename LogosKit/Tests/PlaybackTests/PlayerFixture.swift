@@ -11,6 +11,7 @@ final class PlayerFixture {
     let database: AppDatabase
     let files: DownloadFiles
     let audio = FakeAudioPlayer()
+    let session = FakeAudioSession()
 
     init() throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -19,7 +20,7 @@ final class PlayerFixture {
     }
 
     func player() -> Player {
-        Player(database: database, files: files, audio: audio, clock: clock)
+        Player(database: database, files: files, audio: audio, clock: clock, session: session)
     }
 
     /// Chapters every `chapterLength` seconds over `duration`.

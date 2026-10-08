@@ -97,7 +97,9 @@ private final class Services {
         // Downloads are excluded from backups, and in Application Support so iOS never evicts them.
         downloadFiles = try? DownloadFiles(directory: directory.appending(path: "Downloads"))
         player = downloadFiles.map { [database, clock] in
-            Player(database: database, files: $0, audio: SystemAudioPlayer(), clock: clock)
+            Player(
+                database: database, files: $0, audio: SystemAudioPlayer(), clock: clock,
+                session: SystemAudioSession())
         }
         // A background launch for finished transfers has no UI: start Downloads now so it handles them.
         if let identity = try? database.serverIdentity(), let downloader = downloader(for: identity) {
