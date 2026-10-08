@@ -27,22 +27,40 @@ public final class DownloadsModel {
     /// The queue in FIFO order, then the downloaded Books.
     public private(set) var list: DownloadsList
     private var statuses: [String: DownloadStatus]
+    /// The cellular setting and the storage pause.
+    private var policy: DownloadPolicy
+    /// Whether unconstrained Wi-Fi is there (assumed until the network says otherwise).
+    public private(set) var isOnWiFi = true
 
     private let database: AppDatabase
     private let downloader: Downloader?
+    private let network: (any NetworkMonitor)?
 
-    /// - Parameter downloader: does the work. Without it (previews) the actions do nothing.
-    public init(database: AppDatabase, downloader: Downloader?) {
+    /// - Parameters:
+    ///   - downloader: does the work. Without it (previews) the actions do nothing.
+    ///   - network: for "Waiting for Wi-Fi"; without it, Wi-Fi is assumed.
+    public init(database: AppDatabase, downloader: Downloader?, network: (any NetworkMonitor)? = nil) {
         self.database = database
         self.downloader = downloader
+        self.network = network
         do {
             list = try database.downloadsList()
             statuses = try database.downloadStatuses()
+            policy = try database.downloadPolicy()
         } catch {
             log.error("Couldn't read Downloads: \(String(describing: error), privacy: .public)")
             list = .empty
             statuses = [:]
+            policy = .default
         }
+    }
+
+    /// Why the queue isn't moving, when there's a known reason: "Not enough storage" or "Waiting for Wi-Fi".
+    public var notice: DownloadsNotice? {
+        guard list.activeCount > 0 else { return nil }
+        if policy.isPausedForStorage { return .notEnoughStorage }
+        if !policy.allowsCellular, !isOnWiFi { return .waitingForWiFi }
+        return nil
     }
 
     /// Queued and downloading Books: the Downloaded tab's badge.
@@ -94,6 +112,25 @@ public final class DownloadsModel {
         await withTaskGroup { group in
             group.addTask { await self.observeList() }
             group.addTask { await self.observeStatuses() }
+            group.addTask { await self.observePolicy() }
+            group.addTask { await self.observeNetwork() }
+        }
+    }
+
+    private func observePolicy() async {
+        do {
+            for try await policy in database.downloadPolicyUpdates() {
+                self.policy = policy
+            }
+        } catch {
+            log.error("Stopped observing the Download policy: \(String(describing: error), privacy: .public)")
+        }
+    }
+
+    private func observeNetwork() async {
+        guard let network else { return }
+        for await isOnWiFi in network.wifiUpdates() {
+            self.isOnWiFi = isOnWiFi
         }
     }
 

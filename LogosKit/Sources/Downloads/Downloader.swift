@@ -16,8 +16,15 @@ import Store
 /// - A 401 goes through the shared refresh and enqueues only that file again, from its partial data, without counting
 ///   as an attempt.
 /// - A file of the wrong size is deleted and fetched once more from scratch; a second mismatch fails the Book.
-/// - Any other failure counts an attempt and enqueues the file again from its partial data; after ``maxAttempts``
-///   the Book fails. Failed Books keep their verified files, and the queue moves on.
+/// - A 403 fails the Book at once. A 404 re-reads the Book and retries the file once (with its fresh `ino`, or not
+///   at all if the Book no longer lists it); a second 404 fails the Book.
+/// - Any other failure (no response, a timeout, 429, 5xx) counts an attempt and enqueues the file again from its
+///   partial data after a ``backoff`` of about 1, 5, then 30 minutes; after ``maxAttempts`` the Book fails. Failed
+///   Books keep their verified files, and the queue moves on.
+/// - Before a Book becomes active, the volume must have room for its missing files plus ``storageMargin``; if not,
+///   the queue pauses as "Not enough storage" until a later ``resume()`` finds room. A transfer that stops while the
+///   disk can't hold the rest pauses the queue the same way, without counting an attempt.
+/// - Transfers are Wi-Fi only unless ``setAllowsCellular(_:)`` allows cellular (the setting is in the database).
 ///
 /// Never throws: failures are logged, and the database says where each Book is.
 public actor Downloader {

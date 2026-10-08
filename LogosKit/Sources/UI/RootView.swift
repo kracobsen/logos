@@ -9,7 +9,9 @@ public struct RootView: View {
     let launch: LaunchSignpost?
     let covers: CoverImages?
     let downloads: DownloadsModel?
+    let settings: SettingsModel?
     @State private var selection: AppTab = .inProgress
+    @State private var showsSettings = false
     @Environment(\.scenePhase) private var scenePhase
 
     public init(
@@ -18,7 +20,8 @@ public struct RootView: View {
         series: SeriesListModel,
         launch: LaunchSignpost? = nil,
         covers: CoverImages? = nil,
-        downloads: DownloadsModel? = nil
+        downloads: DownloadsModel? = nil,
+        settings: SettingsModel? = nil
     ) {
         self.library = library
         self.inProgress = inProgress
@@ -26,6 +29,7 @@ public struct RootView: View {
         self.launch = launch
         self.covers = covers
         self.downloads = downloads
+        self.settings = settings
     }
 
     public var body: some View {
@@ -33,25 +37,37 @@ public struct RootView: View {
             ForEach(AppTab.allCases, id: \.self) { tab in
                 Tab(tab.title, systemImage: tab.systemImage, value: tab) {
                     NavigationStack {
-                        switch tab {
-                        case .inProgress:
-                            InProgressView(model: inProgress, library: library, launch: launch)
-                        case .library:
-                            LibraryView(model: library, launch: launch)
-                        case .series:
-                            SeriesListView(model: series, library: library)
-                        case .downloaded:
-                            if let downloads {
-                                DownloadsView(model: downloads, library: library)
-                            } else {
-                                ContentUnavailableView(tab.title, systemImage: tab.systemImage)
-                                    .navigationTitle(tab.title)
+                        Group {
+                            switch tab {
+                            case .inProgress:
+                                InProgressView(model: inProgress, library: library, launch: launch)
+                            case .library:
+                                LibraryView(model: library, launch: launch)
+                            case .series:
+                                SeriesListView(model: series, library: library)
+                            case .downloaded:
+                                if let downloads {
+                                    DownloadsView(model: downloads, library: library)
+                                } else {
+                                    ContentUnavailableView(tab.title, systemImage: tab.systemImage)
+                                        .navigationTitle(tab.title)
+                                }
+                            }
+                        }
+                        .toolbar {
+                            if settings != nil {
+                                ToolbarItem(placement: .topBarLeading) {
+                                    Button("Settings", systemImage: "gearshape") { showsSettings = true }
+                                }
                             }
                         }
                     }
                 }
                 .badge(tab == .downloaded ? downloads?.badgeCount ?? 0 : 0)
             }
+        }
+        .sheet(isPresented: $showsSettings) {
+            if let settings { SettingsView(model: settings) }
         }
         .environment(covers)
         .environment(downloads)

@@ -95,6 +95,23 @@ struct DownloadsIntegrationTests {
         #expect(try session.database.downloadsList().downloaded.count == 2)
     }
 
+    @Test("Wi-Fi only (the default) downloads on the simulator's network; allowing cellular mid-Book keeps going")
+    func networkPolicy() async throws {
+        let session = try await Session()
+        defer { try? FileManager.default.removeItem(at: session.directory) }
+        let id = try session.bookID("Loose Parts")
+        #expect(try !session.database.downloadPolicy().allowsCellular)
+
+        await session.downloader.download(id)
+        await session.downloader.setAllowsCellular(true)  // replaces the running transfers
+        try await session.waitFor(.downloaded, id)
+
+        for track in try #require(try session.database.bookDetail(id: id)).tracks {
+            #expect(session.files.size(ofBook: id, relPath: track.relPath) == track.size)
+        }
+        #expect(try session.database.downloadPolicy().allowsCellular)
+    }
+
     @Test("The real transfers report 401 for a rejected token and 404 for an unknown ino, and keep no file")
     func statuses() async throws {
         let session = try await Session()

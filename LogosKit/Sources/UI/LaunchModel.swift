@@ -28,6 +28,8 @@ public final class LaunchModel {
     public private(set) var series: SeriesListModel?
     /// Downloads (the Downloaded tab, Download buttons), while signed in.
     public private(set) var downloads: DownloadsModel?
+    /// The Settings screen's model, while signed in.
+    public private(set) var settings: SettingsModel?
 
     private let database: AppDatabase
     private let makeLibrarySync: (ServerIdentity) -> LibrarySync
@@ -53,6 +55,7 @@ public final class LaunchModel {
         inProgress = identity.map { _ in InProgressModel(database: database) }
         series = identity.map { _ in SeriesListModel(database: database) }
         downloads = identity.map(makeDownloads)
+        settings = identity.map { SettingsModel(database: database, downloader: makeDownloader?($0) ?? nil) }
     }
 
     /// Follows the identity in the database until cancelled.
@@ -67,7 +70,8 @@ public final class LaunchModel {
     }
 
     private func makeDownloads(for identity: ServerIdentity) -> DownloadsModel {
-        DownloadsModel(database: database, downloader: makeDownloader?(identity) ?? nil)
+        DownloadsModel(
+            database: database, downloader: makeDownloader?(identity) ?? nil, network: SystemNetworkMonitor())
     }
 
     private func makeLibrary(for identity: ServerIdentity) -> LibraryModel {
