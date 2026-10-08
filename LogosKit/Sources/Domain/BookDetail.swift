@@ -23,6 +23,8 @@ public struct BookDetail: Sendable, Hashable, Identifiable {
     public let tracks: [AudioTrack]
     /// The full data was fetched at the Book's current `updatedAt`.
     public let hasCurrentFullData: Bool
+    /// A downloaded Book the Server no longer lists: its data is frozen.
+    public let isNotOnServer: Bool
 
     public init(
         id: String,
@@ -38,7 +40,8 @@ public struct BookDetail: Sendable, Hashable, Identifiable {
         series: [SeriesMembership],
         chapters: ChapterList,
         tracks: [AudioTrack],
-        hasCurrentFullData: Bool
+        hasCurrentFullData: Bool,
+        isNotOnServer: Bool = false
     ) {
         self.id = id
         self.title = title
@@ -54,5 +57,6 @@ public struct BookDetail: Sendable, Hashable, Identifiable {
         self.chapters = chapters
         self.tracks = tracks
         self.hasCurrentFullData = hasCurrentFullData
+        self.isNotOnServer = isNotOnServer
     }
 }

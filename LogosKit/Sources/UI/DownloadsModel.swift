@@ -25,11 +25,13 @@ public enum BookDownloadAction: Sendable, Hashable {
 @Observable
 public final class DownloadsModel {
     /// The queue in FIFO order, then the downloaded Books.
-    public private(set) var list: DownloadsList
+    public internal(set) var list: DownloadsList
+    /// How the Downloaded tab sorts the downloaded Books (not kept across launches).
+    public var order: DownloadedOrder = .recentlyListened
     private var statuses: [String: DownloadStatus]
 
     private let database: AppDatabase
-    private let downloader: Downloader?
+    let downloader: Downloader?
 
     /// - Parameter downloader: does the work. Without it (previews) the actions do nothing.
     public init(database: AppDatabase, downloader: Downloader?) {

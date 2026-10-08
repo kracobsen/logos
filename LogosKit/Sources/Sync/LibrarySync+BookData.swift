@@ -50,7 +50,8 @@ extension LibrarySync {
         do {
             guard
                 let signedIn = try database.serverIdentity(),
-                let detail = try database.bookDetail(id: id), !detail.hasCurrentFullData
+                let detail = try database.bookDetail(id: id), !detail.hasCurrentFullData,
+                !detail.isNotOnServer  // frozen
             else { return }
             identity = signedIn
         } catch {

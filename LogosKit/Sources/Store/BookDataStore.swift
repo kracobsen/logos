@@ -55,7 +55,8 @@ extension AppDatabase {
     public func booksBehindOnFullData() throws -> [String] {
         try pool.read { db in
             try String.fetchAll(
-                db, sql: "SELECT id FROM book WHERE fullDataVersion IS NOT updatedAt ORDER BY rowid")
+                db, sql: "SELECT id FROM book WHERE fullDataVersion IS NOT updatedAt AND NOT notOnServer ORDER BY rowid"
+            )
         }
     }
 
@@ -127,7 +128,7 @@ extension AppDatabase {
                 db,
                 sql: """
                     SELECT title, subtitle, authorName, narratorName, description, publishedYear, duration, size,
-                        hasCover, updatedAt, fullDataVersion
+                        hasCover, updatedAt, fullDataVersion, notOnServer
                     FROM book WHERE id = ?
                     """,
                 arguments: [id])
@@ -170,7 +171,8 @@ extension AppDatabase {
             series: series,
             chapters: ChapterList(chapters, bookDuration: duration, bookTitle: title),
             tracks: tracks,
-            hasCurrentFullData: fullDataVersion == updatedAt
+            hasCurrentFullData: fullDataVersion == updatedAt,
+            isNotOnServer: row["notOnServer"]
         )
     }
 }

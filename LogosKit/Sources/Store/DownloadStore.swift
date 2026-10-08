@@ -229,7 +229,7 @@ extension AppDatabase {
         let rows = try Row.fetchAll(
             db,
             sql: """
-                SELECT \(statusColumns), book.title, book.authorName, progress.lastChanged
+                SELECT \(statusColumns), book.title, book.authorName, book.notOnServer, progress.lastChanged
                 FROM download JOIN book ON book.id = download.bookID
                 LEFT JOIN progress ON progress.bookID = download.bookID
                 ORDER BY download.queuePosition
@@ -241,7 +241,8 @@ extension AppDatabase {
             guard let state = DownloadState(rawValue: row["state"]) else { continue }
             let download = DownloadRow(
                 id: row["bookID"], title: row["title"], authorName: row["authorName"], state: state,
-                totalBytes: row["totalBytes"], receivedBytes: row["receivedBytes"])
+                totalBytes: row["totalBytes"], receivedBytes: row["receivedBytes"],
+                isNotOnServer: row["notOnServer"])
             if state == .downloaded {
                 downloaded.append((download, row["lastChanged"] ?? Int64.min, downloaded.count))
             } else {
