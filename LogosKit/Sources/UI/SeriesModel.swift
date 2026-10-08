@@ -1,6 +1,7 @@
 import Domain
 import Foundation
 import Observation
+import Playback
 import Store
 import Sync
 
@@ -71,16 +72,18 @@ public final class SeriesPageModel {
 
     /// The Continue button was tapped. Returns the Book to open, or `nil` to stay on the page.
     ///
-    /// `.download` starts the target Book's Download and opens it (its detail shows the progress). `.play` only
-    /// opens the target Book for now; Playback hooks in here (return `nil` once it no longer needs the detail).
-    public func continueTapped(downloads: DownloadsModel? = nil) -> String? {
+    /// `.download` starts the target Book's Download and opens it (its detail shows the progress). `.play` plays the
+    /// target Book and stays on the page (without a player it opens the Book instead).
+    public func continueTapped(downloads: DownloadsModel? = nil, player: Player? = nil) -> String? {
         guard let target = continueTarget else { return nil }
         switch target.action {
         case .download:
             downloads?.startDownload(target.book.id)
             return target.book.id
         case .play:
-            return target.book.id
+            guard let player else { return target.book.id }
+            Task { await player.play(bookID: target.book.id) }
+            return nil
         }
     }
 

@@ -1,6 +1,7 @@
 import Domain
 import Downloads
 import Foundation
+import Playback
 import ServerAPI
 import Store
 import SwiftUI
@@ -28,7 +29,8 @@ struct LogosApp: App {
                     makeLibrarySync: services.makeLibrarySync,
                     launchSignpost: launchSignpost,
                     covers: services.covers,
-                    makeDownloader: services.downloader
+                    makeDownloader: services.downloader,
+                    player: services.player
                 )
             case .failure(let error):
                 // The database is never deleted automatically: say so, and keep the file.
@@ -72,6 +74,8 @@ private final class Services {
     let signIn: SignIn
     let covers: CoverFiles?
     let downloadFiles: DownloadFiles?
+    /// One player for the whole app: it plays from Downloads only (never the network).
+    let player: Player?
     let api: any ServerAPI = AudiobookshelfClient()
     let tokenStore: any TokenStore = KeychainTokenStore()
     let clock: any Clock = SystemClock()
@@ -92,6 +96,9 @@ private final class Services {
         covers = try? CoverFiles(directory: directory.appending(path: "Covers"))
         // Downloads are excluded from backups, and in Application Support so iOS never evicts them.
         downloadFiles = try? DownloadFiles(directory: directory.appending(path: "Downloads"))
+        player = downloadFiles.map { [database, clock] in
+            Player(database: database, files: $0, audio: SystemAudioPlayer(), clock: clock)
+        }
         // A background launch for finished transfers has no UI: start Downloads now so it handles them.
         if let identity = try? database.serverIdentity(), let downloader = downloader(for: identity) {
             Task { await downloader.start() }

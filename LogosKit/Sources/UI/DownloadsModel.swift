@@ -2,6 +2,7 @@ import Domain
 import Downloads
 import Foundation
 import Observation
+import Playback
 import Store
 
 /// What a Book's Download button offers, from its Download (or none).
@@ -32,6 +33,8 @@ public final class DownloadsModel {
 
     private let database: AppDatabase
     let downloader: Downloader?
+    /// Stopped first when the Book it's playing has its Download removed.
+    public var player: Player?
 
     /// - Parameter downloader: does the work. Without it (previews) the actions do nothing.
     public init(database: AppDatabase, downloader: Downloader?) {
@@ -76,8 +79,9 @@ public final class DownloadsModel {
         Task { await download(bookID) }
     }
 
-    /// Stops the Book's Download and deletes its files.
+    /// Stops the Book's Download and deletes its files. A Book that's playing is stopped (and saved) first.
     public func cancel(_ bookID: String) async {
+        player?.stop(bookID: bookID)
         await downloader?.cancel(bookID)
     }
 

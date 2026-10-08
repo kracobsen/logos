@@ -1,6 +1,7 @@
 import Domain
 import Downloads
 import Observation
+import Playback
 import Store
 import Sync
 
@@ -32,18 +33,22 @@ public final class LaunchModel {
     private let database: AppDatabase
     private let makeLibrarySync: (ServerIdentity) -> LibrarySync
     private let makeDownloader: ((ServerIdentity) -> Downloader?)?
+    private let player: Player?
 
     /// - Parameters:
     ///   - makeLibrarySync: builds the sync for a signed-in identity (its Server and Library).
     ///   - makeDownloader: gives the Downloads for a signed-in identity. Without it, Download buttons do nothing.
+    ///   - player: stopped before the Download of the Book it plays is removed.
     public init(
         database: AppDatabase,
         makeLibrarySync: @escaping (ServerIdentity) -> LibrarySync,
-        makeDownloader: ((ServerIdentity) -> Downloader?)? = nil
+        makeDownloader: ((ServerIdentity) -> Downloader?)? = nil,
+        player: Player? = nil
     ) {
         self.database = database
         self.makeLibrarySync = makeLibrarySync
         self.makeDownloader = makeDownloader
+        self.player = player
         do {
             identity = try database.serverIdentity()
         } catch {
@@ -67,7 +72,9 @@ public final class LaunchModel {
     }
 
     private func makeDownloads(for identity: ServerIdentity) -> DownloadsModel {
-        DownloadsModel(database: database, downloader: makeDownloader?(identity) ?? nil)
+        let downloads = DownloadsModel(database: database, downloader: makeDownloader?(identity) ?? nil)
+        downloads.player = player
+        return downloads
     }
 
     private func makeLibrary(for identity: ServerIdentity) -> LibraryModel {

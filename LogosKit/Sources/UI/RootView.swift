@@ -1,3 +1,4 @@
+import Playback
 import SwiftUI
 
 /// The app's root once signed in: the four-tab shell, opening on In Progress. It runs the sync triggers: launch
@@ -9,6 +10,7 @@ public struct RootView: View {
     let launch: LaunchSignpost?
     let covers: CoverImages?
     let downloads: DownloadsModel?
+    let player: Player?
     @State private var selection: AppTab = .inProgress
     @Environment(\.scenePhase) private var scenePhase
 
@@ -18,7 +20,8 @@ public struct RootView: View {
         series: SeriesListModel,
         launch: LaunchSignpost? = nil,
         covers: CoverImages? = nil,
-        downloads: DownloadsModel? = nil
+        downloads: DownloadsModel? = nil,
+        player: Player? = nil
     ) {
         self.library = library
         self.inProgress = inProgress
@@ -26,6 +29,7 @@ public struct RootView: View {
         self.launch = launch
         self.covers = covers
         self.downloads = downloads
+        self.player = player
     }
 
     public var body: some View {
@@ -53,6 +57,7 @@ public struct RootView: View {
                 .badge(tab == .downloaded ? downloads?.badgeCount ?? 0 : 0)
             }
         }
+        .modifier(PlayerChrome(player: player))
         .environment(covers)
         .environment(downloads)
         .task { await library.observe() }

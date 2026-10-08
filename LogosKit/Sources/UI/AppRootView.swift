@@ -1,5 +1,6 @@
 import Domain
 import Downloads
+import Playback
 import Store
 import SwiftUI
 import Sync
@@ -10,25 +11,30 @@ public struct AppRootView: View {
     @State private var signIn: SignInModel
     private let launchSignpost: LaunchSignpost?
     @State private var covers: CoverImages?
+    private let player: Player?
 
     /// - Parameters:
     ///   - makeLibrarySync: builds the sync for a signed-in identity.
     ///   - covers: where the cover files are. Without it, covers show as placeholders.
     ///   - makeDownloader: gives the Downloads for a signed-in identity.
+    ///   - player: plays downloaded Books (one for the whole app).
     public init(
         database: AppDatabase,
         signIn: SignIn,
         makeLibrarySync: @escaping (ServerIdentity) -> LibrarySync,
         launchSignpost: LaunchSignpost? = nil,
         covers: CoverFiles? = nil,
-        makeDownloader: ((ServerIdentity) -> Downloader?)? = nil
+        makeDownloader: ((ServerIdentity) -> Downloader?)? = nil,
+        player: Player? = nil
     ) {
         _covers = State(initialValue: covers.map { CoverImages(database: database, files: $0) })
         _launch = State(
             initialValue: LaunchModel(
-                database: database, makeLibrarySync: makeLibrarySync, makeDownloader: makeDownloader))
+                database: database, makeLibrarySync: makeLibrarySync, makeDownloader: makeDownloader,
+                player: player))
         _signIn = State(initialValue: SignInModel(signIn: signIn))
         self.launchSignpost = launchSignpost
+        self.player = player
     }
 
     public var body: some View {
@@ -36,7 +42,7 @@ public struct AppRootView: View {
             if let library = launch.library, let inProgress = launch.inProgress, let series = launch.series {
                 RootView(
                     library: library, inProgress: inProgress, series: series, launch: launchSignpost, covers: covers,
-                    downloads: launch.downloads)
+                    downloads: launch.downloads, player: player)
             } else {
                 SignInView(model: signIn)
                     .onAppear { launchSignpost?.end() }

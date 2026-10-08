@@ -126,12 +126,14 @@ struct DownloadRowView: View {
     }
 }
 
-/// The Download button: Download (with size), progress with Cancel, or Downloaded. Book detail shows it full width;
-/// In Progress rows show the compact one.
+/// The Download button: Download (with size), progress with Cancel, or Play/Resume once downloaded. Book detail
+/// shows it full width; In Progress rows show the compact one.
 struct DownloadButton: View {
     let bookID: String
     let size: Int64
     var compact = false
+    /// The listener has started the Book: a downloaded one offers Resume rather than Play.
+    var resumes = false
     @Environment(DownloadsModel.self) private var downloads: DownloadsModel?
 
     var body: some View {
@@ -175,11 +177,7 @@ struct DownloadButton: View {
                 .buttonStyle(.bordered)
             }
         case .downloaded:
-            // Playback makes this Play/Resume.
-            Label("Downloaded", systemImage: "checkmark.circle.fill")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity)
+            PlayButton(bookID: bookID, resumes: resumes)
         case .failed:
             Button {
                 downloads.startDownload(bookID)
@@ -213,11 +211,7 @@ struct DownloadButton: View {
                 .progressViewStyle(.circular)
                 .accessibilityLabel("Downloading")
         case .downloaded:
-            // Playback (#30) makes this resume the Book.
-            Image(systemName: "play.circle.fill")
-                .font(.title2)
-                .foregroundStyle(.tint)
-                .accessibilityLabel("Downloaded")
+            PlayButton(bookID: bookID, resumes: resumes, compact: true)
         }
     }
 }

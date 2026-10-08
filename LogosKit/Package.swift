@@ -77,7 +77,7 @@ let package = Package(
         .testTarget(name: "PlaybackTests", dependencies: ["Playback", "Store", "Domain"], swiftSettings: strict),
         .testTarget(
             name: "UITests",
-            dependencies: ["UI", "Sync", "Downloads", "ServerAPI", "Store", "Domain"],
+            dependencies: ["UI", "Sync", "Downloads", "Playback", "ServerAPI", "Store", "Domain"],
             swiftSettings: strict
         ),
 

@@ -63,7 +63,7 @@ struct BookDetailView: View {
             Section {
                 header(detail)
                     .listRowSeparator(.hidden)
-                DownloadButton(bookID: detail.id, size: detail.size)
+                DownloadButton(bookID: detail.id, size: detail.size, resumes: model.progress.status.isStarted)
                     .listRowSeparator(.hidden)
                 BookProgressSection(model: model.progress)
             }
@@ -78,16 +78,8 @@ struct BookDetailView: View {
                 }
             }
             Section {
-                ForEach(model.chapters) { chapter in
-                    HStack {
-                        Text(chapter.title)
-                            .lineLimit(2)
-                        Spacer()
-                        Text(BookDetailModel.clock(chapter.duration))
-                            .font(.subheadline.monospacedDigit())
-                            .foregroundStyle(.secondary)
-                    }
-                    .accessibilityElement(children: .combine)
+                ForEach(Array(model.chapters.enumerated()), id: \.element.id) { index, chapter in
+                    BookChapterRow(bookID: detail.id, index: index, chapter: chapter)
                 }
             } header: {
                 HStack {

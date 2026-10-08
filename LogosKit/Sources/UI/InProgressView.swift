@@ -2,7 +2,7 @@ import Domain
 import SwiftUI
 
 /// The In Progress tab: started, unfinished Books, most recently listened first. A row opens the Book's detail; its
-/// trailing button starts the Book's Download.
+/// trailing button starts the Book's Download, or resumes it once downloaded.
 struct InProgressView: View {
     let model: InProgressModel
     /// Book details open through the Library (its Store and sync).
@@ -19,8 +19,8 @@ struct InProgressView: View {
                     InProgressRowView(row: row)
                 }
                 .foregroundStyle(.primary)
-                // Starts the Download; Playback (#30) makes it resume a downloaded Book.
-                DownloadButton(bookID: row.id, size: 0, compact: true)
+                // Starts the Download, or resumes a downloaded Book.
+                DownloadButton(bookID: row.id, size: 0, compact: true, resumes: true)
                     .buttonStyle(.borderless)
                     .frame(width: 44, height: 44)
             }

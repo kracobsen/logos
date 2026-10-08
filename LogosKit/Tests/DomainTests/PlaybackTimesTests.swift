@@ -29,7 +29,8 @@ struct PlaybackTimesTests {
         #expect(past.bookLeft == 0)
         #expect(past.bookFraction == 1)
 
-        let empty = PlaybackTimes(position: 0, chapters: ChapterList([], bookDuration: 0, bookTitle: "B"), bookDuration: 0)
+        let empty = PlaybackTimes(
+            position: 0, chapters: ChapterList([], bookDuration: 0, bookTitle: "B"), bookDuration: 0)
         #expect(empty.bookFraction == 0)
         #expect(empty.chapterFraction == 0)
     }
