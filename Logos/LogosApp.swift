@@ -114,7 +114,7 @@ private final class Services {
         let downloader = downloadFiles.map {
             Downloader(
                 database: database, api: api, auth: auth, transfers: Self.transfers, files: $0, covers: covers,
-                clock: clock)
+                clock: clock, inForeground: false)  // the UI's launch task calls resume()
         }
         let made = Shared(identity: identity, auth: auth, downloader: downloader)
         shared = made

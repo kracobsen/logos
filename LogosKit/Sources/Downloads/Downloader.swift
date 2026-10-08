@@ -35,11 +35,14 @@ public actor Downloader {
     private let files: DownloadFiles
     private let covers: CoverFiles?
     private let clock: any Clock
-    private var isInForeground = true
+    private var isInForeground: Bool
     private var isStarted = false
     private var lastProgressWrite: [FileTransfer: Date] = [:]
 
-    /// - Parameter covers: where the cover cache keeps covers; a Download shares its Book's cover file with it.
+    /// - Parameters:
+    ///   - covers: where the cover cache keeps covers; a Download shares its Book's cover file with it.
+    ///   - inForeground: `false` when built for a background launch: transfer events are handled, but no new Book
+    ///     starts until ``resume()``.
     public init(
         database: AppDatabase,
         api: any ServerAPI,
@@ -47,7 +50,8 @@ public actor Downloader {
         transfers: any FileTransfers,
         files: DownloadFiles,
         covers: CoverFiles?,
-        clock: any Clock
+        clock: any Clock,
+        inForeground: Bool = true
     ) {
         self.database = database
         self.api = api
@@ -56,6 +60,7 @@ public actor Downloader {
         self.files = files
         self.covers = covers
         self.clock = clock
+        isInForeground = inForeground
     }
 
     /// Starts handling transfer events, including ones that arrived before this launch was ready. Call it as early as

@@ -38,11 +38,11 @@ struct DownloadsFixture {
     }
 
     /// A new Downloads, as after a launch. Transfers enqueued before carry on, as the background session's do.
-    func downloader() async -> Downloader {
+    func downloader(inForeground: Bool = true) async -> Downloader {
         let auth = Auth(server: server.address, api: server, tokenStore: tokens, clock: clock)
         let downloader = Downloader(
             database: database, api: server, auth: auth, transfers: server.transfers, files: files, covers: covers,
-            clock: clock)
+            clock: clock, inForeground: inForeground)
         await downloader.start()
         return downloader
     }
@@ -347,6 +347,24 @@ struct DownloaderTests {
         #expect(try fixture.state("a") == .downloaded)
         #expect(fixture.pending.isEmpty)
         await downloader.resume()
+        #expect(fixture.pending == [transfer("b", "01.mp3")])
+    }
+
+    @Test("Launched in the background for transfer events, Downloads finishes the Book but starts no other")
+    func backgroundLaunch() async throws {
+        let fixture = try await DownloadsFixture(books: [
+            book("a", files: [("01.mp3", 10)]), book("b", files: [("01.mp3", 10)]),
+        ])
+        let before = await fixture.downloader()
+        await before.download("a")
+        await before.download("b")
+
+        let relaunched = await fixture.downloader(inForeground: false)
+        await fixture.server.transfers.complete(transfer("a", "01.mp3"))
+
+        #expect(try fixture.state("a") == .downloaded)
+        #expect(fixture.pending.isEmpty)
+        await relaunched.resume()
         #expect(fixture.pending == [transfer("b", "01.mp3")])
     }
 
