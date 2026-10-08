@@ -36,9 +36,9 @@ public actor SessionOutbox {
     /// The most sessions in one request.
     public static let batchSize = 100
 
-    private let database: AppDatabase
-    private let api: any ServerAPI
-    private let auth: Auth
+    let database: AppDatabase
+    let api: any ServerAPI
+    let auth: Auth
     private let clock: any Clock
     private let progress: ProgressSync
     private var running: Task<OutboxSendOutcome, Never>?
@@ -94,6 +94,7 @@ public actor SessionOutbox {
     private func run() async -> OutboxSendOutcome {
         let identity: ServerIdentity
         var entries: [OutboxSession]
+        var changes: [PendingFinishedChange]
         let device: ClientDevice
         do {
             guard let signedIn = try database.serverIdentity() else { return .notNeeded }
@@ -102,12 +103,21 @@ public actor SessionOutbox {
             let lastSync = try database.lastLibrarySync()
             rejectedBooks = rejectedBooks.filter { $0.value == lastSync }
             entries = try database.unsentListeningSessions().filter { !rejectedBooks.keys.contains($0.session.bookID) }
+            changes = try database.pendingFinishedChanges().filter { !rejectedBooks.keys.contains($0.change.bookID) }
             device = try Self.device(database.clientDeviceID())
         } catch {
             log.error("Couldn't read the outbox: \(String(describing: error), privacy: .public)")
             return .failed
         }
-        guard !entries.isEmpty else { return .nothingToSend }
+        guard !entries.isEmpty || !changes.isEmpty else { return .nothingToSend }
+        var guarded: [FetchedProgress] = []
+        if !changes.isEmpty {
+            switch await guardFinishedChanges(changes, on: identity) {
+            case .checked(let remaining, let server): (changes, guarded) = (remaining, server)
+            case .stop(let outcome): return outcome
+            }
+        }
+        let sessionBooks = Set(entries.map(\.session.bookID))
         var delivered = 0
         var rejected = 0
         while !entries.isEmpty {
@@ -133,6 +143,15 @@ public actor SessionOutbox {
             delivered += counts.delivered
             rejected += counts.rejected
         }
+        if !changes.isEmpty {
+            switch await sendFinishedChanges(changes, server: guarded, sessionsSentFor: sessionBooks, on: identity) {
+            case .success(let counts):
+                delivered += counts.delivered
+                rejected += counts.rejected
+            case .failure(let stop):
+                return stop.outcome
+            }
+        }
         _ = await progress.fetch()
         return .sent(delivered: delivered, rejected: rejected)
     }
@@ -142,14 +161,13 @@ public actor SessionOutbox {
         let byID = Dictionary(results.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         var confirmed: [(id: UUID, revision: Int)] = []
         var rejected = 0
-        let lastSync = try? database.lastLibrarySync()
         for entry in batch {
             guard let result = byID[entry.session.serverID] else { continue }
             if result.isDelivered {
                 confirmed.append((entry.session.id, entry.revision))
             } else {
                 rejected += 1
-                rejectedBooks[entry.session.bookID] = lastSync
+                rejectBook(entry.session.bookID)
                 log.notice("The Server rejected a session: \(result.error ?? "no reason", privacy: .public)")
             }
         }
@@ -160,6 +178,11 @@ public actor SessionOutbox {
             return (0, rejected)
         }
         return (confirmed.count, rejected)
+    }
+
+    /// Skips the Book's entries until the next catalogue sync settles its status.
+    func rejectBook(_ bookID: String) {
+        rejectedBooks[bookID] = try? database.lastLibrarySync()
     }
 
     private static func device(_ deviceID: String) -> ClientDevice {

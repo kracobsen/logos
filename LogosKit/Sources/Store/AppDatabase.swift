@@ -82,6 +82,7 @@ public struct AppDatabase: Sendable {
         registerDownloadPolicyMigration(in: &migrator)
         registerPlaybackSettingsMigration(in: &migrator)
         registerListeningSessionsMigration(in: &migrator)
+        registerFinishedChangesMigration(in: &migrator)
         return migrator
     }
 

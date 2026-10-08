@@ -84,6 +84,7 @@ public final class ListeningReporter {
         await withDiscardingTaskGroup { group in
             group.addTask { await outbox.send() }
             group.addTask { await outbox.sendWhilePlaying() }
+            group.addTask { await outbox.sendOnFinishedChanges() }
             group.addTask { await self.sendOnStops() }
             group.addTask { await self.sendWhenConnected() }
         }

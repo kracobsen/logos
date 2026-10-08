@@ -39,6 +39,8 @@ public final class FakeServer: ServerAPI {
         case cover(URL, bookID: String, accessToken: String)
         /// `POST /api/session/local-all`, with the sent sessions.
         case syncSessions(URL, sessions: [OutboxSession], device: ClientDevice, accessToken: String)
+        /// `PATCH /api/me/progress/:libraryItemId` with a Finished change.
+        case updateFinished(URL, change: FinishedChange, duration: Double, accessToken: String)
         /// A background file transfer being answered (``FakeFileTransfers``).
         case file(URL, bookID: String, ino: String, accessToken: String, resuming: Bool)
     }
@@ -58,6 +60,7 @@ public final class FakeServer: ServerAPI {
         var progress: [FetchedProgress] = []
         var covers: [String: Data] = [:]
         var sessions: [String: ListeningSession] = [:]
+        var stampsFirstProgressWithServerTime = false
         var requests: [Request] = []
         var isReachable: @Sendable (Request) -> Bool = { _ in true }
         var hook: Hook?
@@ -152,6 +155,13 @@ public final class FakeServer: ServerAPI {
     public var sessions: [String: ListeningSession] {
         get { state.withLock { $0.sessions } }
         set { state.withLock { $0.sessions = newValue } }
+    }
+
+    /// Like 2.37.1, a session that creates a Book's first progress stamps it with the Server's time (the clock's
+    /// now), not the session's `updatedAt`. Default: off (the session's `updatedAt`), which older tests rely on.
+    public var stampsFirstProgressWithServerTime: Bool {
+        get { state.withLock { $0.stampsFirstProgressWithServerTime } }
+        set { state.withLock { $0.stampsFirstProgressWithServerTime = newValue } }
     }
 
     /// Decides per request whether it gets through. Default: everything does.
@@ -274,7 +284,8 @@ public final class FakeServer: ServerAPI {
 
     /// Like 2.37.1: a session for a Book the Server doesn't list fails on its own ("Media item not found"); others
     /// are stored (latest state wins) and move the Book's progress unless the progress is newer than the session's
-    /// `updatedAt`.
+    /// `updatedAt`. Moving progress to within 10 s of the end finishes the Book; moving a Finished Book's progress
+    /// anywhere else clears Finished. Creating a Book's first progress never finishes it.
     public func syncSessions(
         _ sessions: [OutboxSession], device: ClientDevice, libraryID: String, on server: URL, accessToken: String
     ) async throws(ServerAPIError) -> [SessionResult] {
@@ -293,12 +304,44 @@ public final class FakeServer: ServerAPI {
                 if let index, state.progress[index].lastUpdate > updatedAt {
                     return SessionResult(id: session.serverID, isDelivered: true)
                 }
-                let progress = FetchedProgress(
-                    bookID: session.bookID, position: session.currentTime,
-                    isFinished: index.map { state.progress[$0].isFinished } ?? false, lastUpdate: updatedAt)
-                if let index { state.progress[index] = progress } else { state.progress.append(progress) }
+                guard let index else {
+                    let stamp = state.stampsFirstProgressWithServerTime ? clock.now.millisecondsSince1970 : updatedAt
+                    state.progress.append(
+                        FetchedProgress(
+                            bookID: session.bookID, position: session.currentTime, isFinished: false,
+                            lastUpdate: stamp))
+                    return SessionResult(id: session.serverID, isDelivered: true)
+                }
+                let stored = state.progress[index]
+                let duration = state.books.first { $0.id == session.bookID }?.duration ?? 0
+                let nearEnd = duration > 0 && duration - session.currentTime < 10
+                let isFinished =
+                    nearEnd || (stored.isFinished && stored.position == session.currentTime)
+                state.progress[index] = FetchedProgress(
+                    bookID: session.bookID, position: session.currentTime, isFinished: isFinished,
+                    lastUpdate: updatedAt)
                 return SessionResult(id: session.serverID, isDelivered: true)
             }
+        }
+    }
+
+    /// Like 2.37.1: 404 for a Book the Server doesn't list. Finished takes the sent position; clearing a Finished
+    /// Book puts it at 0. An existing record takes `lastUpdate`; a new one gets the Server's time (the clock's now).
+    public func updateFinished(_ change: FinishedChange, duration: Double, on server: URL, accessToken: String)
+        async throws(ServerAPIError)
+    {
+        try await receive(
+            .updateFinished(server, change: change, duration: duration, accessToken: accessToken), at: server)
+        try state.withLock { (state) throws(ServerAPIError) in
+            try authenticate(accessToken, in: state)
+            guard state.books.contains(where: { $0.id == change.bookID }) else { throw .unexpectedStatus(404) }
+            let index = state.progress.firstIndex { $0.bookID == change.bookID }
+            let wasFinished = index.map { state.progress[$0].isFinished } ?? false
+            let position = !change.isFinished && wasFinished ? 0 : change.position
+            let progress = FetchedProgress(
+                bookID: change.bookID, position: position, isFinished: change.isFinished,
+                lastUpdate: index == nil ? clock.now.millisecondsSince1970 : change.lastUpdate.millisecondsSince1970)
+            if let index { state.progress[index] = progress } else { state.progress.append(progress) }
         }
     }
 

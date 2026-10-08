@@ -52,7 +52,13 @@ struct ProgressIntegrationTests {
             bookID: book.id, position: 70, lastChanged: Date(millisecondsSince1970: Date().millisecondsSince1970),
             isFinished: false)
         try database.saveProgress(local)
-        #expect(await sync.progress.fetch() == .fetched(changedBookIDs: []))
+        // Other suites change other Books' progress meanwhile, so only this Book must be unchanged.
+        let fetched = await sync.progress.fetch()
+        guard case .fetched(let changed) = fetched else {
+            Issue.record("expected a fetch, got \(fetched)")
+            return
+        }
+        #expect(!changed.contains(book.id))
         #expect(try database.progress(ofBook: book.id) == local)
     }
 }

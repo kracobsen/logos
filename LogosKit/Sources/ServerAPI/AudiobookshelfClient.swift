@@ -70,6 +70,12 @@ public struct AudiobookshelfClient: ServerAPI {
         return try Responses.sessionResults(await send(request))
     }
 
+    public func updateFinished(_ change: FinishedChange, duration: Double, on server: URL, accessToken: String)
+        async throws(ServerAPIError)
+    {
+        _ = try await send(Requests.updateFinished(change, duration: duration, on: server, accessToken: accessToken))
+    }
+
     private func send(_ request: URLRequest) async throws(ServerAPIError) -> Data {
         // Paths only: never log the host, tokens or bodies.
         let endpoint = "\(request.httpMethod ?? "GET") \(request.url?.path() ?? "")"

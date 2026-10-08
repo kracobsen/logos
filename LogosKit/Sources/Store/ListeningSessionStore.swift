@@ -88,7 +88,7 @@ extension AppDatabase {
     /// - Parameter isPlaying: whether the Book is playing after this write.
     public func saveProgress(_ progress: BookProgress, listening isPlaying: Bool) throws {
         try pool.write { db in
-            try ProgressRecord(progress).upsert(db)
+            try Self.writeLocalProgress(progress, db)
             let open = try ListeningSessionRecord.filter(Column("isOpen") == true).fetchAll(db)
             let changed = ListeningSessions.recording(progress, isPlaying: isPlaying, open: open.map(\.session))
             try Self.writeSessions(changed, db)
@@ -139,8 +139,12 @@ extension AppDatabase {
         }
     }
 
-    /// The sessions to send: unsent ones whose Book is in the Library and on the Server, oldest first. Sessions of a
-    /// Not on Server Book (or one the Library no longer has) are held: kept, not sent.
+    /// The sessions to send: unsent ones whose Book is in the Library and on the Server, latest state first. Sessions
+    /// of a Not on Server Book (or one the Library no longer has) are held: kept, not sent.
+    ///
+    /// Latest first because the Server stamps a Book's progress that a session *creates* with its own time, so any
+    /// older session after it in the same send no longer moves the Server's position. Sending the latest first
+    /// makes that first progress the listener's latest position.
     public func unsentListeningSessions() throws -> [OutboxSession] {
         try pool.read { db in
             try Row.fetchAll(
@@ -149,7 +153,7 @@ extension AppDatabase {
                     SELECT listeningSession.*, book.mediaID, book.title, book.authorName, book.duration AS bookDuration
                     FROM listeningSession JOIN book ON book.id = listeningSession.bookID
                     WHERE listeningSession.sentRevision < listeningSession.revision AND NOT book.notOnServer
-                    ORDER BY listeningSession.startedAt, listeningSession.id
+                    ORDER BY listeningSession.updatedAt DESC, listeningSession.id
                     """
             ).map { row in
                 let record = try ListeningSessionRecord(row: row)
@@ -183,10 +187,21 @@ extension AppDatabase {
         }
     }
 
-    /// The Books with outbox entries the Server hasn't confirmed: a fetch never overwrites their progress.
+    /// The Books with outbox entries the Server hasn't confirmed (sessions or a Finished change): a fetch never
+    /// overwrites their progress.
     static func bookIDsWithUnsentEntries(_ db: Database) throws -> Set<String> {
         try Set(
-            String.fetchAll(db, sql: "SELECT DISTINCT bookID FROM listeningSession WHERE sentRevision < revision"))
+            String.fetchAll(db, sql: "SELECT DISTINCT bookID FROM listeningSession WHERE sentRevision < revision")
+        )
+        .union(bookIDsWithPendingFinishedChanges(db))
+    }
+
+    /// The Books with sessions the Server hasn't confirmed. A Book's Finished change waits for them.
+    public func bookIDsWithUnsentSessions() throws -> Set<String> {
+        try pool.read { db in
+            try Set(
+                String.fetchAll(db, sql: "SELECT DISTINCT bookID FROM listeningSession WHERE sentRevision < revision"))
+        }
     }
 
     /// Deletes a Book's sessions (with the Book itself, when its Download is removed while Not on Server).

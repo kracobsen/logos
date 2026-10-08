@@ -51,6 +51,7 @@ extension AppDatabase {
         try db.execute(sql: "DELETE FROM book WHERE id = ?", arguments: [bookID])
         try db.execute(sql: "DELETE FROM progress WHERE bookID = ?", arguments: [bookID])
         try deleteListeningSessions(db, bookID: bookID)
+        try deleteFinishedChange(db, bookID: bookID)
         return true
     }
 

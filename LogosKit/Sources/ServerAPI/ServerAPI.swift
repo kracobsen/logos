@@ -48,6 +48,11 @@ public protocol ServerAPI: Sendable {
     func syncSessions(
         _ sessions: [OutboxSession], device: ClientDevice, libraryID: String, on server: URL, accessToken: String
     ) async throws(ServerAPIError) -> [SessionResult]
+
+    /// `PATCH /api/me/progress/:libraryItemId`: sets or clears Finished, as of when the listener acted. No guard on
+    /// the Server: it takes the change whatever it has. A Book the Server doesn't have is `unexpectedStatus(404)`.
+    func updateFinished(_ change: FinishedChange, duration: Double, on server: URL, accessToken: String)
+        async throws(ServerAPIError)
 }
 
 /// Why a Server call failed.

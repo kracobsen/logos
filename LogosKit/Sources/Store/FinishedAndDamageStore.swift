@@ -13,7 +13,7 @@ extension AppDatabase {
             let progress = BookProgress(
                 bookID: bookID, position: isFinished ? duration : 0,
                 lastChanged: Date(millisecondsSince1970: date.millisecondsSince1970), isFinished: isFinished)
-            try ProgressRecord(progress).upsert(db)
+            try Self.writeLocalProgress(progress, db)
             // A Finished change ends the Book's listening session.
             try Self.endListeningSessions(db, bookID: bookID)
         }
