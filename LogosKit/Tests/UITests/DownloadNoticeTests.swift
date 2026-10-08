@@ -40,8 +40,9 @@ struct DownloadNoticeTests {
         return (model, Task { await model.observe() })
     }
 
+    /// Waits (up to 10 s: these run alongside every other suite) for the model to follow the database.
     func eventually(_ condition: () -> Bool) async {
-        for _ in 0..<200 where !condition() {
+        for _ in 0..<1000 where !condition() {
             try? await Task.sleep(for: .milliseconds(10))
         }
     }

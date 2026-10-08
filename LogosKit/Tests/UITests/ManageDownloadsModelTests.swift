@@ -52,7 +52,10 @@ extension DownloadsModelTests {
 
         await model.cancel("first")
 
-        await eventually { model.list.downloaded.isEmpty }
+        // The list and the statuses are separate observations: wait for both to land.
+        await eventually {
+            model.list.downloaded.isEmpty && model.action(forBook: "first", size: 1000) != .downloaded
+        }
         #expect(model.list.downloaded.isEmpty)
         #expect(model.action(forBook: "first", size: 1000) != .downloaded)
         #expect(try database.bookIDs().contains("first"))

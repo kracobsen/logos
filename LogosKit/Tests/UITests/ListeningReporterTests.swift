@@ -100,8 +100,9 @@ struct ListeningReporterTests {
         server.requests.filter { if case .syncSessions = $0 { true } else { false } }.count
     }
 
+    /// Waits (up to 10 s: these run alongside every other suite) for the sends to happen.
     func eventually(_ condition: () -> Bool) async {
-        for _ in 0..<200 where !condition() {
+        for _ in 0..<1000 where !condition() {
             try? await Task.sleep(for: .milliseconds(10))
         }
     }
@@ -123,6 +124,8 @@ struct ListeningReporterTests {
         let running = Task { await reporter.run() }
         defer { running.cancel() }
         await eventually { sends == 1 }  // the launch send
+        // Listening on past what the launch send can have carried, so the pause has something new to send.
+        audio.advance(by: 0.5)
 
         player.pause()
         await eventually { sends == 2 }
@@ -131,7 +134,7 @@ struct ListeningReporterTests {
         #expect(tasks.begun == 1)
         await eventually { tasks.ended == 1 }
         #expect(tasks.ended == 1)
-        #expect(server.sessions.values.first?.currentTime == 3)
+        #expect(server.sessions.values.first?.currentTime == 3.5)
     }
 
     @Test("A Sleep Timer stop sends the ended session straight away")

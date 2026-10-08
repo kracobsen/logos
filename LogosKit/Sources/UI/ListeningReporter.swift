@@ -81,11 +81,13 @@ public final class ListeningReporter {
     /// Sends now (the launch trigger), then follows the other triggers until cancelled.
     public func run() async {
         let outbox = outbox
+        // Subscribed before anything else runs, so no stop is missed while the triggers start.
+        let stops = player?.stops()
         await withDiscardingTaskGroup { group in
             group.addTask { await outbox.send() }
             group.addTask { await outbox.sendWhilePlaying() }
             group.addTask { await outbox.sendOnFinishedChanges() }
-            group.addTask { await self.sendOnStops() }
+            group.addTask { await self.sendOnStops(stops) }
             group.addTask { await self.sendWhenConnected() }
         }
     }
@@ -101,9 +103,9 @@ public final class ListeningReporter {
         sendInBackgroundTask()
     }
 
-    private func sendOnStops() async {
-        guard let player else { return }
-        for await _ in player.stops() {
+    private func sendOnStops(_ stops: AsyncStream<PlaybackStop>?) async {
+        guard let stops else { return }
+        for await _ in stops {
             sendInBackgroundTask()
         }
     }

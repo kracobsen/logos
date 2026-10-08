@@ -56,8 +56,9 @@ struct DownloadsModelTests {
         DownloadsModel(database: database, downloader: downloader)
     }
 
+    /// Waits (up to 10 s: these run alongside every other suite) for the model to follow the database.
     func eventually(_ condition: () -> Bool) async {
-        for _ in 0..<200 where !condition() {
+        for _ in 0..<1000 where !condition() {
             try? await Task.sleep(for: .milliseconds(10))
         }
     }
@@ -112,7 +113,10 @@ struct DownloadsModelTests {
 
         await model.cancel("first")
 
-        await eventually { model.list.queue.isEmpty }
+        // The list and the statuses are separate observations (and the queue was empty before the Download):
+        // wait until both show the cancel.
+        await eventually { model.list.queue.isEmpty && model.status(of: "first") == nil }
+        #expect(model.list.queue.isEmpty)
         #expect(model.status(of: "first") == nil)
         #expect(server.transfers.pending.isEmpty)
     }
