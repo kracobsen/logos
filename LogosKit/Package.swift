@@ -69,7 +69,11 @@ let package = Package(
             swiftSettings: strict
         ),
         .testTarget(name: "SyncTests", dependencies: ["Sync", "ServerAPI", "Store", "Domain"], swiftSettings: strict),
-        .testTarget(name: "DownloadsTests", dependencies: ["Downloads"], swiftSettings: strict),
+        .testTarget(
+            name: "DownloadsTests",
+            dependencies: ["Downloads", "ServerAPI", "Store", "Domain"],
+            swiftSettings: strict
+        ),
         .testTarget(name: "PlaybackTests", dependencies: ["Playback"], swiftSettings: strict),
         .testTarget(
             name: "UITests",

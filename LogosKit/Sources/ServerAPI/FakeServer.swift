@@ -37,6 +37,8 @@ public final class FakeServer: ServerAPI {
         case bookData(URL, id: String, accessToken: String)
         case progress(URL, accessToken: String)
         case cover(URL, bookID: String, accessToken: String)
+        /// A background file transfer being answered (``FakeFileTransfers``).
+        case file(URL, bookID: String, ino: String, accessToken: String, resuming: Bool)
     }
 
     public typealias Hook = @Sendable (Request) async throws(ServerAPIError) -> Void
@@ -67,6 +69,17 @@ public final class FakeServer: ServerAPI {
     private let accessTokenLifetime: Duration
     private let refreshTokenLifetime: Duration
     private let state: Mutex<State>
+    private let fileTransfers = Mutex<FakeFileTransfers?>(nil)
+
+    /// This Server's background file transfers.
+    public var transfers: FakeFileTransfers {
+        fileTransfers.withLock { stored in
+            if let stored { return stored }
+            let created = FakeFileTransfers(server: self)
+            stored = created
+            return created
+        }
+    }
 
     public init(
         address: URL = URL(string: "https://abs.example.com")!,
@@ -247,6 +260,26 @@ public final class FakeServer: ServerAPI {
             try authenticate(accessToken, in: state)
             guard let data = state.covers[bookID] else { throw .unexpectedStatus(404) }
             return data
+        }
+    }
+
+    // MARK: For FakeFileTransfers
+
+    func receiveFileRequest(_ request: FileTransferRequest) async throws(ServerAPIError) {
+        let file = Request.file(
+            request.server, bookID: request.transfer.bookID, ino: request.ino, accessToken: request.accessToken,
+            resuming: request.resumeData != nil)
+        try await receive(file, at: request.server)
+    }
+
+    func accepts(accessToken: String) -> Bool {
+        state.withLock { state in
+            do {
+                try authenticate(accessToken, in: state)
+                return true
+            } catch {
+                return false
+            }
         }
     }
 

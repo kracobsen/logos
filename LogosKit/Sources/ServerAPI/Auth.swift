@@ -60,12 +60,27 @@ public actor Auth {
         }
     }
 
+    /// An access token for a request that carries it by itself (a background file transfer), refreshed first if
+    /// less than `validity` is left on it. A failed ahead-of-time refresh falls back to the still-valid token.
+    public func accessToken(validFor validity: Duration) async throws(AuthError) -> String {
+        try await usableTokens(margin: validity).accessToken
+    }
+
+    /// A replacement for `rejected`, an access token the Server answered with 401: the one another caller already
+    /// got, or one shared refresh.
+    public func accessToken(replacingRejected rejected: String) async throws(AuthError) -> String {
+        if needsSignIn { throw .needsSignIn }
+        let current = try storedTokens()
+        guard current.accessToken == rejected else { return current.accessToken }
+        return try await refreshed(replacing: current).accessToken
+    }
+
     /// The current pair, refreshed first if the access token is close to expiry.
-    private func usableTokens() async throws(AuthError) -> TokenPair {
+    private func usableTokens(margin: Duration = refreshMargin) async throws(AuthError) -> TokenPair {
         if needsSignIn { throw .needsSignIn }
         let current = try storedTokens()
         guard let expiry = current.accessTokenExpiry,
-            expiry.timeIntervalSince(clock.now) < Self.refreshMargin.timeInterval
+            expiry.timeIntervalSince(clock.now) < margin.timeInterval
         else { return current }
         do {
             return try await refreshed(replacing: current)
