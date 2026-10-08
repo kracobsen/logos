@@ -71,7 +71,8 @@ struct RemoveDownloadButton: View {
     @State private var removal: DownloadRemoval?
 
     var body: some View {
-        if let status = downloads?.status(of: detail.id), !status.isActive {
+        // A Not on Server Book without a Download had a damaged one: Remove Download is all it offers.
+        if downloads?.status(of: detail.id).map({ !$0.isActive }) ?? detail.isNotOnServer {
             Button("Remove Download", systemImage: "trash", role: .destructive) {
                 removal = DownloadRemoval(
                     bookID: detail.id, title: detail.title, isNotOnServer: detail.isNotOnServer, isActive: false)

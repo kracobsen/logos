@@ -29,10 +29,17 @@ public final class FakeAudioPlayer: AudioPlayer {
     private var boundaryObservers: [UUID: (times: [Double], handler: (Double) -> Void)] = [:]
     private var heldSeeks: [CheckedContinuation<Void, Never>] = []
 
+    /// When set, `load` fails as if the player couldn't open the files.
+    public var failsToLoad = false
+
     public init() {}
 
     public func load(_ files: [URL]) async throws {
         isPlaying = false
+        if failsToLoad, let first = files.first {
+            loadedFiles = nil
+            throw LoadError(missing: first)
+        }
         for file in files where !FileManager.default.fileExists(atPath: file.path(percentEncoded: false)) {
             loadedFiles = nil
             throw LoadError(missing: file)

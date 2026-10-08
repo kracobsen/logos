@@ -29,6 +29,8 @@ public final class Player {
         case cannotOpen
         /// A file kept failing to decode, even after reloading.
         case cannotDecode
+        /// A file is missing or the wrong size (checked before playing).
+        case damagedFiles
     }
 
     public private(set) var state: State = .idle
@@ -47,6 +49,9 @@ public final class Player {
     public private(set) var problem: Problem?
     /// The notice after the paused Book moved to a newer position from another device (Player+PickUp.swift).
     public internal(set) var pickedUp: PickedUp?
+    /// The Download found damaged when the listener played it (or mid-play), until ``dismissDamage()``: the screen
+    /// shows "This Download is damaged" with Download again.
+    public private(set) var damaged: DamagedDownload?
     /// The Sleep Timer set on the loaded Book, if any (see `Player+SleepTimer.swift`).
     public internal(set) var sleepTimer: SleepTimer?
 
@@ -147,19 +152,23 @@ public final class Player {
         defer { interval.end() }
         do {
             guard let bookID = try database.lastPlayedBookID() else { return }
-            _ = await load(bookID)
+            // Not a user action: a damaged Download is marked not downloaded without a notice.
+            _ = await load(bookID, reportsDamage: false)
         } catch {
             log.error("Couldn't read the last-played Book: \(String(describing: error), privacy: .public)")
         }
     }
 
     /// Loads the Book paused at its saved position. Returns whether it's loaded (and no later load replaced it).
-    private func load(_ bookID: String) async -> Bool {
+    /// A damaged Download (a file missing, the wrong size or not opening) is discarded; `reportsDamage` says whether
+    /// to publish it in ``damaged``.
+    private func load(_ bookID: String, reportsDamage: Bool = true) async -> Bool {
         pause(because: .switchedBook)
         cancelSleepTimer()
         loadGeneration += 1
         let generation = loadGeneration
         problem = nil
+        if reportsDamage { damaged = nil }
         decodeRetries = 0
         clearPickUp()
         let detail: BookDetail
@@ -173,6 +182,12 @@ public final class Player {
             }
             detail = found
             saved = try database.progress(ofBook: bookID)
+            guard try database.hasIntactDownload(ofBook: bookID, in: files) else {
+                log.error("A Book's Download is damaged: a file is missing or the wrong size")
+                unload(problem: .damagedFiles)
+                discardDamaged(found, reports: reportsDamage)
+                return false
+            }
         } catch {
             log.error("Couldn't read a Book to play: \(String(describing: error), privacy: .public)")
             unload(problem: .notDownloaded)
@@ -188,6 +203,7 @@ public final class Player {
             guard generation == loadGeneration else { return false }
             log.error("Couldn't open a Book's files: \(String(describing: error), privacy: .public)")
             unload(problem: .cannotOpen)
+            discardDamaged(detail, reports: reportsDamage)
             return false
         }
         guard generation == loadGeneration else { return false }
@@ -221,6 +237,24 @@ public final class Player {
         } catch {
             log.error("Stopped observing Downloads: \(String(describing: error), privacy: .public)")
         }
+    }
+
+    /// The Book's Download is damaged: it becomes not downloaded (its files go; its position and Finished stay) and
+    /// nothing downloads it again on its own. Call it once the Book is saved and unloaded.
+    private func discardDamaged(_ detail: BookDetail, reports: Bool) {
+        do {
+            try database.discardDamagedDownload(ofBook: detail.id, files: files)
+        } catch {
+            log.error("Couldn't discard a damaged Download: \(String(describing: error), privacy: .public)")
+        }
+        if reports {
+            damaged = DamagedDownload(bookID: detail.id, title: detail.title, isNotOnServer: detail.isNotOnServer)
+        }
+    }
+
+    /// The listener has seen the damage notice.
+    public func dismissDamage() {
+        damaged = nil
     }
 
     private func unload(problem: Problem?) {
@@ -281,14 +315,20 @@ public final class Player {
         }
     }
 
-    /// Pauses and saves. Does nothing unless playing.
+    /// Pauses and saves. Does nothing unless playing. Pausing within the Book's last 30 s finishes it.
     public func pause() {
         pause(because: .paused)
     }
 
     /// Pauses, saves (at `landing`, moving there, if given) and reports the stop. Does nothing unless playing.
+    /// Pausing (or landing) within the Book's last 30 s finishes it instead, reported with the same reason.
     func pause(because reason: PlaybackStop.Reason, landingAt landing: Double? = nil) {
         guard let book, state == .playing else { return }
+        let stoppedAt = landing ?? (pendingSeeks == 0 ? audio.currentTime : position)
+        if FinishRule.finishes(at: stoppedAt, duration: book.duration) {
+            finish(because: reason)
+            return
+        }
         audio.pause()
         state = .paused
         saving?.cancel()
@@ -300,6 +340,40 @@ public final class Player {
             save()
         }
         reportStop(PlaybackStop(bookID: book.id, position: position, reason: reason))
+    }
+
+    /// Stops playing and marks the loaded Book Finished, with the position at the end (saved), and clears the Sleep
+    /// Timer. Nothing plays next. If it was playing, the stop is reported with `reason`.
+    private func finish(because reason: PlaybackStop.Reason) {
+        guard let book, state == .paused || state == .playing else { return }
+        let wasPlaying = state == .playing
+        if wasPlaying { audio.pause() }
+        state = .paused
+        saving?.cancel()
+        saving = nil
+        cancelSleepTimer()
+        isFinished = true
+        seek(to: book.duration)
+        if wasPlaying { reportStop(PlaybackStop(bookID: book.id, position: position, reason: reason)) }
+    }
+
+    /// Sets or clears Finished by hand (Book detail). Finished stops the Book if it's playing and puts it at the end;
+    /// clearing Finished moves it to 0.
+    public func setFinished(_ finished: Bool, bookID: String) {
+        guard book?.id == bookID, state == .paused || state == .playing else {
+            do {
+                try database.setFinished(finished, ofBook: bookID, at: clock.now)
+            } catch {
+                log.error("Couldn't set Finished: \(String(describing: error), privacy: .public)")
+            }
+            return
+        }
+        if finished {
+            finish(because: .endOfBook)
+        } else {
+            isFinished = false
+            seek(to: 0)
+        }
     }
 
     public func togglePlayPause() {
@@ -323,8 +397,15 @@ public final class Player {
         }
     }
 
-    /// Skips `seconds` forward (or back, if negative), staying within the Book.
+    /// Skips `seconds` forward (or back, if negative), staying within the Book. Skipping forward into the last 30 s
+    /// stops playing and finishes the Book.
     public func skip(by seconds: Double) {
+        if seconds > 0, let book, state == .paused || state == .playing,
+            FinishRule.finishes(at: position + seconds, duration: book.duration)
+        {
+            finish(because: .endOfBook)
+            return
+        }
         seek(to: position + seconds)
     }
 
@@ -354,14 +435,8 @@ public final class Player {
             playToAudio?.end()
             playToAudio = nil
         case .playedToEnd:
-            guard let book, state == .playing else { return }
-            state = .paused
-            saving?.cancel()
-            saving = nil
-            cancelSleepTimer()
-            position = book.duration
-            save()
-            reportStop(PlaybackStop(bookID: book.id, position: position, reason: .endOfBook))
+            guard state == .playing else { return }
+            finish(because: .endOfBook)
         case .decodeFailed(let time):
             Task { await decodeFailed(at: time) }
         }
@@ -375,7 +450,9 @@ public final class Player {
         guard decodeRetries < Self.maxDecodeRetries else {
             log.error("A Book kept failing to decode; giving up")
             pause(because: .failed)
-            problem = .cannotDecode
+            loadGeneration += 1
+            unload(problem: .cannotDecode)
+            discardDamaged(book, reports: true)
             return
         }
         decodeRetries += 1
@@ -389,6 +466,7 @@ public final class Player {
             guard generation == loadGeneration else { return }
             pause(because: .failed)
             unload(problem: .cannotOpen)
+            discardDamaged(book, reports: true)
             return
         }
         guard generation == loadGeneration else { return }

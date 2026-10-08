@@ -8,6 +8,8 @@ import SwiftUI
 struct PlayerChrome: ViewModifier {
     let player: Player?
     @State private var showsPlayer = false
+    /// The open player sheet shows a Download found damaged mid-play (so no alert for it).
+    @State private var sheetShowsDamage = false
     @Environment(\.scenePhase) private var scenePhase
 
     func body(content: Content) -> some View {
@@ -17,15 +19,26 @@ struct PlayerChrome: ViewModifier {
                     MiniPlayerView(player: player) { showsPlayer = true }
                 }
             }
-            .sheet(isPresented: $showsPlayer) {
+            .sheet(isPresented: $showsPlayer, onDismiss: damageSheetDismissed) {
                 if let player {
-                    PlayerSheet(player: player)
-                        .presentationDetents([.large])
+                    if player.book == nil, let damaged = player.damaged {
+                        DamagedDownloadView(damaged: damaged) { showsPlayer = false }
+                    } else {
+                        PlayerSheet(player: player)
+                            .presentationDetents([.large])
+                    }
                 }
             }
             .onChange(of: player?.book == nil) { _, unloaded in
-                if unloaded { showsPlayer = false }
+                guard unloaded else { return }
+                // A Download found damaged mid-play is shown in the open sheet instead of an alert.
+                if showsPlayer, player?.damaged != nil {
+                    sheetShowsDamage = true
+                } else {
+                    showsPlayer = false
+                }
             }
+            .modifier(DamagedDownloadAlert(player: player, isEnabled: !showsPlayer && !sheetShowsDamage))
             .environment(player)
             .task {
                 // Off the critical path: after the first frame, once the Library is interactive. Never plays.
@@ -37,5 +50,11 @@ struct PlayerChrome: ViewModifier {
             .onChange(of: scenePhase) { _, phase in
                 if phase == .background { player?.enteredBackground() }
             }
+    }
+
+    private func damageSheetDismissed() {
+        guard sheetShowsDamage else { return }
+        player?.dismissDamage()
+        sheetShowsDamage = false
     }
 }
