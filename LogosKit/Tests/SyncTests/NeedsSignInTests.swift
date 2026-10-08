@@ -200,6 +200,27 @@ struct ServerTooOldTests {
             fixture.server.requests.dropFirst(before).allSatisfy { if case .status = $0 { true } else { false } })
         #expect(try fixture.database.listeningSessions().count == 1)
     }
+
+    @Test("Server too old outlives a relaunch: the launch send and fetch don't talk to it before the next check")
+    func persistsAcrossLaunches() async throws {
+        let fixture = try await SignedInFixture()
+        try fixture.haveBooks(["a"])
+        fixture.server.version = "2.30.0"
+        _ = await fixture.librarySync().sync(.manual)
+        try await fixture.listen("a", from: 0, for: 30)
+        let before = fixture.server.requests.count
+
+        let relaunched = fixture.librarySync()
+
+        #expect(await relaunched.connection.state == .serverTooOld(found: "2.30.0"))
+        #expect(await relaunched.outbox.send() == .serverTooOld(found: "2.30.0"))
+        #expect(await relaunched.progress.fetch() == .serverTooOld(found: "2.30.0"))
+        #expect(fixture.server.requests.count == before)
+
+        fixture.server.version = "2.37.1"
+        #expect(await relaunched.sync(.manual) == .synced)
+        #expect(await fixture.librarySync().connection.state == .signedIn)
+    }
 }
 
 @Suite("Sign-in never leaves a session behind on the Server")

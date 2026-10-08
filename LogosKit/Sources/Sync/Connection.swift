@@ -15,14 +15,14 @@ public enum ConnectionState: Sendable, Hashable {
 }
 
 /// The signed-in identity's connection: needs sign-in (from its ``Auth``), Server too old (from the last sync's
-/// version check), signing in again, and the token side of signing out.
+/// version check, kept in the Store), signing in again, and the token side of signing out.
 ///
 /// One per identity, shared by the sync, the outbox and the progress fetch (``LibrarySync/connection``).
 public actor Connection {
     private let database: AppDatabase
     private let auth: Auth
     private var needsSignIn = false
-    /// The version the last check found, if it was too old.
+    /// The version the last check found, if it was too old (kept in the Store across launches).
     private(set) var tooOldVersion: String?
     private var watchers: [UUID: Watcher] = [:]
     private var following: Task<Void, Never>?
@@ -36,6 +36,12 @@ public actor Connection {
     init(database: AppDatabase, auth: Auth) {
         self.database = database
         self.auth = auth
+        // Kept in the Store, so a relaunch doesn't talk to a too-old Server before the next check.
+        do {
+            tooOldVersion = try database.serverTooOldVersion()
+        } catch {
+            log.error("Couldn't read the Server version state: \(String(describing: error), privacy: .public)")
+        }
     }
 
     /// The state now.
@@ -112,6 +118,11 @@ public actor Connection {
     func serverVersionChecked(tooOld found: String?) {
         guard found != tooOldVersion else { return }
         tooOldVersion = found
+        do {
+            try database.setServerTooOldVersion(found)
+        } catch {
+            log.error("Couldn't save the Server version state: \(String(describing: error), privacy: .public)")
+        }
         publish()
     }
 
