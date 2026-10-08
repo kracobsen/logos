@@ -161,11 +161,11 @@ struct LibrarySyncTests {
         let fixture = try await SignedInFixture(books: [FakeServer.book("One")])
         let sync = fixture.librarySync()
         _ = await sync.sync(.launch)
-        let requests = fixture.server.requests.count
+        let lists = fixture.listRequests
 
         await fixture.clock.advance(by: .seconds(14 * 60))
         #expect(await sync.sync(.foreground) == .notNeeded)
-        #expect(fixture.server.requests.count == requests)
+        #expect(fixture.listRequests == lists)
 
         await fixture.clock.advance(by: .seconds(2 * 60))
         #expect(await sync.sync(.foreground) == .synced)

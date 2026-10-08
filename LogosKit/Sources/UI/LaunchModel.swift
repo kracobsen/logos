@@ -14,10 +14,13 @@ public final class LaunchModel {
         didSet {
             guard identity != oldValue else { return }
             library = identity.map(makeLibrary)
+            inProgress = identity.map { _ in InProgressModel(database: database) }
         }
     }
     /// The Library tab's model, while signed in.
     public private(set) var library: LibraryModel?
+    /// The In Progress tab's model, while signed in.
+    public private(set) var inProgress: InProgressModel?
 
     private let database: AppDatabase
     private let makeLibrarySync: (ServerIdentity) -> LibrarySync
@@ -32,6 +35,7 @@ public final class LaunchModel {
             log.error("Couldn't read the Server identity: \(String(describing: error), privacy: .public)")
         }
         library = identity.map(makeLibrary)
+        inProgress = identity.map { _ in InProgressModel(database: database) }
     }
 
     /// Follows the identity in the database until cancelled.

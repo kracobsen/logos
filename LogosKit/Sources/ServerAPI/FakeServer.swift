@@ -35,6 +35,7 @@ public final class FakeServer: ServerAPI {
         case books(URL, libraryID: String, accessToken: String)
         case bookDataBatch(URL, ids: [String], accessToken: String)
         case bookData(URL, id: String, accessToken: String)
+        case progress(URL, accessToken: String)
         case cover(URL, bookID: String, accessToken: String)
     }
 
@@ -50,6 +51,7 @@ public final class FakeServer: ServerAPI {
         var libraries: [ServerLibrary]
         var books: [ListedBook] = []
         var bookData: [BookData] = []
+        var progress: [FetchedProgress] = []
         var covers: [String: Data] = [:]
         var requests: [Request] = []
         var isReachable: @Sendable (Request) -> Bool = { _ in true }
@@ -116,6 +118,12 @@ public final class FakeServer: ServerAPI {
     public var bookData: [BookData] {
         get { state.withLock { $0.bookData } }
         set { state.withLock { $0.bookData = newValue } }
+    }
+
+    /// The signed-in user's progress, as `GET /api/me/progress` returns it. Default: none.
+    public var progress: [FetchedProgress] {
+        get { state.withLock { $0.progress } }
+        set { state.withLock { $0.progress = newValue } }
     }
 
     /// The cover data per Book id. A Book without one gets a 404. Default: none.
@@ -222,6 +230,14 @@ public final class FakeServer: ServerAPI {
             try authenticate(accessToken, in: state)
             guard let data = fullData(for: id, in: state) else { throw .unexpectedStatus(404) }
             return data
+        }
+    }
+
+    public func progress(on server: URL, accessToken: String) async throws(ServerAPIError) -> [FetchedProgress] {
+        try await receive(.progress(server, accessToken: accessToken), at: server)
+        return try state.withLock { (state) throws(ServerAPIError) -> [FetchedProgress] in
+            try authenticate(accessToken, in: state)
+            return state.progress
         }
     }
 

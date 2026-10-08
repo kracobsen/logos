@@ -73,6 +73,7 @@ public struct AppDatabase: Sendable {
                 table.column("lastLibrarySync", .double)  // seconds since 1970, of the last applied list
             }
         }
+        migrator.registerMigration("v3-progress", migrate: ProgressRecord.createTable)
         registerBookDataMigration(in: &migrator)
         return migrator
     }

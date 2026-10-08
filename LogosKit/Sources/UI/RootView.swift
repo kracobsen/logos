@@ -1,16 +1,23 @@
 import SwiftUI
 
-/// The app's root once signed in: the four-tab shell. It runs the sync triggers: launch (after the first frame) and
-/// return to the foreground.
+/// The app's root once signed in: the four-tab shell, opening on In Progress. It runs the sync triggers: launch
+/// (after the first frame) and return to the foreground.
 public struct RootView: View {
     let library: LibraryModel
+    let inProgress: InProgressModel
     let launch: LaunchSignpost?
     let covers: CoverImages?
-    @State private var selection: AppTab = .library
+    @State private var selection: AppTab = .inProgress
     @Environment(\.scenePhase) private var scenePhase
 
-    public init(library: LibraryModel, launch: LaunchSignpost? = nil, covers: CoverImages? = nil) {
+    public init(
+        library: LibraryModel,
+        inProgress: InProgressModel,
+        launch: LaunchSignpost? = nil,
+        covers: CoverImages? = nil
+    ) {
         self.library = library
+        self.inProgress = inProgress
         self.launch = launch
         self.covers = covers
     }
@@ -21,6 +28,8 @@ public struct RootView: View {
                 Tab(tab.title, systemImage: tab.systemImage, value: tab) {
                     NavigationStack {
                         switch tab {
+                        case .inProgress:
+                            InProgressView(model: inProgress, library: library, launch: launch)
                         case .library:
                             LibraryView(model: library, launch: launch)
                         default:
@@ -33,6 +42,7 @@ public struct RootView: View {
         }
         .environment(covers)
         .task { await library.observe() }
+        .task { await inProgress.observe() }
         .task { await covers?.observe() }
         .task {
             // Let the first frame go out before any sync work starts.

@@ -24,6 +24,8 @@ public final class BookDetailModel {
     public private(set) var detail: BookDetail?
     /// A fetch of this Book's full data is running.
     public private(set) var isFetching = false
+    /// Not started, how far in, or Finished.
+    public let progress: BookProgressModel
 
     public let bookID: String
     private let database: AppDatabase
@@ -33,11 +35,14 @@ public final class BookDetailModel {
         self.bookID = bookID
         self.database = database
         self.sync = sync
+        var detail: BookDetail?
         do {
             detail = try database.bookDetail(id: bookID)
         } catch {
             log.error("Couldn't read the Book: \(String(describing: error), privacy: .public)")
         }
+        progress = BookProgressModel(database: database, bookID: bookID, duration: detail?.duration ?? 0)
+        self.detail = detail
     }
 
     public var seriesLinks: [SeriesLink] {

@@ -69,6 +69,7 @@ struct BookDetailView: View {
             Section {
                 header(detail)
                     .listRowSeparator(.hidden)
+                BookProgressSection(model: model.progress)
             }
             if let description = model.descriptionText {
                 Section {

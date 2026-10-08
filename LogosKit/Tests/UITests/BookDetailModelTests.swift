@@ -132,6 +132,15 @@ struct BookDetailModelTests {
         #expect(model.isFetching == false)
     }
 
+    @Test("The detail shows how far the listener is in the Book")
+    func progress() throws {
+        try database.applyLibraryList([book(duration: 120)], syncedAt: clock.now)
+        try database.saveProgress(
+            BookProgress(bookID: "first-light", position: 30, lastChanged: clock.now, isFinished: false))
+
+        #expect(library().detail(for: "first-light").progress.status == .inProgress(fraction: 0.25, remaining: 90))
+    }
+
     @Test("A Book that isn't in the Store has no detail")
     func missing() {
         #expect(library().detail(for: "missing").detail == nil)
