@@ -26,8 +26,11 @@ extension AppDatabase {
     /// The Books whose cover is behind, in no particular order.
     public func coversBehind() throws -> [CoverToFetch] {
         try pool.read { db in
-            try Row.fetchAll(db, sql: "SELECT id, updatedAt, hasCover FROM book WHERE coverVersion IS NOT updatedAt")
-                .map { CoverToFetch(bookID: $0["id"], version: $0["updatedAt"], hasCover: $0["hasCover"]) }
+            try Row.fetchAll(
+                db,
+                sql: "SELECT id, updatedAt, hasCover FROM book WHERE coverVersion IS NOT updatedAt AND NOT notOnServer"
+            )
+            .map { CoverToFetch(bookID: $0["id"], version: $0["updatedAt"], hasCover: $0["hasCover"]) }
         }
     }
 

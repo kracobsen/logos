@@ -83,6 +83,8 @@ public struct DownloadRow: Sendable, Hashable, Identifiable {
     public let state: DownloadState
     public let totalBytes: Int64
     public let receivedBytes: Int64
+    /// A downloaded Book the Server no longer lists: removing its Download deletes the Book.
+    public let isNotOnServer: Bool
 
     public init(
         id: String,
@@ -90,7 +92,8 @@ public struct DownloadRow: Sendable, Hashable, Identifiable {
         authorName: String,
         state: DownloadState,
         totalBytes: Int64,
-        receivedBytes: Int64
+        receivedBytes: Int64,
+        isNotOnServer: Bool = false
     ) {
         self.id = id
         self.title = title
@@ -98,6 +101,7 @@ public struct DownloadRow: Sendable, Hashable, Identifiable {
         self.state = state
         self.totalBytes = totalBytes
         self.receivedBytes = receivedBytes
+        self.isNotOnServer = isNotOnServer
     }
 
     public var status: DownloadStatus {

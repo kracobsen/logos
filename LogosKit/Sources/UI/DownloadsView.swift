@@ -2,36 +2,32 @@ import Domain
 import SwiftUI
 
 /// The Downloaded tab: the queue in FIFO order, then the downloaded Books with their sizes and the total space used.
-/// A row opens the Book's detail.
+/// A row opens the Book's detail. Queued rows can be reordered; any row can be swiped to cancel or remove its
+/// Download, after one confirmation. The downloaded Books sort by recently listened or largest first.
 struct DownloadsView: View {
     let model: DownloadsModel
     /// Book details open through the Library (its Store and sync).
     let library: LibraryModel
     @State private var opener = BookOpener()
+    @State private var removal: DownloadRemoval?
 
     var body: some View {
         List {
             if !model.list.queue.isEmpty {
                 Section("Queue") {
                     ForEach(model.list.queue) { row in
-                        Button {
-                            opener.open(row.id)
-                        } label: {
-                            DownloadRowView(row: row)
-                        }
-                        .foregroundStyle(.primary)
+                        rowButton(row)
+                            .moveDisabled(row.state != .queued)
+                    }
+                    .onMove { source, destination in
+                        Task { await model.moveQueued(fromOffsets: source, toOffset: destination) }
                     }
                 }
             }
             if !model.list.downloaded.isEmpty {
                 Section {
-                    ForEach(model.list.downloaded) { row in
-                        Button {
-                            opener.open(row.id)
-                        } label: {
-                            DownloadRowView(row: row)
-                        }
-                        .foregroundStyle(.primary)
+                    ForEach(model.downloaded) { row in
+                        rowButton(row)
                     }
                 } header: {
                     Text("Downloaded")
@@ -52,6 +48,39 @@ struct DownloadsView: View {
         .navigationTitle("Downloaded")
         .navigationDestination(item: $opener.opened) { route in
             BookDetailView(model: library.detail(for: route.bookID), onAppear: opener.detailAppeared)
+        }
+        .toolbar {
+            if model.list.queue.count(where: { $0.state == .queued }) > 1 {
+                ToolbarItem(placement: .topBarLeading) {
+                    EditButton()
+                }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu("Sort", systemImage: "arrow.up.arrow.down") {
+                    Picker("Sort Downloaded Books", selection: Bindable(model).order) {
+                        ForEach(DownloadedOrder.allCases) { order in
+                            Text(order.title).tag(order)
+                        }
+                    }
+                }
+            }
+        }
+        .confirmsDownloadRemoval($removal, downloads: model)
+    }
+
+    private func rowButton(_ row: DownloadRow) -> some View {
+        Button {
+            opener.open(row.id)
+        } label: {
+            DownloadRowView(row: row)
+        }
+        .foregroundStyle(.primary)
+        .swipeActions(edge: .trailing) {
+            // Not the destructive role: that would take the row away before the confirmation.
+            Button(row.status.isActive ? "Cancel" : "Remove", systemImage: "trash") {
+                removal = DownloadRemoval(row)
+            }
+            .tint(.red)
         }
     }
 }
@@ -76,6 +105,9 @@ struct DownloadRowView: View {
             }
             .font(.subheadline)
             .foregroundStyle(.secondary)
+            if row.isNotOnServer {
+                NotOnServerLabel()
+            }
             if row.state == .downloading {
                 ProgressView(value: row.status.fractionDone)
                     .accessibilityHidden(true)

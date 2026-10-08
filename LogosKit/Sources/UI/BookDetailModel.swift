@@ -86,7 +86,7 @@ public final class BookDetailModel {
 
     /// Fetches the Book's full data straight away if it hasn't arrived yet. Fails quietly.
     public func fetchIfNeeded() async {
-        guard let detail, !detail.hasCurrentFullData else { return }
+        guard let detail, !detail.hasCurrentFullData, !detail.isNotOnServer else { return }
         isFetching = true
         defer { isFetching = false }
         await sync.fetchFullDataNow(ofBook: bookID)
