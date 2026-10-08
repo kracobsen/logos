@@ -15,12 +15,15 @@ public final class LaunchModel {
             guard identity != oldValue else { return }
             library = identity.map(makeLibrary)
             inProgress = identity.map { _ in InProgressModel(database: database) }
+            series = identity.map { _ in SeriesListModel(database: database) }
         }
     }
     /// The Library tab's model, while signed in.
     public private(set) var library: LibraryModel?
     /// The In Progress tab's model, while signed in.
     public private(set) var inProgress: InProgressModel?
+    /// The Series tab's model, while signed in.
+    public private(set) var series: SeriesListModel?
 
     private let database: AppDatabase
     private let makeLibrarySync: (ServerIdentity) -> LibrarySync
@@ -36,6 +39,7 @@ public final class LaunchModel {
         }
         library = identity.map(makeLibrary)
         inProgress = identity.map { _ in InProgressModel(database: database) }
+        series = identity.map { _ in SeriesListModel(database: database) }
     }
 
     /// Follows the identity in the database until cancelled.
