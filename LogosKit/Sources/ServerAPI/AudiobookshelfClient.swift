@@ -44,6 +44,10 @@ public struct AudiobookshelfClient: ServerAPI {
         try Responses.books(await send(Requests.books(inLibrary: libraryID, on: server, accessToken: accessToken)))
     }
 
+    public func progress(on server: URL, accessToken: String) async throws(ServerAPIError) -> [FetchedProgress] {
+        try Responses.progress(await send(Requests.progress(server, accessToken: accessToken)))
+    }
+
     private func send(_ request: URLRequest) async throws(ServerAPIError) -> Data {
         // Paths only: never log the host, tokens or bodies.
         let endpoint = "\(request.httpMethod ?? "GET") \(request.url?.path() ?? "")"

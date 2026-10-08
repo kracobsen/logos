@@ -60,8 +60,9 @@ struct LibrarySyncTests {
     func asksForTheLibrary() async throws {
         let fixture = try await SignedInFixture(books: [FakeServer.book("One")])
         _ = await fixture.librarySync().sync(.launch)
-        guard case .books(let url, let libraryID, let token) = fixture.server.requests.last else {
-            Issue.record("expected the list request last, got \(fixture.server.requests)")
+        let list = fixture.server.requests.first { if case .books = $0 { true } else { false } }
+        guard case .books(let url, let libraryID, let token) = list else {
+            Issue.record("expected a list request, got \(fixture.server.requests)")
             return
         }
         #expect(url == fixture.server.address)
@@ -160,11 +161,11 @@ struct LibrarySyncTests {
         let fixture = try await SignedInFixture(books: [FakeServer.book("One")])
         let sync = fixture.librarySync()
         _ = await sync.sync(.launch)
-        let requests = fixture.server.requests.count
+        let lists = fixture.listRequests
 
         await fixture.clock.advance(by: .seconds(14 * 60))
         #expect(await sync.sync(.foreground) == .notNeeded)
-        #expect(fixture.server.requests.count == requests)
+        #expect(fixture.listRequests == lists)
 
         await fixture.clock.advance(by: .seconds(2 * 60))
         #expect(await sync.sync(.foreground) == .synced)

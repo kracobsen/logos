@@ -33,6 +33,7 @@ public final class FakeServer: ServerAPI {
         case refresh(URL, refreshToken: String)
         case libraries(URL, accessToken: String)
         case books(URL, libraryID: String, accessToken: String)
+        case progress(URL, accessToken: String)
     }
 
     public typealias Hook = @Sendable (Request) async throws(ServerAPIError) -> Void
@@ -46,6 +47,7 @@ public final class FakeServer: ServerAPI {
         var accounts: [Account]
         var libraries: [ServerLibrary]
         var books: [ListedBook] = []
+        var progress: [FetchedProgress] = []
         var requests: [Request] = []
         var isReachable: @Sendable (Request) -> Bool = { _ in true }
         var hook: Hook?
@@ -104,6 +106,12 @@ public final class FakeServer: ServerAPI {
     public var books: [ListedBook] {
         get { state.withLock { $0.books } }
         set { state.withLock { $0.books = newValue } }
+    }
+
+    /// The signed-in user's progress, as `GET /api/me/progress` returns it. Default: none.
+    public var progress: [FetchedProgress] {
+        get { state.withLock { $0.progress } }
+        set { state.withLock { $0.progress = newValue } }
     }
 
     /// Decides per request whether it gets through. Default: everything does.
@@ -184,6 +192,14 @@ public final class FakeServer: ServerAPI {
                 throw .unexpectedStatus(404)
             }
             return state.books
+        }
+    }
+
+    public func progress(on server: URL, accessToken: String) async throws(ServerAPIError) -> [FetchedProgress] {
+        try await receive(.progress(server, accessToken: accessToken), at: server)
+        return try state.withLock { (state) throws(ServerAPIError) -> [FetchedProgress] in
+            try authenticate(accessToken, in: state)
+            return state.progress
         }
     }
 

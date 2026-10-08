@@ -27,6 +27,9 @@ public protocol ServerAPI: Sendable {
     /// as a whole is `unreadableResponse`.
     func books(inLibrary libraryID: String, on server: URL, accessToken: String) async throws(ServerAPIError)
         -> [ListedBook]
+
+    /// `GET /api/me/progress`: the signed-in user's progress for every Book (podcast episodes left out).
+    func progress(on server: URL, accessToken: String) async throws(ServerAPIError) -> [FetchedProgress]
 }
 
 /// Why a Server call failed.

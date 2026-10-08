@@ -23,8 +23,8 @@ public struct AppRootView: View {
 
     public var body: some View {
         Group {
-            if let library = launch.library {
-                RootView(library: library, launch: launchSignpost)
+            if let library = launch.library, let inProgress = launch.inProgress {
+                RootView(library: library, inProgress: inProgress, launch: launchSignpost)
             } else {
                 SignInView(model: signIn)
                     .onAppear { launchSignpost?.end() }

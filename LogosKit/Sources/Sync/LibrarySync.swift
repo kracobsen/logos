@@ -49,18 +49,26 @@ public actor LibrarySync {
     private let auth: Auth
     private let clock: any Clock
     private var running: Task<SyncOutcome, Never>?
+    /// The progress fetch, sharing this sync's `Auth`. Each sync runs it after stage 1; a foreground return runs it
+    /// even when the Library isn't due.
+    public nonisolated let progress: ProgressSync
 
     public init(database: AppDatabase, api: any ServerAPI, auth: Auth, clock: any Clock) {
         self.database = database
         self.api = api
         self.auth = auth
         self.clock = clock
+        progress = ProgressSync(database: database, api: api, auth: auth)
     }
 
     /// Syncs, or joins the sync already running.
     public func sync(_ trigger: SyncTrigger) async -> SyncOutcome {
         if let running { return await running.value }
-        if trigger == .foreground, !isDueOnForeground() { return .notNeeded }
+        if trigger == .foreground, !isDueOnForeground() {
+            // Progress has no 15-minute gate: every return to the foreground picks it up.
+            _ = await progress.fetch()
+            return .notNeeded
+        }
         let task = Task { await run() }
         running = task
         let outcome = await task.value
@@ -95,7 +103,12 @@ public actor LibrarySync {
         defer { interval.end() }
 
         if let stop = await checkVersion(of: identity.serverURL) { return stop }
-        return await applyList(of: identity)
+        let outcome = await applyList(of: identity)
+        if outcome == .synced || outcome == .failed {
+            // After stage 1, so Books new in this list get their progress too.
+            _ = await progress.fetch()
+        }
+        return outcome
     }
 
     /// `nil` if the Server may be synced with, otherwise why not.

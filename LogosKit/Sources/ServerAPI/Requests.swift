@@ -34,6 +34,10 @@ enum Requests {
         return authorized(URLRequest(url: url), accessToken)
     }
 
+    static func progress(_ server: URL, accessToken: String) -> URLRequest {
+        authorized(URLRequest(url: server.appending(path: "api/me/progress")), accessToken)
+    }
+
     private static func authorized(_ request: URLRequest, _ accessToken: String) -> URLRequest {
         var request = request
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
@@ -149,6 +153,38 @@ enum Responses {
                 duration: item.media.duration ?? 0,
                 size: item.media.size ?? 0,
                 hasCover: item.media.coverPath != nil
+            )
+        }
+    }
+
+    /// Reads every Book's progress. Lenient per record, unlike the Library list: podcast episodes, records without a
+    /// library item and records that can't be read are skipped, so one odd record never holds up the others.
+    static func progress(_ data: Data) throws(ServerAPIError) -> [FetchedProgress] {
+        struct Record: Decodable {
+            let libraryItemId: String?
+            let mediaItemType: String
+            let currentTime: Double?
+            let isFinished: Bool
+            let lastUpdate: Int64
+        }
+        struct Lossy: Decodable {
+            let record: Record?
+            init(from decoder: any Decoder) throws {
+                record = try? Record(from: decoder)
+            }
+        }
+        struct Body: Decodable {
+            let mediaProgress: [Lossy]
+        }
+        return try decode(Body.self, data).mediaProgress.compactMap { lossy in
+            guard let record = lossy.record, record.mediaItemType == "book", let bookID = record.libraryItemId else {
+                return nil
+            }
+            return FetchedProgress(
+                bookID: bookID,
+                position: record.currentTime ?? 0,
+                isFinished: record.isFinished,
+                lastUpdate: record.lastUpdate
             )
         }
     }
