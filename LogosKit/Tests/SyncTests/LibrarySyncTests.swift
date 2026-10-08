@@ -60,8 +60,9 @@ struct LibrarySyncTests {
     func asksForTheLibrary() async throws {
         let fixture = try await SignedInFixture(books: [FakeServer.book("One")])
         _ = await fixture.librarySync().sync(.launch)
-        guard case .books(let url, let libraryID, let token) = fixture.server.requests.last else {
-            Issue.record("expected the list request last, got \(fixture.server.requests)")
+        let list = fixture.server.requests.first { if case .books = $0 { true } else { false } }
+        guard case .books(let url, let libraryID, let token) = list else {
+            Issue.record("expected a list request, got \(fixture.server.requests)")
             return
         }
         #expect(url == fixture.server.address)

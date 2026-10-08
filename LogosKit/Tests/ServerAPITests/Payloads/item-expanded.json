@@ -1,0 +1,226 @@
+{
+  "id": "d7c946d8-86c5-49e1-9a58-658fcb01b709",
+  "ino": "439",
+  "oldLibraryItemId": null,
+  "libraryId": "8dd528ba-ac24-4f4e-a0f0-8984982b7f84",
+  "folderId": "fb16cb7d-3cb7-4c85-8751-c6ac5d697a18",
+  "path": "/audiobooks/Ada Fixture/The First Light",
+  "relPath": "Ada Fixture/The First Light",
+  "isFile": false,
+  "mtimeMs": 1791466279426,
+  "ctimeMs": 1791466279426,
+  "birthtimeMs": 0,
+  "addedAt": 1791466281049,
+  "updatedAt": 1791466281049,
+  "isMissing": false,
+  "isInvalid": false,
+  "mediaType": "book",
+  "media": {
+    "id": "3fc8d0a4-574b-4c63-b00e-585a3ec797c8",
+    "metadata": {
+      "title": "The First Light",
+      "subtitle": null,
+      "authors": [
+        {
+          "id": "2b05631c-c77f-4dde-b5f3-4ec7adf8e4a3",
+          "name": "Ada Fixture"
+        }
+      ],
+      "narrators": [
+        "Nell Narrator"
+      ],
+      "series": [
+        {
+          "id": "f76924f5-582d-4cba-be2a-dba0086a8d56",
+          "name": "Fixture Saga",
+          "sequence": "1"
+        }
+      ],
+      "genres": [
+        "Fixture"
+      ],
+      "publishedYear": "2001",
+      "publishedDate": null,
+      "publisher": null,
+      "description": "First Book of the Fixture Saga.",
+      "isbn": null,
+      "asin": null,
+      "language": null,
+      "explicit": false,
+      "abridged": false,
+      "titleIgnorePrefix": "First Light, The",
+      "authorName": "Ada Fixture",
+      "authorNameLF": "Fixture, Ada",
+      "narratorName": "Nell Narrator",
+      "seriesName": "Fixture Saga #1",
+      "descriptionPlain": "First Book of the Fixture Saga."
+    },
+    "coverPath": "/audiobooks/Ada Fixture/The First Light/cover.jpg",
+    "tags": [],
+    "numTracks": 1,
+    "numAudioFiles": 1,
+    "numChapters": 3,
+    "duration": 120,
+    "size": 480462,
+    "libraryItemId": "d7c946d8-86c5-49e1-9a58-658fcb01b709",
+    "audioFiles": [
+      {
+        "index": 1,
+        "ino": "443",
+        "metadata": {
+          "filename": "01.mp3",
+          "ext": ".mp3",
+          "path": "/audiobooks/Ada Fixture/The First Light/01.mp3",
+          "relPath": "01.mp3",
+          "size": 480462,
+          "mtimeMs": 1791466279423,
+          "ctimeMs": 1791466279423,
+          "birthtimeMs": 0
+        },
+        "addedAt": 1791466281048,
+        "updatedAt": 1791466281048,
+        "trackNumFromMeta": null,
+        "discNumFromMeta": null,
+        "trackNumFromFilename": 1,
+        "discNumFromFilename": null,
+        "manuallyVerified": false,
+        "exclude": false,
+        "error": null,
+        "format": "MP2/3 (MPEG audio layer 2/3)",
+        "duration": 120,
+        "bitRate": 32000,
+        "language": null,
+        "codec": "mp3",
+        "timeBase": "1/14112000",
+        "channels": 1,
+        "channelLayout": "mono",
+        "chapters": [],
+        "embeddedCoverArt": null,
+        "metaTags": {
+          "tagEncoder": "Lavf62.12.102"
+        },
+        "mimeType": "audio/mpeg"
+      }
+    ],
+    "chapters": [
+      {
+        "id": 0,
+        "start": 0,
+        "end": 40,
+        "title": "Dawn"
+      },
+      {
+        "id": 1,
+        "start": 40,
+        "end": 80,
+        "title": "Noon"
+      },
+      {
+        "id": 2,
+        "start": 80,
+        "end": 120,
+        "title": "Dusk"
+      }
+    ],
+    "ebookFile": null,
+    "tracks": [
+      {
+        "index": 1,
+        "ino": "443",
+        "metadata": {
+          "filename": "01.mp3",
+          "ext": ".mp3",
+          "path": "/audiobooks/Ada Fixture/The First Light/01.mp3",
+          "relPath": "01.mp3",
+          "size": 480462,
+          "mtimeMs": 1791466279423,
+          "ctimeMs": 1791466279423,
+          "birthtimeMs": 0
+        },
+        "addedAt": 1791466281048,
+        "updatedAt": 1791466281048,
+        "trackNumFromMeta": null,
+        "discNumFromMeta": null,
+        "trackNumFromFilename": 1,
+        "discNumFromFilename": null,
+        "manuallyVerified": false,
+        "exclude": false,
+        "error": null,
+        "format": "MP2/3 (MPEG audio layer 2/3)",
+        "duration": 120,
+        "bitRate": 32000,
+        "language": null,
+        "codec": "mp3",
+        "timeBase": "1/14112000",
+        "channels": 1,
+        "channelLayout": "mono",
+        "chapters": [],
+        "embeddedCoverArt": null,
+        "metaTags": {
+          "tagEncoder": "Lavf62.12.102"
+        },
+        "mimeType": "audio/mpeg",
+        "title": "01.mp3",
+        "startOffset": 0,
+        "contentUrl": "/api/items/d7c946d8-86c5-49e1-9a58-658fcb01b709/file/443"
+      }
+    ]
+  },
+  "numFiles": 3,
+  "size": 483246,
+  "lastScan": 1791466281049,
+  "scanVersion": "2.37.1",
+  "libraryFiles": [
+    {
+      "ino": "443",
+      "metadata": {
+        "filename": "01.mp3",
+        "ext": ".mp3",
+        "path": "/audiobooks/Ada Fixture/The First Light/01.mp3",
+        "relPath": "01.mp3",
+        "size": 480462,
+        "mtimeMs": 1791466279423,
+        "ctimeMs": 1791466279423,
+        "birthtimeMs": 0
+      },
+      "isSupplementary": null,
+      "addedAt": 1791466280899,
+      "updatedAt": 1791466280899,
+      "fileType": "audio"
+    },
+    {
+      "ino": "444",
+      "metadata": {
+        "filename": "cover.jpg",
+        "ext": ".jpg",
+        "path": "/audiobooks/Ada Fixture/The First Light/cover.jpg",
+        "relPath": "cover.jpg",
+        "size": 2389,
+        "mtimeMs": 1791466279426,
+        "ctimeMs": 1791466279426,
+        "birthtimeMs": 0
+      },
+      "isSupplementary": null,
+      "addedAt": 1791466280899,
+      "updatedAt": 1791466280899,
+      "fileType": "image"
+    },
+    {
+      "ino": "442",
+      "metadata": {
+        "filename": "metadata.json",
+        "ext": ".json",
+        "path": "/audiobooks/Ada Fixture/The First Light/metadata.json",
+        "relPath": "metadata.json",
+        "size": 395,
+        "mtimeMs": 1791466279417,
+        "ctimeMs": 1791466279417,
+        "birthtimeMs": 0
+      },
+      "isSupplementary": null,
+      "addedAt": 1791466280899,
+      "updatedAt": 1791466280899,
+      "fileType": "metadata"
+    }
+  ]
+}

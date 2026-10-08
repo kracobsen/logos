@@ -27,6 +27,13 @@ public protocol ServerAPI: Sendable {
     /// as a whole is `unreadableResponse`.
     func books(inLibrary libraryID: String, on server: URL, accessToken: String) async throws(ServerAPIError)
         -> [ListedBook]
+
+    /// `POST /api/items/batch/get`: full data for the given Books (`ids` must not be empty). Books the Server doesn't
+    /// know, and Books it sends that can't be read, are left out.
+    func bookData(for ids: [String], on server: URL, accessToken: String) async throws(ServerAPIError) -> [BookData]
+
+    /// `GET /api/items/:id?expanded=1`: full data for one Book. 404 if the Server doesn't know it.
+    func bookData(for id: String, on server: URL, accessToken: String) async throws(ServerAPIError) -> BookData
 }
 
 /// Why a Server call failed.

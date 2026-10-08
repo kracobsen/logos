@@ -20,8 +20,8 @@ public final class LibraryModel {
     /// A short message after a manual Refresh that didn't work. The view clears it after a few seconds.
     public private(set) var refreshMessage: String?
 
-    private let database: AppDatabase
-    private let sync: LibrarySync
+    let database: AppDatabase
+    let sync: LibrarySync
 
     public init(database: AppDatabase, sync: LibrarySync) {
         self.database = database

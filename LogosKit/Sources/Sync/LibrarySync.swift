@@ -38,16 +38,18 @@ public enum SyncOutcome: Sendable, Hashable {
 /// 2. stage 1: fetches the full Library list and applies it to the Store in one transaction, deleting Books the
 ///    Server no longer lists. An empty, failed or undecodable list is never applied.
 ///
-/// Later stages (full Book data, covers) run after stage 1 in ``run()``. Sync never throws and never blocks the UI:
+/// 3. stage 2: fetches full Book data for every Book that's behind (`LibrarySync+BookData.swift`).
+///
+/// Later stages (covers) run after these in ``run()``. Sync never throws and never blocks the UI:
 /// failures are logged and reported as a ``SyncOutcome``.
 public actor LibrarySync {
     /// A foreground return syncs only if the last successful sync is older than this.
     public static let foregroundInterval: Duration = .seconds(15 * 60)
 
-    private let database: AppDatabase
-    private let api: any ServerAPI
-    private let auth: Auth
-    private let clock: any Clock
+    let database: AppDatabase
+    let api: any ServerAPI
+    let auth: Auth
+    let clock: any Clock
     private var running: Task<SyncOutcome, Never>?
 
     public init(database: AppDatabase, api: any ServerAPI, auth: Auth, clock: any Clock) {
@@ -95,7 +97,9 @@ public actor LibrarySync {
         defer { interval.end() }
 
         if let stop = await checkVersion(of: identity.serverURL) { return stop }
-        return await applyList(of: identity)
+        let listed = await applyList(of: identity)
+        guard listed == .synced else { return listed }
+        return await fetchFullData(of: identity) ?? listed
     }
 
     /// `nil` if the Server may be synced with, otherwise why not.

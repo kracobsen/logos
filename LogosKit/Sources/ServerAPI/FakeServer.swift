@@ -33,6 +33,8 @@ public final class FakeServer: ServerAPI {
         case refresh(URL, refreshToken: String)
         case libraries(URL, accessToken: String)
         case books(URL, libraryID: String, accessToken: String)
+        case bookDataBatch(URL, ids: [String], accessToken: String)
+        case bookData(URL, id: String, accessToken: String)
     }
 
     public typealias Hook = @Sendable (Request) async throws(ServerAPIError) -> Void
@@ -46,6 +48,7 @@ public final class FakeServer: ServerAPI {
         var accounts: [Account]
         var libraries: [ServerLibrary]
         var books: [ListedBook] = []
+        var bookData: [BookData] = []
         var requests: [Request] = []
         var isReachable: @Sendable (Request) -> Bool = { _ in true }
         var hook: Hook?
@@ -104,6 +107,13 @@ public final class FakeServer: ServerAPI {
     public var books: [ListedBook] {
         get { state.withLock { $0.books } }
         set { state.withLock { $0.books = newValue } }
+    }
+
+    /// Full data for listed Books, served by the `bookData` calls. A listed Book without an entry here gets its list
+    /// data with no Chapters, tracks or Series. Default: none.
+    public var bookData: [BookData] {
+        get { state.withLock { $0.bookData } }
+        set { state.withLock { $0.bookData = newValue } }
     }
 
     /// Decides per request whether it gets through. Default: everything does.
@@ -187,7 +197,33 @@ public final class FakeServer: ServerAPI {
         }
     }
 
+    public func bookData(for ids: [String], on server: URL, accessToken: String) async throws(ServerAPIError)
+        -> [BookData]
+    {
+        try await receive(.bookDataBatch(server, ids: ids, accessToken: accessToken), at: server)
+        return try state.withLock { (state) throws(ServerAPIError) -> [BookData] in
+            try authenticate(accessToken, in: state)
+            guard !ids.isEmpty else { throw .unexpectedStatus(403) }
+            return ids.compactMap { fullData(for: $0, in: state) }
+        }
+    }
+
+    public func bookData(for id: String, on server: URL, accessToken: String) async throws(ServerAPIError) -> BookData {
+        try await receive(.bookData(server, id: id, accessToken: accessToken), at: server)
+        return try state.withLock { (state) throws(ServerAPIError) -> BookData in
+            try authenticate(accessToken, in: state)
+            guard let data = fullData(for: id, in: state) else { throw .unexpectedStatus(404) }
+            return data
+        }
+    }
+
     // MARK: Internals
+
+    private func fullData(for id: String, in state: State) -> BookData? {
+        guard let listed = state.books.first(where: { $0.id == id }) else { return nil }
+        return state.bookData.first { $0.book.id == id }
+            ?? BookData(book: listed, chapters: [], tracks: [], series: [])
+    }
 
     private func receive(_ request: Request, at server: URL) async throws(ServerAPIError) {
         let (hook, reachable) = state.withLock { state in

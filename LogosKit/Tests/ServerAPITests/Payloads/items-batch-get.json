@@ -1,0 +1,1498 @@
+{
+  "libraryItems": [
+    {
+      "id": "d8ee536b-9bbb-49f3-8e39-be83a97a4ac6",
+      "ino": "429",
+      "oldLibraryItemId": null,
+      "libraryId": "8dd528ba-ac24-4f4e-a0f0-8984982b7f84",
+      "folderId": "fb16cb7d-3cb7-4c85-8751-c6ac5d697a18",
+      "path": "/audiobooks/Ben Example/Plain Silence",
+      "relPath": "Ben Example/Plain Silence",
+      "isFile": false,
+      "mtimeMs": 1791466279454,
+      "ctimeMs": 1791466279454,
+      "birthtimeMs": 0,
+      "addedAt": 1791466280921,
+      "updatedAt": 1791466280921,
+      "isMissing": false,
+      "isInvalid": false,
+      "mediaType": "book",
+      "media": {
+        "id": "e4e543fe-a74f-46a7-b629-e4a4761e7e0c",
+        "metadata": {
+          "title": "Plain Silence",
+          "subtitle": null,
+          "authors": [
+            {
+              "id": "7701fbbf-ea6c-4e8b-a526-adcc06472f5c",
+              "name": "Ben Example"
+            }
+          ],
+          "narrators": [],
+          "series": [],
+          "genres": [],
+          "publishedYear": "2010",
+          "publishedDate": null,
+          "publisher": null,
+          "description": null,
+          "isbn": null,
+          "asin": null,
+          "language": null,
+          "explicit": false,
+          "abridged": false,
+          "titleIgnorePrefix": "Plain Silence",
+          "authorName": "Ben Example",
+          "authorNameLF": "Example, Ben",
+          "narratorName": "",
+          "seriesName": "",
+          "descriptionPlain": null
+        },
+        "coverPath": null,
+        "tags": [],
+        "numTracks": 1,
+        "numAudioFiles": 1,
+        "numChapters": 0,
+        "duration": 120,
+        "size": 480462,
+        "libraryItemId": "d8ee536b-9bbb-49f3-8e39-be83a97a4ac6",
+        "audioFiles": [
+          {
+            "index": 1,
+            "ino": "432",
+            "metadata": {
+              "filename": "01.mp3",
+              "ext": ".mp3",
+              "path": "/audiobooks/Ben Example/Plain Silence/01.mp3",
+              "relPath": "01.mp3",
+              "size": 480462,
+              "mtimeMs": 1791466279454,
+              "ctimeMs": 1791466279454,
+              "birthtimeMs": 0
+            },
+            "addedAt": 1791466280919,
+            "updatedAt": 1791466280919,
+            "trackNumFromMeta": null,
+            "discNumFromMeta": null,
+            "trackNumFromFilename": 1,
+            "discNumFromFilename": null,
+            "manuallyVerified": false,
+            "exclude": false,
+            "error": null,
+            "format": "MP2/3 (MPEG audio layer 2/3)",
+            "duration": 120,
+            "bitRate": 32000,
+            "language": null,
+            "codec": "mp3",
+            "timeBase": "1/14112000",
+            "channels": 1,
+            "channelLayout": "mono",
+            "chapters": [],
+            "embeddedCoverArt": null,
+            "metaTags": {
+              "tagEncoder": "Lavf62.12.102"
+            },
+            "mimeType": "audio/mpeg"
+          }
+        ],
+        "chapters": [],
+        "ebookFile": null,
+        "tracks": [
+          {
+            "index": 1,
+            "ino": "432",
+            "metadata": {
+              "filename": "01.mp3",
+              "ext": ".mp3",
+              "path": "/audiobooks/Ben Example/Plain Silence/01.mp3",
+              "relPath": "01.mp3",
+              "size": 480462,
+              "mtimeMs": 1791466279454,
+              "ctimeMs": 1791466279454,
+              "birthtimeMs": 0
+            },
+            "addedAt": 1791466280919,
+            "updatedAt": 1791466280919,
+            "trackNumFromMeta": null,
+            "discNumFromMeta": null,
+            "trackNumFromFilename": 1,
+            "discNumFromFilename": null,
+            "manuallyVerified": false,
+            "exclude": false,
+            "error": null,
+            "format": "MP2/3 (MPEG audio layer 2/3)",
+            "duration": 120,
+            "bitRate": 32000,
+            "language": null,
+            "codec": "mp3",
+            "timeBase": "1/14112000",
+            "channels": 1,
+            "channelLayout": "mono",
+            "chapters": [],
+            "embeddedCoverArt": null,
+            "metaTags": {
+              "tagEncoder": "Lavf62.12.102"
+            },
+            "mimeType": "audio/mpeg",
+            "title": "01.mp3",
+            "startOffset": 0,
+            "contentUrl": "/api/items/d8ee536b-9bbb-49f3-8e39-be83a97a4ac6/file/432"
+          }
+        ]
+      },
+      "numFiles": 2,
+      "size": 480550,
+      "lastScan": 1791466280920,
+      "scanVersion": "2.37.1",
+      "libraryFiles": [
+        {
+          "ino": "432",
+          "metadata": {
+            "filename": "01.mp3",
+            "ext": ".mp3",
+            "path": "/audiobooks/Ben Example/Plain Silence/01.mp3",
+            "relPath": "01.mp3",
+            "size": 480462,
+            "mtimeMs": 1791466279454,
+            "ctimeMs": 1791466279454,
+            "birthtimeMs": 0
+          },
+          "isSupplementary": null,
+          "addedAt": 1791466280897,
+          "updatedAt": 1791466280897,
+          "fileType": "audio"
+        },
+        {
+          "ino": "431",
+          "metadata": {
+            "filename": "metadata.json",
+            "ext": ".json",
+            "path": "/audiobooks/Ben Example/Plain Silence/metadata.json",
+            "relPath": "metadata.json",
+            "size": 88,
+            "mtimeMs": 1791466279452,
+            "ctimeMs": 1791466279452,
+            "birthtimeMs": 0
+          },
+          "isSupplementary": null,
+          "addedAt": 1791466280897,
+          "updatedAt": 1791466280897,
+          "fileType": "metadata"
+        }
+      ]
+    },
+    {
+      "id": "8996afdd-ae0a-4315-a83f-1c94569a5d17",
+      "ino": "430",
+      "oldLibraryItemId": null,
+      "libraryId": "8dd528ba-ac24-4f4e-a0f0-8984982b7f84",
+      "folderId": "fb16cb7d-3cb7-4c85-8751-c6ac5d697a18",
+      "path": "/audiobooks/Ben Example/Loose Parts",
+      "relPath": "Ben Example/Loose Parts",
+      "isFile": false,
+      "mtimeMs": 1791466279461,
+      "ctimeMs": 1791466279461,
+      "birthtimeMs": 0,
+      "addedAt": 1791466280962,
+      "updatedAt": 1791466280962,
+      "isMissing": false,
+      "isInvalid": false,
+      "mediaType": "book",
+      "media": {
+        "id": "269656bd-d667-42af-a38c-4e7067a571b4",
+        "metadata": {
+          "title": "Loose Parts",
+          "subtitle": null,
+          "authors": [
+            {
+              "id": "7701fbbf-ea6c-4e8b-a526-adcc06472f5c",
+              "name": "Ben Example"
+            }
+          ],
+          "narrators": [],
+          "series": [],
+          "genres": [],
+          "publishedYear": "2011",
+          "publishedDate": null,
+          "publisher": null,
+          "description": null,
+          "isbn": null,
+          "asin": null,
+          "language": null,
+          "explicit": false,
+          "abridged": false,
+          "titleIgnorePrefix": "Loose Parts",
+          "authorName": "Ben Example",
+          "authorNameLF": "Example, Ben",
+          "narratorName": "",
+          "seriesName": "",
+          "descriptionPlain": null
+        },
+        "coverPath": null,
+        "tags": [],
+        "numTracks": 2,
+        "numAudioFiles": 2,
+        "numChapters": 2,
+        "duration": 120,
+        "size": 480898,
+        "libraryItemId": "8996afdd-ae0a-4315-a83f-1c94569a5d17",
+        "audioFiles": [
+          {
+            "index": 1,
+            "ino": "435",
+            "metadata": {
+              "filename": "01.mp3",
+              "ext": ".mp3",
+              "path": "/audiobooks/Ben Example/Loose Parts/01.mp3",
+              "relPath": "01.mp3",
+              "size": 240449,
+              "mtimeMs": 1791466279458,
+              "ctimeMs": 1791466279458,
+              "birthtimeMs": 0
+            },
+            "addedAt": 1791466280961,
+            "updatedAt": 1791466280961,
+            "trackNumFromMeta": null,
+            "discNumFromMeta": null,
+            "trackNumFromFilename": 1,
+            "discNumFromFilename": null,
+            "manuallyVerified": false,
+            "exclude": false,
+            "error": null,
+            "format": "MP2/3 (MPEG audio layer 2/3)",
+            "duration": 60,
+            "bitRate": 32000,
+            "language": null,
+            "codec": "mp3",
+            "timeBase": "1/14112000",
+            "channels": 1,
+            "channelLayout": "mono",
+            "chapters": [],
+            "embeddedCoverArt": null,
+            "metaTags": {
+              "tagEncoder": "Lavf62.12.102"
+            },
+            "mimeType": "audio/mpeg"
+          },
+          {
+            "index": 2,
+            "ino": "434",
+            "metadata": {
+              "filename": "02.mp3",
+              "ext": ".mp3",
+              "path": "/audiobooks/Ben Example/Loose Parts/02.mp3",
+              "relPath": "02.mp3",
+              "size": 240449,
+              "mtimeMs": 1791466279461,
+              "ctimeMs": 1791466279461,
+              "birthtimeMs": 0
+            },
+            "addedAt": 1791466280961,
+            "updatedAt": 1791466280961,
+            "trackNumFromMeta": null,
+            "discNumFromMeta": null,
+            "trackNumFromFilename": 2,
+            "discNumFromFilename": null,
+            "manuallyVerified": false,
+            "exclude": false,
+            "error": null,
+            "format": "MP2/3 (MPEG audio layer 2/3)",
+            "duration": 60,
+            "bitRate": 32000,
+            "language": null,
+            "codec": "mp3",
+            "timeBase": "1/14112000",
+            "channels": 1,
+            "channelLayout": "mono",
+            "chapters": [],
+            "embeddedCoverArt": null,
+            "metaTags": {
+              "tagEncoder": "Lavf62.12.102"
+            },
+            "mimeType": "audio/mpeg"
+          }
+        ],
+        "chapters": [
+          {
+            "id": 0,
+            "start": 0,
+            "end": 60,
+            "title": "01"
+          },
+          {
+            "id": 1,
+            "start": 60,
+            "end": 120,
+            "title": "02"
+          }
+        ],
+        "ebookFile": null,
+        "tracks": [
+          {
+            "index": 1,
+            "ino": "435",
+            "metadata": {
+              "filename": "01.mp3",
+              "ext": ".mp3",
+              "path": "/audiobooks/Ben Example/Loose Parts/01.mp3",
+              "relPath": "01.mp3",
+              "size": 240449,
+              "mtimeMs": 1791466279458,
+              "ctimeMs": 1791466279458,
+              "birthtimeMs": 0
+            },
+            "addedAt": 1791466280961,
+            "updatedAt": 1791466280961,
+            "trackNumFromMeta": null,
+            "discNumFromMeta": null,
+            "trackNumFromFilename": 1,
+            "discNumFromFilename": null,
+            "manuallyVerified": false,
+            "exclude": false,
+            "error": null,
+            "format": "MP2/3 (MPEG audio layer 2/3)",
+            "duration": 60,
+            "bitRate": 32000,
+            "language": null,
+            "codec": "mp3",
+            "timeBase": "1/14112000",
+            "channels": 1,
+            "channelLayout": "mono",
+            "chapters": [],
+            "embeddedCoverArt": null,
+            "metaTags": {
+              "tagEncoder": "Lavf62.12.102"
+            },
+            "mimeType": "audio/mpeg",
+            "title": "01.mp3",
+            "startOffset": 0,
+            "contentUrl": "/api/items/8996afdd-ae0a-4315-a83f-1c94569a5d17/file/435"
+          },
+          {
+            "index": 2,
+            "ino": "434",
+            "metadata": {
+              "filename": "02.mp3",
+              "ext": ".mp3",
+              "path": "/audiobooks/Ben Example/Loose Parts/02.mp3",
+              "relPath": "02.mp3",
+              "size": 240449,
+              "mtimeMs": 1791466279461,
+              "ctimeMs": 1791466279461,
+              "birthtimeMs": 0
+            },
+            "addedAt": 1791466280961,
+            "updatedAt": 1791466280961,
+            "trackNumFromMeta": null,
+            "discNumFromMeta": null,
+            "trackNumFromFilename": 2,
+            "discNumFromFilename": null,
+            "manuallyVerified": false,
+            "exclude": false,
+            "error": null,
+            "format": "MP2/3 (MPEG audio layer 2/3)",
+            "duration": 60,
+            "bitRate": 32000,
+            "language": null,
+            "codec": "mp3",
+            "timeBase": "1/14112000",
+            "channels": 1,
+            "channelLayout": "mono",
+            "chapters": [],
+            "embeddedCoverArt": null,
+            "metaTags": {
+              "tagEncoder": "Lavf62.12.102"
+            },
+            "mimeType": "audio/mpeg",
+            "title": "02.mp3",
+            "startOffset": 60,
+            "contentUrl": "/api/items/8996afdd-ae0a-4315-a83f-1c94569a5d17/file/434"
+          }
+        ]
+      },
+      "numFiles": 3,
+      "size": 480984,
+      "lastScan": 1791466280962,
+      "scanVersion": "2.37.1",
+      "libraryFiles": [
+        {
+          "ino": "435",
+          "metadata": {
+            "filename": "01.mp3",
+            "ext": ".mp3",
+            "path": "/audiobooks/Ben Example/Loose Parts/01.mp3",
+            "relPath": "01.mp3",
+            "size": 240449,
+            "mtimeMs": 1791466279458,
+            "ctimeMs": 1791466279458,
+            "birthtimeMs": 0
+          },
+          "isSupplementary": null,
+          "addedAt": 1791466280898,
+          "updatedAt": 1791466280898,
+          "fileType": "audio"
+        },
+        {
+          "ino": "434",
+          "metadata": {
+            "filename": "02.mp3",
+            "ext": ".mp3",
+            "path": "/audiobooks/Ben Example/Loose Parts/02.mp3",
+            "relPath": "02.mp3",
+            "size": 240449,
+            "mtimeMs": 1791466279461,
+            "ctimeMs": 1791466279461,
+            "birthtimeMs": 0
+          },
+          "isSupplementary": null,
+          "addedAt": 1791466280898,
+          "updatedAt": 1791466280898,
+          "fileType": "audio"
+        },
+        {
+          "ino": "433",
+          "metadata": {
+            "filename": "metadata.json",
+            "ext": ".json",
+            "path": "/audiobooks/Ben Example/Loose Parts/metadata.json",
+            "relPath": "metadata.json",
+            "size": 86,
+            "mtimeMs": 1791466279456,
+            "ctimeMs": 1791466279456,
+            "birthtimeMs": 0
+          },
+          "isSupplementary": null,
+          "addedAt": 1791466280898,
+          "updatedAt": 1791466280898,
+          "fileType": "metadata"
+        }
+      ]
+    },
+    {
+      "id": "bb123a3a-956f-4cc9-926e-9bd617f46814",
+      "ino": "436",
+      "oldLibraryItemId": null,
+      "libraryId": "8dd528ba-ac24-4f4e-a0f0-8984982b7f84",
+      "folderId": "fb16cb7d-3cb7-4c85-8751-c6ac5d697a18",
+      "path": "/audiobooks/Ada Fixture/The Long Dark",
+      "relPath": "Ada Fixture/The Long Dark",
+      "isFile": false,
+      "mtimeMs": 1791466279449,
+      "ctimeMs": 1791466279449,
+      "birthtimeMs": 0,
+      "addedAt": 1791466281000,
+      "updatedAt": 1791466281000,
+      "isMissing": false,
+      "isInvalid": false,
+      "mediaType": "book",
+      "media": {
+        "id": "18e07bf2-654b-4381-aa04-d5f1c6fe1216",
+        "metadata": {
+          "title": "The Long Dark",
+          "subtitle": null,
+          "authors": [
+            {
+              "id": "2b05631c-c77f-4dde-b5f3-4ec7adf8e4a3",
+              "name": "Ada Fixture"
+            }
+          ],
+          "narrators": [],
+          "series": [
+            {
+              "id": "f76924f5-582d-4cba-be2a-dba0086a8d56",
+              "name": "Fixture Saga",
+              "sequence": null
+            }
+          ],
+          "genres": [],
+          "publishedYear": "2004",
+          "publishedDate": null,
+          "publisher": null,
+          "description": null,
+          "isbn": null,
+          "asin": null,
+          "language": null,
+          "explicit": false,
+          "abridged": false,
+          "titleIgnorePrefix": "Long Dark, The",
+          "authorName": "Ada Fixture",
+          "authorNameLF": "Fixture, Ada",
+          "narratorName": "",
+          "seriesName": "Fixture Saga",
+          "descriptionPlain": null
+        },
+        "coverPath": null,
+        "tags": [],
+        "numTracks": 1,
+        "numAudioFiles": 1,
+        "numChapters": 2,
+        "duration": 90,
+        "size": 360508,
+        "libraryItemId": "bb123a3a-956f-4cc9-926e-9bd617f46814",
+        "audioFiles": [
+          {
+            "index": 1,
+            "ino": "441",
+            "metadata": {
+              "filename": "01.mp3",
+              "ext": ".mp3",
+              "path": "/audiobooks/Ada Fixture/The Long Dark/01.mp3",
+              "relPath": "01.mp3",
+              "size": 360508,
+              "mtimeMs": 1791466279449,
+              "ctimeMs": 1791466279449,
+              "birthtimeMs": 0
+            },
+            "addedAt": 1791466280999,
+            "updatedAt": 1791466280999,
+            "trackNumFromMeta": null,
+            "discNumFromMeta": null,
+            "trackNumFromFilename": 1,
+            "discNumFromFilename": null,
+            "manuallyVerified": false,
+            "exclude": false,
+            "error": null,
+            "format": "MP2/3 (MPEG audio layer 2/3)",
+            "duration": 90,
+            "bitRate": 32000,
+            "language": null,
+            "codec": "mp3",
+            "timeBase": "1/14112000",
+            "channels": 1,
+            "channelLayout": "mono",
+            "chapters": [],
+            "embeddedCoverArt": null,
+            "metaTags": {
+              "tagEncoder": "Lavf62.12.102"
+            },
+            "mimeType": "audio/mpeg"
+          }
+        ],
+        "chapters": [
+          {
+            "id": 0,
+            "start": 0,
+            "end": 45,
+            "title": "Night"
+          },
+          {
+            "id": 1,
+            "start": 45,
+            "end": 90,
+            "title": "Morning"
+          }
+        ],
+        "ebookFile": null,
+        "tracks": [
+          {
+            "index": 1,
+            "ino": "441",
+            "metadata": {
+              "filename": "01.mp3",
+              "ext": ".mp3",
+              "path": "/audiobooks/Ada Fixture/The Long Dark/01.mp3",
+              "relPath": "01.mp3",
+              "size": 360508,
+              "mtimeMs": 1791466279449,
+              "ctimeMs": 1791466279449,
+              "birthtimeMs": 0
+            },
+            "addedAt": 1791466280999,
+            "updatedAt": 1791466280999,
+            "trackNumFromMeta": null,
+            "discNumFromMeta": null,
+            "trackNumFromFilename": 1,
+            "discNumFromFilename": null,
+            "manuallyVerified": false,
+            "exclude": false,
+            "error": null,
+            "format": "MP2/3 (MPEG audio layer 2/3)",
+            "duration": 90,
+            "bitRate": 32000,
+            "language": null,
+            "codec": "mp3",
+            "timeBase": "1/14112000",
+            "channels": 1,
+            "channelLayout": "mono",
+            "chapters": [],
+            "embeddedCoverArt": null,
+            "metaTags": {
+              "tagEncoder": "Lavf62.12.102"
+            },
+            "mimeType": "audio/mpeg",
+            "title": "01.mp3",
+            "startOffset": 0,
+            "contentUrl": "/api/items/bb123a3a-956f-4cc9-926e-9bd617f46814/file/441"
+          }
+        ]
+      },
+      "numFiles": 2,
+      "size": 360743,
+      "lastScan": 1791466281000,
+      "scanVersion": "2.37.1",
+      "libraryFiles": [
+        {
+          "ino": "441",
+          "metadata": {
+            "filename": "01.mp3",
+            "ext": ".mp3",
+            "path": "/audiobooks/Ada Fixture/The Long Dark/01.mp3",
+            "relPath": "01.mp3",
+            "size": 360508,
+            "mtimeMs": 1791466279449,
+            "ctimeMs": 1791466279449,
+            "birthtimeMs": 0
+          },
+          "isSupplementary": null,
+          "addedAt": 1791466280898,
+          "updatedAt": 1791466280898,
+          "fileType": "audio"
+        },
+        {
+          "ino": "440",
+          "metadata": {
+            "filename": "metadata.json",
+            "ext": ".json",
+            "path": "/audiobooks/Ada Fixture/The Long Dark/metadata.json",
+            "relPath": "metadata.json",
+            "size": 235,
+            "mtimeMs": 1791466279447,
+            "ctimeMs": 1791466279447,
+            "birthtimeMs": 0
+          },
+          "isSupplementary": null,
+          "addedAt": 1791466280898,
+          "updatedAt": 1791466280898,
+          "fileType": "metadata"
+        }
+      ]
+    },
+    {
+      "id": "d7c946d8-86c5-49e1-9a58-658fcb01b709",
+      "ino": "439",
+      "oldLibraryItemId": null,
+      "libraryId": "8dd528ba-ac24-4f4e-a0f0-8984982b7f84",
+      "folderId": "fb16cb7d-3cb7-4c85-8751-c6ac5d697a18",
+      "path": "/audiobooks/Ada Fixture/The First Light",
+      "relPath": "Ada Fixture/The First Light",
+      "isFile": false,
+      "mtimeMs": 1791466279426,
+      "ctimeMs": 1791466279426,
+      "birthtimeMs": 0,
+      "addedAt": 1791466281049,
+      "updatedAt": 1791466281049,
+      "isMissing": false,
+      "isInvalid": false,
+      "mediaType": "book",
+      "media": {
+        "id": "3fc8d0a4-574b-4c63-b00e-585a3ec797c8",
+        "metadata": {
+          "title": "The First Light",
+          "subtitle": null,
+          "authors": [
+            {
+              "id": "2b05631c-c77f-4dde-b5f3-4ec7adf8e4a3",
+              "name": "Ada Fixture"
+            }
+          ],
+          "narrators": [
+            "Nell Narrator"
+          ],
+          "series": [
+            {
+              "id": "f76924f5-582d-4cba-be2a-dba0086a8d56",
+              "name": "Fixture Saga",
+              "sequence": "1"
+            }
+          ],
+          "genres": [
+            "Fixture"
+          ],
+          "publishedYear": "2001",
+          "publishedDate": null,
+          "publisher": null,
+          "description": "First Book of the Fixture Saga.",
+          "isbn": null,
+          "asin": null,
+          "language": null,
+          "explicit": false,
+          "abridged": false,
+          "titleIgnorePrefix": "First Light, The",
+          "authorName": "Ada Fixture",
+          "authorNameLF": "Fixture, Ada",
+          "narratorName": "Nell Narrator",
+          "seriesName": "Fixture Saga #1",
+          "descriptionPlain": "First Book of the Fixture Saga."
+        },
+        "coverPath": "/audiobooks/Ada Fixture/The First Light/cover.jpg",
+        "tags": [],
+        "numTracks": 1,
+        "numAudioFiles": 1,
+        "numChapters": 3,
+        "duration": 120,
+        "size": 480462,
+        "libraryItemId": "d7c946d8-86c5-49e1-9a58-658fcb01b709",
+        "audioFiles": [
+          {
+            "index": 1,
+            "ino": "443",
+            "metadata": {
+              "filename": "01.mp3",
+              "ext": ".mp3",
+              "path": "/audiobooks/Ada Fixture/The First Light/01.mp3",
+              "relPath": "01.mp3",
+              "size": 480462,
+              "mtimeMs": 1791466279423,
+              "ctimeMs": 1791466279423,
+              "birthtimeMs": 0
+            },
+            "addedAt": 1791466281048,
+            "updatedAt": 1791466281048,
+            "trackNumFromMeta": null,
+            "discNumFromMeta": null,
+            "trackNumFromFilename": 1,
+            "discNumFromFilename": null,
+            "manuallyVerified": false,
+            "exclude": false,
+            "error": null,
+            "format": "MP2/3 (MPEG audio layer 2/3)",
+            "duration": 120,
+            "bitRate": 32000,
+            "language": null,
+            "codec": "mp3",
+            "timeBase": "1/14112000",
+            "channels": 1,
+            "channelLayout": "mono",
+            "chapters": [],
+            "embeddedCoverArt": null,
+            "metaTags": {
+              "tagEncoder": "Lavf62.12.102"
+            },
+            "mimeType": "audio/mpeg"
+          }
+        ],
+        "chapters": [
+          {
+            "id": 0,
+            "start": 0,
+            "end": 40,
+            "title": "Dawn"
+          },
+          {
+            "id": 1,
+            "start": 40,
+            "end": 80,
+            "title": "Noon"
+          },
+          {
+            "id": 2,
+            "start": 80,
+            "end": 120,
+            "title": "Dusk"
+          }
+        ],
+        "ebookFile": null,
+        "tracks": [
+          {
+            "index": 1,
+            "ino": "443",
+            "metadata": {
+              "filename": "01.mp3",
+              "ext": ".mp3",
+              "path": "/audiobooks/Ada Fixture/The First Light/01.mp3",
+              "relPath": "01.mp3",
+              "size": 480462,
+              "mtimeMs": 1791466279423,
+              "ctimeMs": 1791466279423,
+              "birthtimeMs": 0
+            },
+            "addedAt": 1791466281048,
+            "updatedAt": 1791466281048,
+            "trackNumFromMeta": null,
+            "discNumFromMeta": null,
+            "trackNumFromFilename": 1,
+            "discNumFromFilename": null,
+            "manuallyVerified": false,
+            "exclude": false,
+            "error": null,
+            "format": "MP2/3 (MPEG audio layer 2/3)",
+            "duration": 120,
+            "bitRate": 32000,
+            "language": null,
+            "codec": "mp3",
+            "timeBase": "1/14112000",
+            "channels": 1,
+            "channelLayout": "mono",
+            "chapters": [],
+            "embeddedCoverArt": null,
+            "metaTags": {
+              "tagEncoder": "Lavf62.12.102"
+            },
+            "mimeType": "audio/mpeg",
+            "title": "01.mp3",
+            "startOffset": 0,
+            "contentUrl": "/api/items/d7c946d8-86c5-49e1-9a58-658fcb01b709/file/443"
+          }
+        ]
+      },
+      "numFiles": 3,
+      "size": 483246,
+      "lastScan": 1791466281049,
+      "scanVersion": "2.37.1",
+      "libraryFiles": [
+        {
+          "ino": "443",
+          "metadata": {
+            "filename": "01.mp3",
+            "ext": ".mp3",
+            "path": "/audiobooks/Ada Fixture/The First Light/01.mp3",
+            "relPath": "01.mp3",
+            "size": 480462,
+            "mtimeMs": 1791466279423,
+            "ctimeMs": 1791466279423,
+            "birthtimeMs": 0
+          },
+          "isSupplementary": null,
+          "addedAt": 1791466280899,
+          "updatedAt": 1791466280899,
+          "fileType": "audio"
+        },
+        {
+          "ino": "444",
+          "metadata": {
+            "filename": "cover.jpg",
+            "ext": ".jpg",
+            "path": "/audiobooks/Ada Fixture/The First Light/cover.jpg",
+            "relPath": "cover.jpg",
+            "size": 2389,
+            "mtimeMs": 1791466279426,
+            "ctimeMs": 1791466279426,
+            "birthtimeMs": 0
+          },
+          "isSupplementary": null,
+          "addedAt": 1791466280899,
+          "updatedAt": 1791466280899,
+          "fileType": "image"
+        },
+        {
+          "ino": "442",
+          "metadata": {
+            "filename": "metadata.json",
+            "ext": ".json",
+            "path": "/audiobooks/Ada Fixture/The First Light/metadata.json",
+            "relPath": "metadata.json",
+            "size": 395,
+            "mtimeMs": 1791466279417,
+            "ctimeMs": 1791466279417,
+            "birthtimeMs": 0
+          },
+          "isSupplementary": null,
+          "addedAt": 1791466280899,
+          "updatedAt": 1791466280899,
+          "fileType": "metadata"
+        }
+      ]
+    },
+    {
+      "id": "e9ab7b04-67ea-487e-893b-0103261d1ea0",
+      "ino": "438",
+      "oldLibraryItemId": null,
+      "libraryId": "8dd528ba-ac24-4f4e-a0f0-8984982b7f84",
+      "folderId": "fb16cb7d-3cb7-4c85-8751-c6ac5d697a18",
+      "path": "/audiobooks/Ada Fixture/Second Dawn",
+      "relPath": "Ada Fixture/Second Dawn",
+      "isFile": false,
+      "mtimeMs": 1791466279444,
+      "ctimeMs": 1791466279444,
+      "birthtimeMs": 0,
+      "addedAt": 1791466281086,
+      "updatedAt": 1791466281086,
+      "isMissing": false,
+      "isInvalid": false,
+      "mediaType": "book",
+      "media": {
+        "id": "4bfce340-e474-416a-bda6-8ac5e34b5936",
+        "metadata": {
+          "title": "Second Dawn",
+          "subtitle": null,
+          "authors": [
+            {
+              "id": "2b05631c-c77f-4dde-b5f3-4ec7adf8e4a3",
+              "name": "Ada Fixture"
+            }
+          ],
+          "narrators": [
+            "Nell Narrator"
+          ],
+          "series": [
+            {
+              "id": "f76924f5-582d-4cba-be2a-dba0086a8d56",
+              "name": "Fixture Saga",
+              "sequence": "2"
+            }
+          ],
+          "genres": [],
+          "publishedYear": "2003",
+          "publishedDate": null,
+          "publisher": null,
+          "description": null,
+          "isbn": null,
+          "asin": null,
+          "language": null,
+          "explicit": false,
+          "abridged": false,
+          "titleIgnorePrefix": "Second Dawn",
+          "authorName": "Ada Fixture",
+          "authorNameLF": "Fixture, Ada",
+          "narratorName": "Nell Narrator",
+          "seriesName": "Fixture Saga #2",
+          "descriptionPlain": null
+        },
+        "coverPath": null,
+        "tags": [],
+        "numTracks": 1,
+        "numAudioFiles": 1,
+        "numChapters": 2,
+        "duration": 120,
+        "size": 480462,
+        "libraryItemId": "e9ab7b04-67ea-487e-893b-0103261d1ea0",
+        "audioFiles": [
+          {
+            "index": 1,
+            "ino": "446",
+            "metadata": {
+              "filename": "01.mp3",
+              "ext": ".mp3",
+              "path": "/audiobooks/Ada Fixture/Second Dawn/01.mp3",
+              "relPath": "01.mp3",
+              "size": 480462,
+              "mtimeMs": 1791466279444,
+              "ctimeMs": 1791466279444,
+              "birthtimeMs": 0
+            },
+            "addedAt": 1791466281085,
+            "updatedAt": 1791466281085,
+            "trackNumFromMeta": null,
+            "discNumFromMeta": null,
+            "trackNumFromFilename": 1,
+            "discNumFromFilename": null,
+            "manuallyVerified": false,
+            "exclude": false,
+            "error": null,
+            "format": "MP2/3 (MPEG audio layer 2/3)",
+            "duration": 120,
+            "bitRate": 32000,
+            "language": null,
+            "codec": "mp3",
+            "timeBase": "1/14112000",
+            "channels": 1,
+            "channelLayout": "mono",
+            "chapters": [],
+            "embeddedCoverArt": null,
+            "metaTags": {
+              "tagEncoder": "Lavf62.12.102"
+            },
+            "mimeType": "audio/mpeg"
+          }
+        ],
+        "chapters": [
+          {
+            "id": 0,
+            "start": 0,
+            "end": 60,
+            "title": "Before"
+          },
+          {
+            "id": 1,
+            "start": 60,
+            "end": 120,
+            "title": "After"
+          }
+        ],
+        "ebookFile": null,
+        "tracks": [
+          {
+            "index": 1,
+            "ino": "446",
+            "metadata": {
+              "filename": "01.mp3",
+              "ext": ".mp3",
+              "path": "/audiobooks/Ada Fixture/Second Dawn/01.mp3",
+              "relPath": "01.mp3",
+              "size": 480462,
+              "mtimeMs": 1791466279444,
+              "ctimeMs": 1791466279444,
+              "birthtimeMs": 0
+            },
+            "addedAt": 1791466281085,
+            "updatedAt": 1791466281085,
+            "trackNumFromMeta": null,
+            "discNumFromMeta": null,
+            "trackNumFromFilename": 1,
+            "discNumFromFilename": null,
+            "manuallyVerified": false,
+            "exclude": false,
+            "error": null,
+            "format": "MP2/3 (MPEG audio layer 2/3)",
+            "duration": 120,
+            "bitRate": 32000,
+            "language": null,
+            "codec": "mp3",
+            "timeBase": "1/14112000",
+            "channels": 1,
+            "channelLayout": "mono",
+            "chapters": [],
+            "embeddedCoverArt": null,
+            "metaTags": {
+              "tagEncoder": "Lavf62.12.102"
+            },
+            "mimeType": "audio/mpeg",
+            "title": "01.mp3",
+            "startOffset": 0,
+            "contentUrl": "/api/items/e9ab7b04-67ea-487e-893b-0103261d1ea0/file/446"
+          }
+        ]
+      },
+      "numFiles": 2,
+      "size": 480732,
+      "lastScan": 1791466281085,
+      "scanVersion": "2.37.1",
+      "libraryFiles": [
+        {
+          "ino": "446",
+          "metadata": {
+            "filename": "01.mp3",
+            "ext": ".mp3",
+            "path": "/audiobooks/Ada Fixture/Second Dawn/01.mp3",
+            "relPath": "01.mp3",
+            "size": 480462,
+            "mtimeMs": 1791466279444,
+            "ctimeMs": 1791466279444,
+            "birthtimeMs": 0
+          },
+          "isSupplementary": null,
+          "addedAt": 1791466280899,
+          "updatedAt": 1791466280899,
+          "fileType": "audio"
+        },
+        {
+          "ino": "445",
+          "metadata": {
+            "filename": "metadata.json",
+            "ext": ".json",
+            "path": "/audiobooks/Ada Fixture/Second Dawn/metadata.json",
+            "relPath": "metadata.json",
+            "size": 270,
+            "mtimeMs": 1791466279441,
+            "ctimeMs": 1791466279441,
+            "birthtimeMs": 0
+          },
+          "isSupplementary": null,
+          "addedAt": 1791466280899,
+          "updatedAt": 1791466280899,
+          "fileType": "metadata"
+        }
+      ]
+    },
+    {
+      "id": "83705354-8bab-432e-ab00-ef880c2b901a",
+      "ino": "437",
+      "oldLibraryItemId": null,
+      "libraryId": "8dd528ba-ac24-4f4e-a0f0-8984982b7f84",
+      "folderId": "fb16cb7d-3cb7-4c85-8751-c6ac5d697a18",
+      "path": "/audiobooks/Ada Fixture/Between Lights",
+      "relPath": "Ada Fixture/Between Lights",
+      "isFile": false,
+      "mtimeMs": 1791466279438,
+      "ctimeMs": 1791466279438,
+      "birthtimeMs": 0,
+      "addedAt": 1791466281123,
+      "updatedAt": 1791466281123,
+      "isMissing": false,
+      "isInvalid": false,
+      "mediaType": "book",
+      "media": {
+        "id": "a49d5a10-f659-491e-9485-91562182bc93",
+        "metadata": {
+          "title": "Between Lights",
+          "subtitle": null,
+          "authors": [
+            {
+              "id": "2b05631c-c77f-4dde-b5f3-4ec7adf8e4a3",
+              "name": "Ada Fixture"
+            }
+          ],
+          "narrators": [
+            "Nell Narrator"
+          ],
+          "series": [
+            {
+              "id": "f76924f5-582d-4cba-be2a-dba0086a8d56",
+              "name": "Fixture Saga",
+              "sequence": "1.5"
+            }
+          ],
+          "genres": [],
+          "publishedYear": "2002",
+          "publishedDate": null,
+          "publisher": null,
+          "description": "A novella between the first and second Books, in three files.",
+          "isbn": null,
+          "asin": null,
+          "language": null,
+          "explicit": false,
+          "abridged": false,
+          "titleIgnorePrefix": "Between Lights",
+          "authorName": "Ada Fixture",
+          "authorNameLF": "Fixture, Ada",
+          "narratorName": "Nell Narrator",
+          "seriesName": "Fixture Saga #1.5",
+          "descriptionPlain": "A novella between the first and second Books, in three files."
+        },
+        "coverPath": null,
+        "tags": [],
+        "numTracks": 3,
+        "numAudioFiles": 3,
+        "numChapters": 4,
+        "duration": 180,
+        "size": 721347,
+        "libraryItemId": "83705354-8bab-432e-ab00-ef880c2b901a",
+        "audioFiles": [
+          {
+            "index": 1,
+            "ino": "450",
+            "metadata": {
+              "filename": "01.mp3",
+              "ext": ".mp3",
+              "path": "/audiobooks/Ada Fixture/Between Lights/01.mp3",
+              "relPath": "01.mp3",
+              "size": 240449,
+              "mtimeMs": 1791466279432,
+              "ctimeMs": 1791466279432,
+              "birthtimeMs": 0
+            },
+            "addedAt": 1791466281123,
+            "updatedAt": 1791466281123,
+            "trackNumFromMeta": null,
+            "discNumFromMeta": null,
+            "trackNumFromFilename": 1,
+            "discNumFromFilename": null,
+            "manuallyVerified": false,
+            "exclude": false,
+            "error": null,
+            "format": "MP2/3 (MPEG audio layer 2/3)",
+            "duration": 60,
+            "bitRate": 32000,
+            "language": null,
+            "codec": "mp3",
+            "timeBase": "1/14112000",
+            "channels": 1,
+            "channelLayout": "mono",
+            "chapters": [],
+            "embeddedCoverArt": null,
+            "metaTags": {
+              "tagEncoder": "Lavf62.12.102"
+            },
+            "mimeType": "audio/mpeg"
+          },
+          {
+            "index": 2,
+            "ino": "449",
+            "metadata": {
+              "filename": "02.mp3",
+              "ext": ".mp3",
+              "path": "/audiobooks/Ada Fixture/Between Lights/02.mp3",
+              "relPath": "02.mp3",
+              "size": 240449,
+              "mtimeMs": 1791466279435,
+              "ctimeMs": 1791466279435,
+              "birthtimeMs": 0
+            },
+            "addedAt": 1791466281122,
+            "updatedAt": 1791466281122,
+            "trackNumFromMeta": null,
+            "discNumFromMeta": null,
+            "trackNumFromFilename": 2,
+            "discNumFromFilename": null,
+            "manuallyVerified": false,
+            "exclude": false,
+            "error": null,
+            "format": "MP2/3 (MPEG audio layer 2/3)",
+            "duration": 60,
+            "bitRate": 32000,
+            "language": null,
+            "codec": "mp3",
+            "timeBase": "1/14112000",
+            "channels": 1,
+            "channelLayout": "mono",
+            "chapters": [],
+            "embeddedCoverArt": null,
+            "metaTags": {
+              "tagEncoder": "Lavf62.12.102"
+            },
+            "mimeType": "audio/mpeg"
+          },
+          {
+            "index": 3,
+            "ino": "448",
+            "metadata": {
+              "filename": "03.mp3",
+              "ext": ".mp3",
+              "path": "/audiobooks/Ada Fixture/Between Lights/03.mp3",
+              "relPath": "03.mp3",
+              "size": 240449,
+              "mtimeMs": 1791466279438,
+              "ctimeMs": 1791466279438,
+              "birthtimeMs": 0
+            },
+            "addedAt": 1791466281122,
+            "updatedAt": 1791466281122,
+            "trackNumFromMeta": null,
+            "discNumFromMeta": null,
+            "trackNumFromFilename": 3,
+            "discNumFromFilename": null,
+            "manuallyVerified": false,
+            "exclude": false,
+            "error": null,
+            "format": "MP2/3 (MPEG audio layer 2/3)",
+            "duration": 60,
+            "bitRate": 32000,
+            "language": null,
+            "codec": "mp3",
+            "timeBase": "1/14112000",
+            "channels": 1,
+            "channelLayout": "mono",
+            "chapters": [],
+            "embeddedCoverArt": null,
+            "metaTags": {
+              "tagEncoder": "Lavf62.12.102"
+            },
+            "mimeType": "audio/mpeg"
+          }
+        ],
+        "chapters": [
+          {
+            "id": 0,
+            "start": 0,
+            "end": 45,
+            "title": "One"
+          },
+          {
+            "id": 1,
+            "start": 45,
+            "end": 90,
+            "title": "Two"
+          },
+          {
+            "id": 2,
+            "start": 90,
+            "end": 135,
+            "title": "Three"
+          },
+          {
+            "id": 3,
+            "start": 135,
+            "end": 180,
+            "title": "Four"
+          }
+        ],
+        "ebookFile": null,
+        "tracks": [
+          {
+            "index": 1,
+            "ino": "450",
+            "metadata": {
+              "filename": "01.mp3",
+              "ext": ".mp3",
+              "path": "/audiobooks/Ada Fixture/Between Lights/01.mp3",
+              "relPath": "01.mp3",
+              "size": 240449,
+              "mtimeMs": 1791466279432,
+              "ctimeMs": 1791466279432,
+              "birthtimeMs": 0
+            },
+            "addedAt": 1791466281123,
+            "updatedAt": 1791466281123,
+            "trackNumFromMeta": null,
+            "discNumFromMeta": null,
+            "trackNumFromFilename": 1,
+            "discNumFromFilename": null,
+            "manuallyVerified": false,
+            "exclude": false,
+            "error": null,
+            "format": "MP2/3 (MPEG audio layer 2/3)",
+            "duration": 60,
+            "bitRate": 32000,
+            "language": null,
+            "codec": "mp3",
+            "timeBase": "1/14112000",
+            "channels": 1,
+            "channelLayout": "mono",
+            "chapters": [],
+            "embeddedCoverArt": null,
+            "metaTags": {
+              "tagEncoder": "Lavf62.12.102"
+            },
+            "mimeType": "audio/mpeg",
+            "title": "01.mp3",
+            "startOffset": 0,
+            "contentUrl": "/api/items/83705354-8bab-432e-ab00-ef880c2b901a/file/450"
+          },
+          {
+            "index": 2,
+            "ino": "449",
+            "metadata": {
+              "filename": "02.mp3",
+              "ext": ".mp3",
+              "path": "/audiobooks/Ada Fixture/Between Lights/02.mp3",
+              "relPath": "02.mp3",
+              "size": 240449,
+              "mtimeMs": 1791466279435,
+              "ctimeMs": 1791466279435,
+              "birthtimeMs": 0
+            },
+            "addedAt": 1791466281122,
+            "updatedAt": 1791466281122,
+            "trackNumFromMeta": null,
+            "discNumFromMeta": null,
+            "trackNumFromFilename": 2,
+            "discNumFromFilename": null,
+            "manuallyVerified": false,
+            "exclude": false,
+            "error": null,
+            "format": "MP2/3 (MPEG audio layer 2/3)",
+            "duration": 60,
+            "bitRate": 32000,
+            "language": null,
+            "codec": "mp3",
+            "timeBase": "1/14112000",
+            "channels": 1,
+            "channelLayout": "mono",
+            "chapters": [],
+            "embeddedCoverArt": null,
+            "metaTags": {
+              "tagEncoder": "Lavf62.12.102"
+            },
+            "mimeType": "audio/mpeg",
+            "title": "02.mp3",
+            "startOffset": 60,
+            "contentUrl": "/api/items/83705354-8bab-432e-ab00-ef880c2b901a/file/449"
+          },
+          {
+            "index": 3,
+            "ino": "448",
+            "metadata": {
+              "filename": "03.mp3",
+              "ext": ".mp3",
+              "path": "/audiobooks/Ada Fixture/Between Lights/03.mp3",
+              "relPath": "03.mp3",
+              "size": 240449,
+              "mtimeMs": 1791466279438,
+              "ctimeMs": 1791466279438,
+              "birthtimeMs": 0
+            },
+            "addedAt": 1791466281122,
+            "updatedAt": 1791466281122,
+            "trackNumFromMeta": null,
+            "discNumFromMeta": null,
+            "trackNumFromFilename": 3,
+            "discNumFromFilename": null,
+            "manuallyVerified": false,
+            "exclude": false,
+            "error": null,
+            "format": "MP2/3 (MPEG audio layer 2/3)",
+            "duration": 60,
+            "bitRate": 32000,
+            "language": null,
+            "codec": "mp3",
+            "timeBase": "1/14112000",
+            "channels": 1,
+            "channelLayout": "mono",
+            "chapters": [],
+            "embeddedCoverArt": null,
+            "metaTags": {
+              "tagEncoder": "Lavf62.12.102"
+            },
+            "mimeType": "audio/mpeg",
+            "title": "03.mp3",
+            "startOffset": 120,
+            "contentUrl": "/api/items/83705354-8bab-432e-ab00-ef880c2b901a/file/448"
+          }
+        ]
+      },
+      "numFiles": 4,
+      "size": 721796,
+      "lastScan": 1791466281123,
+      "scanVersion": "2.37.1",
+      "libraryFiles": [
+        {
+          "ino": "450",
+          "metadata": {
+            "filename": "01.mp3",
+            "ext": ".mp3",
+            "path": "/audiobooks/Ada Fixture/Between Lights/01.mp3",
+            "relPath": "01.mp3",
+            "size": 240449,
+            "mtimeMs": 1791466279432,
+            "ctimeMs": 1791466279432,
+            "birthtimeMs": 0
+          },
+          "isSupplementary": null,
+          "addedAt": 1791466280900,
+          "updatedAt": 1791466280900,
+          "fileType": "audio"
+        },
+        {
+          "ino": "449",
+          "metadata": {
+            "filename": "02.mp3",
+            "ext": ".mp3",
+            "path": "/audiobooks/Ada Fixture/Between Lights/02.mp3",
+            "relPath": "02.mp3",
+            "size": 240449,
+            "mtimeMs": 1791466279435,
+            "ctimeMs": 1791466279435,
+            "birthtimeMs": 0
+          },
+          "isSupplementary": null,
+          "addedAt": 1791466280900,
+          "updatedAt": 1791466280900,
+          "fileType": "audio"
+        },
+        {
+          "ino": "448",
+          "metadata": {
+            "filename": "03.mp3",
+            "ext": ".mp3",
+            "path": "/audiobooks/Ada Fixture/Between Lights/03.mp3",
+            "relPath": "03.mp3",
+            "size": 240449,
+            "mtimeMs": 1791466279438,
+            "ctimeMs": 1791466279438,
+            "birthtimeMs": 0
+          },
+          "isSupplementary": null,
+          "addedAt": 1791466280900,
+          "updatedAt": 1791466280900,
+          "fileType": "audio"
+        },
+        {
+          "ino": "447",
+          "metadata": {
+            "filename": "metadata.json",
+            "ext": ".json",
+            "path": "/audiobooks/Ada Fixture/Between Lights/metadata.json",
+            "relPath": "metadata.json",
+            "size": 449,
+            "mtimeMs": 1791466279430,
+            "ctimeMs": 1791466279430,
+            "birthtimeMs": 0
+          },
+          "isSupplementary": null,
+          "addedAt": 1791466280900,
+          "updatedAt": 1791466280900,
+          "fileType": "metadata"
+        }
+      ]
+    }
+  ]
+}

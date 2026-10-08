@@ -5,13 +5,19 @@ import SwiftUI
 struct LibraryView: View {
     let model: LibraryModel
     let launch: LaunchSignpost?
+    @State private var opener = BookOpener()
 
     var body: some View {
         List {
             ForEach(model.sections) { section in
                 Section {
                     ForEach(section.rows) { row in
-                        LibraryRowView(row: row)
+                        Button {
+                            opener.open(row.id)
+                        } label: {
+                            LibraryRowView(row: row)
+                        }
+                        .foregroundStyle(.primary)
                     }
                 } header: {
                     Text(section.letter)
@@ -59,6 +65,9 @@ struct LibraryView: View {
                     }
                 }
             }
+        }
+        .navigationDestination(item: $opener.opened) { route in
+            BookDetailView(model: model.detail(for: route.bookID), onAppear: opener.detailAppeared)
         }
         .onAppear { launch?.end() }
     }
