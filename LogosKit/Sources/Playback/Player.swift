@@ -52,6 +52,8 @@ public final class Player {
     public private(set) var damaged: DamagedDownload?
     /// The Sleep Timer set on the loaded Book, if any (see `Player+SleepTimer.swift`).
     public internal(set) var sleepTimer: SleepTimer?
+    /// How many times the media services were reset (and the player rebuilt), so Now Playing can publish again.
+    public internal(set) var mediaServicesResets = 0
 
     /// How often the position is published while playing, in seconds.
     public static let publishInterval = 0.25

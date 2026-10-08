@@ -76,6 +76,8 @@ private final class Services {
     let downloadFiles: DownloadFiles?
     /// One player for the whole app: it plays from Downloads only (never the network).
     let player: Player?
+    /// The lock screen and Control Center for the player.
+    let nowPlaying: NowPlaying?
     let api: any ServerAPI = AudiobookshelfClient()
     let tokenStore: any TokenStore = KeychainTokenStore()
     let clock: any Clock = SystemClock()
@@ -101,6 +103,10 @@ private final class Services {
                 database: database, files: $0, audio: SystemAudioPlayer(), clock: clock,
                 session: SystemAudioSession())
         }
+        nowPlaying = player.map { [covers, clock] in
+            NowPlaying(player: $0, center: SystemNowPlayingCenter(), covers: covers, clock: clock)
+        }
+        if let nowPlaying { Task { await nowPlaying.follow() } }
         // A background launch for finished transfers has no UI: start Downloads now so it handles them.
         if let identity = try? database.serverIdentity(), let downloader = downloader(for: identity) {
             Task { await downloader.start() }
