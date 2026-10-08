@@ -85,7 +85,7 @@ struct MiniPlayerView: View {
 }
 
 /// The full player sheet: cover, Chapter name, Book title and author; a Chapter-scoped scrubber with elapsed and left;
-/// a thin whole-Book line with "left in Book"; skip back / Play-Pause / skip forward; and the Chapters list.
+/// a thin whole-Book line with "left in Book"; skip back / Play-Pause / skip forward; and the Sleep Timer and Chapters.
 struct PlayerSheet: View {
     let player: Player
     @State private var scrubbing: Double?
@@ -117,10 +117,13 @@ struct PlayerSheet: View {
                 scrubber(times)
                 bookLine(times)
                 controls
-                Button {
-                    showsChapters = true
-                } label: {
-                    Label("Chapters", systemImage: "list.bullet")
+                HStack(spacing: 12) {
+                    SleepTimerMenu(player: player)
+                    Button {
+                        showsChapters = true
+                    } label: {
+                        Label("Chapters", systemImage: "list.bullet")
+                    }
                 }
                 .buttonStyle(.bordered)
                 Spacer(minLength: 0)
