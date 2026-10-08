@@ -107,17 +107,7 @@ struct BookDetailView: View {
 
     private func header(_ detail: BookDetail) -> some View {
         VStack(spacing: 12) {
-            // Cover space: a solid placeholder until covers are stored.
-            RoundedRectangle(cornerRadius: 8)
-                .fill(.quaternary)
-                .aspectRatio(1, contentMode: .fit)
-                .frame(maxWidth: 220)
-                .overlay {
-                    Image(systemName: "book.closed")
-                        .font(.largeTitle)
-                        .foregroundStyle(.tertiary)
-                }
-                .accessibilityHidden(true)
+            CoverView(bookID: detail.id, side: 240, cornerRadius: 8)
             Text(detail.title)
                 .font(.title2.bold())
                 .multilineTextAlignment(.center)

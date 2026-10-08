@@ -34,6 +34,18 @@ enum Requests {
         return authorized(URLRequest(url: url), accessToken)
     }
 
+    /// The width covers are fetched at: about 600 px, enough for detail and the lock screen, downscaled for rows.
+    static let coverWidth = 600
+
+    static func cover(ofBook bookID: String, on server: URL, accessToken: String) -> URLRequest {
+        // `format=jpeg`: otherwise URLSession's `Accept: */*` gets WebP.
+        let url = server.appending(path: "api/items").appending(path: bookID).appending(path: "cover")
+            .appending(queryItems: [
+                URLQueryItem(name: "width", value: String(coverWidth)), URLQueryItem(name: "format", value: "jpeg"),
+            ])
+        return authorized(URLRequest(url: url), accessToken)
+    }
+
     private static func authorized(_ request: URLRequest, _ accessToken: String) -> URLRequest {
         var request = request
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")

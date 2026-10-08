@@ -37,10 +37,10 @@ public enum SyncOutcome: Sendable, Hashable {
 /// 1. rechecks the Server version (`/status`) and stops below 2.36;
 /// 2. stage 1: fetches the full Library list and applies it to the Store in one transaction, deleting Books the
 ///    Server no longer lists. An empty, failed or undecodable list is never applied.
+/// 3. stage 2: fetches full Book data for every Book that's behind (`LibrarySync+BookData.swift`);
+/// 4. stage 3: fetches covers that are behind (`CoverSync`).
 ///
-/// 3. stage 2: fetches full Book data for every Book that's behind (`LibrarySync+BookData.swift`).
-///
-/// Later stages (covers) run after these in ``run()``. Sync never throws and never blocks the UI:
+/// Sync never throws and never blocks the UI:
 /// failures are logged and reported as a ``SyncOutcome``.
 public actor LibrarySync {
     /// A foreground return syncs only if the last successful sync is older than this.
@@ -51,12 +51,15 @@ public actor LibrarySync {
     let auth: Auth
     let clock: any Clock
     private var running: Task<SyncOutcome, Never>?
+    private let coverSync: CoverSync?
 
-    public init(database: AppDatabase, api: any ServerAPI, auth: Auth, clock: any Clock) {
+    /// - Parameter covers: where stage 3 keeps covers. Without it, covers aren't synced.
+    public init(database: AppDatabase, api: any ServerAPI, auth: Auth, clock: any Clock, covers: CoverFiles? = nil) {
         self.database = database
         self.api = api
         self.auth = auth
         self.clock = clock
+        coverSync = covers.map { CoverSync(database: database, api: api, auth: auth, covers: $0) }
     }
 
     /// Syncs, or joins the sync already running.
@@ -97,9 +100,13 @@ public actor LibrarySync {
         defer { interval.end() }
 
         if let stop = await checkVersion(of: identity.serverURL) { return stop }
-        let listed = await applyList(of: identity)
-        guard listed == .synced else { return listed }
-        return await fetchFullData(of: identity) ?? listed
+        let outcome = await applyList(of: identity)
+        guard outcome == .synced else { return outcome }
+        // Stage 2: full Book data. Only a rejected sign-in changes the outcome.
+        if let stop = await fetchFullData(of: identity) { return stop }
+        // Stage 3: covers. Failures leave them behind for the next sync; they don't change the outcome.
+        await coverSync?.run(on: identity.serverURL)
+        return outcome
     }
 
     /// `nil` if the Server may be synced with, otherwise why not.

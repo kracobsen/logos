@@ -54,6 +54,10 @@ public struct AudiobookshelfClient: ServerAPI {
         try Responses.bookData(await send(Requests.bookData(id, on: server, accessToken: accessToken)))
     }
 
+    public func cover(ofBook bookID: String, on server: URL, accessToken: String) async throws(ServerAPIError) -> Data {
+        try await send(Requests.cover(ofBook: bookID, on: server, accessToken: accessToken))
+    }
+
     private func send(_ request: URLRequest) async throws(ServerAPIError) -> Data {
         // Paths only: never log the host, tokens or bodies.
         let endpoint = "\(request.httpMethod ?? "GET") \(request.url?.path() ?? "")"

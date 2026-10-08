@@ -8,14 +8,19 @@ public struct AppRootView: View {
     @State private var launch: LaunchModel
     @State private var signIn: SignInModel
     private let launchSignpost: LaunchSignpost?
+    @State private var covers: CoverImages?
 
-    /// - Parameter makeLibrarySync: builds the sync for a signed-in identity.
+    /// - Parameters:
+    ///   - makeLibrarySync: builds the sync for a signed-in identity.
+    ///   - covers: where the cover files are. Without it, covers show as placeholders.
     public init(
         database: AppDatabase,
         signIn: SignIn,
         makeLibrarySync: @escaping (ServerIdentity) -> LibrarySync,
-        launchSignpost: LaunchSignpost? = nil
+        launchSignpost: LaunchSignpost? = nil,
+        covers: CoverFiles? = nil
     ) {
+        _covers = State(initialValue: covers.map { CoverImages(database: database, files: $0) })
         _launch = State(initialValue: LaunchModel(database: database, makeLibrarySync: makeLibrarySync))
         _signIn = State(initialValue: SignInModel(signIn: signIn))
         self.launchSignpost = launchSignpost
@@ -24,7 +29,7 @@ public struct AppRootView: View {
     public var body: some View {
         Group {
             if let library = launch.library {
-                RootView(library: library, launch: launchSignpost)
+                RootView(library: library, launch: launchSignpost, covers: covers)
             } else {
                 SignInView(model: signIn)
                     .onAppear { launchSignpost?.end() }
