@@ -42,17 +42,17 @@ extension AppDatabase {
     }
 
     static func fetchSeriesPage(_ db: Database, id: String) throws -> SeriesPage? {
-        // One row per Book (its first membership in this Series). `isDownloaded` is always false until Downloads
-        // exist: the Downloads ticket joins its table here.
+        // One row per Book (its first membership in this Series). Downloaded means a complete Download.
         let rows = try Row.fetchAll(
             db,
             sql: """
                 SELECT book.id, book.title, book.publishedYear, bookSeries.name, bookSeries.sequence,
                     MIN(bookSeries.position), progress.position AS progressPosition, progress.isFinished,
-                    0 AS isDownloaded
+                    IFNULL(download.state = 'downloaded', 0) AS isDownloaded
                 FROM bookSeries
                 JOIN book ON book.id = bookSeries.bookID
                 LEFT JOIN progress ON progress.bookID = book.id
+                LEFT JOIN download ON download.bookID = book.id
                 WHERE bookSeries.seriesID = ?
                 GROUP BY book.id
                 ORDER BY book.updatedAt DESC

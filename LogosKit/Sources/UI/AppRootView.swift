@@ -1,4 +1,5 @@
 import Domain
+import Downloads
 import Store
 import SwiftUI
 import Sync
@@ -13,15 +14,19 @@ public struct AppRootView: View {
     /// - Parameters:
     ///   - makeLibrarySync: builds the sync for a signed-in identity.
     ///   - covers: where the cover files are. Without it, covers show as placeholders.
+    ///   - makeDownloader: gives the Downloads for a signed-in identity.
     public init(
         database: AppDatabase,
         signIn: SignIn,
         makeLibrarySync: @escaping (ServerIdentity) -> LibrarySync,
         launchSignpost: LaunchSignpost? = nil,
-        covers: CoverFiles? = nil
+        covers: CoverFiles? = nil,
+        makeDownloader: ((ServerIdentity) -> Downloader?)? = nil
     ) {
         _covers = State(initialValue: covers.map { CoverImages(database: database, files: $0) })
-        _launch = State(initialValue: LaunchModel(database: database, makeLibrarySync: makeLibrarySync))
+        _launch = State(
+            initialValue: LaunchModel(
+                database: database, makeLibrarySync: makeLibrarySync, makeDownloader: makeDownloader))
         _signIn = State(initialValue: SignInModel(signIn: signIn))
         self.launchSignpost = launchSignpost
     }
@@ -30,7 +35,8 @@ public struct AppRootView: View {
         Group {
             if let library = launch.library, let inProgress = launch.inProgress, let series = launch.series {
                 RootView(
-                    library: library, inProgress: inProgress, series: series, launch: launchSignpost, covers: covers)
+                    library: library, inProgress: inProgress, series: series, launch: launchSignpost, covers: covers,
+                    downloads: launch.downloads)
             } else {
                 SignInView(model: signIn)
                     .onAppear { launchSignpost?.end() }

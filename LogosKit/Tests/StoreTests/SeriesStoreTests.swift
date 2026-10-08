@@ -69,6 +69,23 @@ struct SeriesStoreTests {
         #expect(try database.seriesPage(id: "other")?.books.map(\.sequence) == ["1"])
     }
 
+    @Test("A Series page knows which Books are downloaded (complete Downloads only)")
+    func downloaded() throws {
+        try store([
+            (listedBook("One", id: "one"), [saga("1")]),
+            (listedBook("Two", id: "two"), [saga("2")]),
+            (listedBook("Three", id: "three"), [saga("3")]),
+        ])
+        try database.queueDownload(ofBook: "one")
+        _ = try database.startNextDownload()
+        try database.finishDownload(ofBook: "one")
+        try database.queueDownload(ofBook: "two")
+
+        let page = try #require(try database.seriesPage(id: "saga"))
+
+        #expect(page.books.map(\.isDownloaded) == [true, false, false])
+    }
+
     @Test("An unknown Series has no page; a Series whose Books all left the Library is gone")
     func gone() throws {
         try store([(listedBook("First", id: "first"), [saga("1")]), (listedBook("Other", id: "o"), [other("1")])])

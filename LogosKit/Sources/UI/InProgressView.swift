@@ -1,7 +1,8 @@
 import Domain
 import SwiftUI
 
-/// The In Progress tab: started, unfinished Books, most recently listened first. A row opens the Book's detail.
+/// The In Progress tab: started, unfinished Books, most recently listened first. A row opens the Book's detail; its
+/// trailing button starts the Book's Download.
 struct InProgressView: View {
     let model: InProgressModel
     /// Book details open through the Library (its Store and sync).
@@ -11,12 +12,18 @@ struct InProgressView: View {
 
     var body: some View {
         List(model.rows) { row in
-            Button {
-                opener.open(row.id)
-            } label: {
-                InProgressRowView(row: row)
+            HStack(spacing: 12) {
+                Button {
+                    opener.open(row.id)
+                } label: {
+                    InProgressRowView(row: row)
+                }
+                .foregroundStyle(.primary)
+                // Starts the Download; Playback (#30) makes it resume a downloaded Book.
+                DownloadButton(bookID: row.id, size: 0, compact: true)
+                    .buttonStyle(.borderless)
+                    .frame(width: 44, height: 44)
             }
-            .foregroundStyle(.primary)
         }
         .listStyle(.plain)
         .overlay {

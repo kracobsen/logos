@@ -63,6 +63,8 @@ struct BookDetailView: View {
             Section {
                 header(detail)
                     .listRowSeparator(.hidden)
+                DownloadButton(bookID: detail.id, size: detail.size)
+                    .listRowSeparator(.hidden)
                 BookProgressSection(model: model.progress)
             }
             if let description = model.descriptionText {

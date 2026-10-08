@@ -47,6 +47,7 @@ struct SeriesListView: View {
 struct SeriesPageView: View {
     @State private var model: SeriesPageModel
     @State private var opener = BookOpener()
+    @Environment(DownloadsModel.self) private var downloads: DownloadsModel?
 
     init(model: SeriesPageModel) {
         _model = State(initialValue: model)
@@ -60,7 +61,7 @@ struct SeriesPageView: View {
                     .listRowSeparator(.hidden)
                 if let target = model.continueTarget {
                     Button {
-                        if let bookID = model.continueTapped() { opener.open(bookID) }
+                        if let bookID = model.continueTapped(downloads: downloads) { opener.open(bookID) }
                     } label: {
                         Label(
                             target.label,

@@ -71,12 +71,15 @@ public final class SeriesPageModel {
 
     /// The Continue button was tapped. Returns the Book to open, or `nil` to stay on the page.
     ///
-    /// For now it only opens the target Book. Downloads hooks in here for `.download` (start the Download) and
-    /// Playback for `.play` (play it); return `nil` once the action no longer needs the Book's detail.
-    public func continueTapped() -> String? {
+    /// `.download` starts the target Book's Download and opens it (its detail shows the progress). `.play` only
+    /// opens the target Book for now; Playback hooks in here (return `nil` once it no longer needs the detail).
+    public func continueTapped(downloads: DownloadsModel? = nil) -> String? {
         guard let target = continueTarget else { return nil }
         switch target.action {
-        case .play, .download:
+        case .download:
+            downloads?.startDownload(target.book.id)
+            return target.book.id
+        case .play:
             return target.book.id
         }
     }

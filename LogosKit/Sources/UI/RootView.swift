@@ -8,6 +8,7 @@ public struct RootView: View {
     let series: SeriesListModel
     let launch: LaunchSignpost?
     let covers: CoverImages?
+    let downloads: DownloadsModel?
     @State private var selection: AppTab = .inProgress
     @Environment(\.scenePhase) private var scenePhase
 
@@ -16,13 +17,15 @@ public struct RootView: View {
         inProgress: InProgressModel,
         series: SeriesListModel,
         launch: LaunchSignpost? = nil,
-        covers: CoverImages? = nil
+        covers: CoverImages? = nil,
+        downloads: DownloadsModel? = nil
     ) {
         self.library = library
         self.inProgress = inProgress
         self.series = series
         self.launch = launch
         self.covers = covers
+        self.downloads = downloads
     }
 
     public var body: some View {
@@ -37,29 +40,42 @@ public struct RootView: View {
                             LibraryView(model: library, launch: launch)
                         case .series:
                             SeriesListView(model: series, library: library)
-                        default:
-                            ContentUnavailableView(tab.title, systemImage: tab.systemImage)
-                                .navigationTitle(tab.title)
+                        case .downloaded:
+                            if let downloads {
+                                DownloadsView(model: downloads, library: library)
+                            } else {
+                                ContentUnavailableView(tab.title, systemImage: tab.systemImage)
+                                    .navigationTitle(tab.title)
+                            }
                         }
                     }
                 }
+                .badge(tab == .downloaded ? downloads?.badgeCount ?? 0 : 0)
             }
         }
         .environment(covers)
+        .environment(downloads)
         .task { await library.observe() }
         .task { await inProgress.observe() }
         .task { await series.observe() }
         .task { await covers?.observe() }
+        .task { await downloads?.observe() }
         .task {
             // Let the first frame go out before any sync work starts.
             await Task.yield()
             // The cover file check first (in the background), so this sync fetches missing covers again.
             await covers?.checkFiles()
+            // Rebuild the Download transfers from the database, alongside the launch sync.
+            async let downloadsResumed: Void = downloads?.resume() ?? ()
             await library.syncOnLaunch()
+            await downloadsResumed
         }
         .onChange(of: scenePhase) { old, new in
             if old == .background, new != .background {
                 Task { await library.syncOnForeground() }
+                Task { await downloads?.resume() }
+            } else if new == .background {
+                Task { await downloads?.enteredBackground() }
             }
         }
     }

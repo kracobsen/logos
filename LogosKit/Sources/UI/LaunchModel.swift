@@ -1,4 +1,5 @@
 import Domain
+import Downloads
 import Observation
 import Store
 import Sync
@@ -16,6 +17,7 @@ public final class LaunchModel {
             library = identity.map(makeLibrary)
             inProgress = identity.map { _ in InProgressModel(database: database) }
             series = identity.map { _ in SeriesListModel(database: database) }
+            downloads = identity.map(makeDownloads)
         }
     }
     /// The Library tab's model, while signed in.
@@ -24,14 +26,24 @@ public final class LaunchModel {
     public private(set) var inProgress: InProgressModel?
     /// The Series tab's model, while signed in.
     public private(set) var series: SeriesListModel?
+    /// Downloads (the Downloaded tab, Download buttons), while signed in.
+    public private(set) var downloads: DownloadsModel?
 
     private let database: AppDatabase
     private let makeLibrarySync: (ServerIdentity) -> LibrarySync
+    private let makeDownloader: ((ServerIdentity) -> Downloader?)?
 
-    /// - Parameter makeLibrarySync: builds the sync for a signed-in identity (its Server and Library).
-    public init(database: AppDatabase, makeLibrarySync: @escaping (ServerIdentity) -> LibrarySync) {
+    /// - Parameters:
+    ///   - makeLibrarySync: builds the sync for a signed-in identity (its Server and Library).
+    ///   - makeDownloader: gives the Downloads for a signed-in identity. Without it, Download buttons do nothing.
+    public init(
+        database: AppDatabase,
+        makeLibrarySync: @escaping (ServerIdentity) -> LibrarySync,
+        makeDownloader: ((ServerIdentity) -> Downloader?)? = nil
+    ) {
         self.database = database
         self.makeLibrarySync = makeLibrarySync
+        self.makeDownloader = makeDownloader
         do {
             identity = try database.serverIdentity()
         } catch {
@@ -40,6 +52,7 @@ public final class LaunchModel {
         library = identity.map(makeLibrary)
         inProgress = identity.map { _ in InProgressModel(database: database) }
         series = identity.map { _ in SeriesListModel(database: database) }
+        downloads = identity.map(makeDownloads)
     }
 
     /// Follows the identity in the database until cancelled.
@@ -51,6 +64,10 @@ public final class LaunchModel {
         } catch {
             log.error("Stopped observing the Server identity: \(String(describing: error), privacy: .public)")
         }
+    }
+
+    private func makeDownloads(for identity: ServerIdentity) -> DownloadsModel {
+        DownloadsModel(database: database, downloader: makeDownloader?(identity) ?? nil)
     }
 
     private func makeLibrary(for identity: ServerIdentity) -> LibraryModel {
