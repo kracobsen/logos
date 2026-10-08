@@ -25,6 +25,8 @@ public actor Downloader {
     public static let tokenValidity: Duration = .seconds(10 * 60)
     /// Failed tries of one file (401s and size mismatches aside) before its Book fails.
     public static let maxAttempts = 5
+    /// How long to wait before trying a file again after its 1st, 2nd, 3rd (and later) failed try.
+    public static let backoff: [Duration] = [.seconds(60), .seconds(5 * 60), .seconds(30 * 60)]
     /// Progress is written to the database at most this often per file.
     static let progressInterval: TimeInterval = 1
 
@@ -38,6 +40,8 @@ public actor Downloader {
     private var isInForeground: Bool
     private var isStarted = false
     private var lastProgressWrite: [FileTransfer: Date] = [:]
+    /// Files waiting out their backoff before they're enqueued again (in memory: a relaunch retries at once).
+    private var backingOff: [FileTransfer: Task<Void, Never>] = [:]
 
     /// - Parameters:
     ///   - covers: where the cover cache keeps covers; a Download shares its Book's cover file with it.
@@ -99,6 +103,7 @@ public actor Downloader {
 
     /// Stops the Book's Download and deletes its files, partial ones included. The next Book starts.
     public func cancel(_ bookID: String) async {
+        stopBackoff(ofBook: bookID)
         await transfers.cancel(bookID: bookID)
         do {
             try database.removeDownload(ofBook: bookID)
@@ -180,7 +185,7 @@ public actor Downloader {
         for index in known.indices where !known[index].isVerified {
             let file = known[index]
             let transfer = FileTransfer(bookID: bookID, relPath: file.relPath)
-            if running.contains(transfer) { continue }
+            if running.contains(transfer) || backingOff[transfer] != nil { continue }
             // Arrived just before Logos was killed, before it could be recorded.
             if file.resumeData == nil, files.size(ofBook: bookID, relPath: file.relPath) == file.size {
                 known[index].isVerified = true
@@ -297,15 +302,40 @@ public actor Downloader {
         }
     }
 
-    /// Counts a failed try and enqueues the file again (from its partial data), or fails the Book after too many.
+    /// Counts a failed try and enqueues the file again (from its partial data) after its ``backoff``, or fails the
+    /// Book after too many.
     private func retry(_ file: DownloadFile) async {
         var file = file
         file.attempts += 1
         save(file)
         if file.attempts >= Self.maxAttempts {
             await failActive(file.bookID)
-        } else {
-            await continueActive(file.bookID)
+            return
+        }
+        let transfer = FileTransfer(bookID: file.bookID, relPath: file.relPath)
+        let delay = Self.backoff[min(file.attempts, Self.backoff.count) - 1]
+        backingOff[transfer]?.cancel()
+        // From now, not from when the task gets to run.
+        let due = clock.now.addingTimeInterval(TimeInterval(delay.components.seconds))
+        backingOff[transfer] = Task { [clock, weak self] in
+            do {
+                try await clock.sleep(for: .seconds(due.timeIntervalSince(clock.now)))
+            } catch {
+                return
+            }
+            await self?.backoffEnded(transfer)
+        }
+    }
+
+    private func backoffEnded(_ transfer: FileTransfer) async {
+        backingOff[transfer] = nil
+        await continueActive(transfer.bookID)
+    }
+
+    private func stopBackoff(ofBook bookID: String) {
+        for (transfer, task) in backingOff where transfer.bookID == bookID {
+            task.cancel()
+            backingOff[transfer] = nil
         }
     }
 
@@ -317,6 +347,7 @@ public actor Downloader {
     }
 
     private func failActive(_ bookID: String) async {
+        stopBackoff(ofBook: bookID)
         await transfers.cancel(bookID: bookID)
         _ = fail(bookID)
         await advance()

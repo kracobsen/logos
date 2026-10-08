@@ -165,7 +165,7 @@ struct DownloaderTests {
                         try fixture.tokens.load()?.accessToken))))
     }
 
-    @Test("A transfer that stops part-way resumes from its partial data, with the ino read again")
+    @Test("A transfer that stops part-way resumes from its partial data after a backoff, with the ino read again")
     func resumes() async throws {
         let fixture = try await DownloadsFixture(books: [book("a", files: [("01.mp3", 100)])])
         let downloader = await fixture.downloader()
@@ -173,6 +173,8 @@ struct DownloaderTests {
         let bookDataRequests = fixture.server.requests.count { if case .bookData = $0 { true } else { false } }
 
         await fixture.server.transfers.interrupt(transfer("a", "01.mp3"), receivedBytes: 40)
+        await fixture.clock.advance(by: Downloader.backoff[0])
+        await fixture.eventually { fixture.pending.contains(transfer("a", "01.mp3")) }
 
         let resumed = try #require(fixture.server.transfers.pending.first)
         #expect(resumed.transfer == transfer("a", "01.mp3"))
@@ -213,6 +215,8 @@ struct DownloaderTests {
         let downloader = await fixture.downloader()
         await downloader.download("a")
         await fixture.server.transfers.interrupt(transfer("a", "01.mp3"), receivedBytes: 4)
+        await fixture.clock.advance(by: Downloader.backoff[0])
+        await fixture.eventually { fixture.pending.contains(transfer("a", "01.mp3")) }
         let enqueuedBefore = fixture.server.transfers.enqueued.count
 
         // More 401s than a file has attempts.
@@ -237,6 +241,8 @@ struct DownloaderTests {
         let downloader = await fixture.downloader()
         await downloader.download("a")
         await fixture.server.transfers.interrupt(transfer("a", "01.mp3"), receivedBytes: 4)
+        await fixture.clock.advance(by: Downloader.backoff[0])
+        await fixture.eventually { fixture.pending.contains(transfer("a", "01.mp3")) }
         await fixture.server.transfers.complete(transfer("a", "01.mp3"))
 
         #expect(fixture.onDisk("a", "01.mp3") == nil)
