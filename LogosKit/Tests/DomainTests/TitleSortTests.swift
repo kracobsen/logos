@@ -9,6 +9,7 @@ struct TitleSortTests {
             id: id ?? title,
             title: title,
             authorName: "",
+            authorNameLF: "",
             narratorName: "",
             seriesName: "",
             addedAt: Date(timeIntervalSince1970: 0),

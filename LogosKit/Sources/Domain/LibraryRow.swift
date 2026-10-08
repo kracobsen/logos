@@ -14,6 +14,8 @@ public struct LibraryRow: Sendable, Hashable, Identifiable {
     public let addedAt: Date
     /// In seconds.
     public let duration: Double
+    /// "Last, First" (`authorNameLF`): what Author order sorts by.
+    public let authorNameLF: String
 
     /// The title without a leading The, A or An: what Title order sorts by.
     public let sortTitle: String
@@ -22,6 +24,7 @@ public struct LibraryRow: Sendable, Hashable, Identifiable {
         id: String,
         title: String,
         authorName: String,
+        authorNameLF: String,
         narratorName: String,
         seriesName: String,
         addedAt: Date,
@@ -34,6 +37,7 @@ public struct LibraryRow: Sendable, Hashable, Identifiable {
         self.seriesName = seriesName
         self.addedAt = addedAt
         self.duration = duration
+        self.authorNameLF = authorNameLF
         self.sortTitle = TitleSort.sortTitle(title)
     }
 
