@@ -95,6 +95,8 @@ struct DownloadsModelTests {
         await server.transfers.completeAll()
 
         await eventually { model.action(forBook: "first", size: 1000) == .downloaded }
+        // The list comes from its own observation, which can land a little after the status.
+        await eventually { !model.list.downloaded.isEmpty }
         #expect(model.action(forBook: "first", size: 1000) == .downloaded)
         #expect(model.list.downloaded.map(\.id) == ["first"])
         #expect(model.badgeCount == 0)
