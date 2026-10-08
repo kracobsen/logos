@@ -1,0 +1,49 @@
+// Settings shared by every configuration of the Logos app target.
+// The project file holds no build settings: change them here.
+
+// Platform: iOS 27 only, iPhone only.
+SDKROOT = iphoneos
+SUPPORTED_PLATFORMS = iphoneos iphonesimulator
+IPHONEOS_DEPLOYMENT_TARGET = 27.0
+TARGETED_DEVICE_FAMILY = 1
+SUPPORTS_MACCATALYST = NO
+SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO
+SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO
+
+// Swift 6 language mode, complete strict concurrency, warnings as errors. The app defaults to the main actor.
+SWIFT_VERSION = 6.0
+SWIFT_STRICT_CONCURRENCY = complete
+SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor
+SWIFT_TREAT_WARNINGS_AS_ERRORS = YES
+GCC_TREAT_WARNINGS_AS_ERRORS = YES
+SWIFT_EMIT_LOC_STRINGS = YES
+ENABLE_USER_SCRIPT_SANDBOXING = YES
+ENABLE_MODULE_VERIFIER = NO
+ALWAYS_SEARCH_USER_PATHS = NO
+
+// Product.
+PRODUCT_NAME = Logos
+PRODUCT_BUNDLE_IDENTIFIER = $(BUNDLE_ID_PREFIX).logos
+MARKETING_VERSION = 0.1
+CURRENT_PROJECT_VERSION = 1
+ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon
+ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor
+ENABLE_PREVIEWS = YES
+
+// Info. Generated keys plus Config/Info.plist.
+GENERATE_INFOPLIST_FILE = YES
+INFOPLIST_FILE = Config/Info.plist
+INFOPLIST_KEY_CFBundleDisplayName = Logos
+INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES
+INFOPLIST_KEY_UILaunchScreen_Generation = YES
+INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait
+INFOPLIST_KEY_LSApplicationCategoryType = public.app-category.books
+
+// Signing. The team and bundle-ID prefix come from the git-ignored Config/Local.xcconfig
+// (copy Config/Local.xcconfig.template). Without it, simulator builds still work.
+CODE_SIGN_STYLE = Automatic
+CODE_SIGN_ENTITLEMENTS = Config/Logos.entitlements
+DEVELOPMENT_TEAM =
+BUNDLE_ID_PREFIX = local.dev
+
+#include? "Local.xcconfig"
