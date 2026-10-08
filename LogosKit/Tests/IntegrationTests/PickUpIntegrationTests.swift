@@ -5,12 +5,11 @@ import Store
 import Sync
 import Testing
 
-@Suite(
-    "Picking up from another device against the Docker Server",
-    .enabled(if: IntegrationServer.isConfigured, "run scripts/integration-test.sh")
-)
-struct PickUpIntegrationTests {
-    @Test("A newer position from another device is reported to the player once, and a near-identical one isn't")
+// In the progress suite, which runs serialized: both tests change and fetch the same user's progress.
+extension ProgressIntegrationTests {
+    @Test(
+        "A newer position from another device is reported to the player once, and a near-identical one isn't",
+        .timeLimit(.minutes(1)))
     func reportsPickUps() async throws {
         let server = try IntegrationServer.current()
         let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
@@ -50,7 +49,10 @@ struct PickUpIntegrationTests {
             of: book.id, ["currentTime": 110, "lastUpdate": now - 10_000], accessToken: accessToken)
         #expect(await sync.progress.fetch() == .fetched(changedBookIDs: [book.id]))
 
-        #expect(await pickUps.next()?.map(\.position) == [90])
-        #expect(await pickUps.next()?.map(\.position) == [110])
+        var picked: [Double] = []
+        while picked.count < 2, let adopted = await pickUps.next() {
+            picked += adopted.filter { $0.bookID == book.id }.map(\.position)
+        }
+        #expect(picked == [90, 110])
     }
 }

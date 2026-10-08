@@ -7,7 +7,8 @@ import Testing
 
 @Suite(
     "Progress fetch against the Docker Server",
-    .enabled(if: IntegrationServer.isConfigured, "run scripts/integration-test.sh")
+    .enabled(if: IntegrationServer.isConfigured, "run scripts/integration-test.sh"),
+    .serialized
 )
 struct ProgressIntegrationTests {
     @Test("Progress made on another device is picked up by the sync, and newer local progress is kept")
