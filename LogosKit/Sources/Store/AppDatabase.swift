@@ -1,3 +1,4 @@
+import Domain
 import Foundation
 import GRDB
 
@@ -9,7 +10,9 @@ import GRDB
 public struct AppDatabase: Sendable {
     let pool: DatabasePool
     /// What applied fetches adopted, for ``fetchedProgressUpdates()``.
-    let fetchedProgress = FetchedProgressBroadcast()
+    let fetchedProgress = Broadcast<[BookProgress]>()
+    /// Downloads stage 1 deleted with their Books, for ``downloadsRemovedFromLibraryUpdates()``.
+    let downloadsRemovedFromLibrary = Broadcast<Set<String>>()
 
     /// Why the database couldn't be opened, beyond SQLite's own errors.
     public enum OpenError: Error, Sendable, Hashable {

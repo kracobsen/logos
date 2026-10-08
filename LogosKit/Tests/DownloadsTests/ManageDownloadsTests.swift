@@ -102,4 +102,25 @@ struct ManageDownloadsTests {
         #expect(fixture.onDisk("a", "01.mp3") == nil)
         #expect(fixture.server.transfers.enqueued.count == enqueuedBefore)
     }
+
+    @Test("A downloading Book the Server no longer lists: its transfers stop, its files go, and the next Book starts")
+    func downloadingBookLeavesLibrary() async throws {
+        let fixture = try await DownloadsFixture(books: [
+            book("a", files: [("01.mp3", 10), ("02.mp3", 10)]), book("b", files: [("01.mp3", 10)]),
+        ])
+        let downloader = await fixture.downloader()
+        await downloader.download("a")
+        await downloader.download("b")
+        await fixture.server.transfers.complete(transfer("a", "01.mp3"))
+        #expect(fixture.onDisk("a", "01.mp3") != nil)
+        #expect(fixture.pending == [transfer("a", "02.mp3")])
+
+        try fixture.database.applyLibraryList([book("b", files: []).book], syncedAt: fixture.clock.now)
+        await fixture.eventually { fixture.pending == [transfer("b", "01.mp3")] }
+
+        #expect(fixture.pending == [transfer("b", "01.mp3")])
+        #expect(fixture.onDisk("a", "01.mp3") == nil)
+        #expect(!FileManager.default.fileExists(atPath: fixture.files.folder(forBook: "a").path(percentEncoded: false)))
+        #expect(try fixture.state("b") == .downloading)
+    }
 }

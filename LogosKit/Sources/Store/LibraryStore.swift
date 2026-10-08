@@ -93,9 +93,10 @@ extension AppDatabase {
     /// The caller decides whether a list may be applied at all (never an empty or failed one).
     @discardableResult
     public func applyLibraryList(_ books: [ListedBook], syncedAt: Date) throws -> AppliedLibraryList {
-        try pool.write { db in
+        let (applied, removedDownloads) = try pool.write { db in
             let listed = Set(books.map(\.id))
             let stored = try Set(String.fetchAll(db, sql: "SELECT id FROM book"))
+            let downloads = try Set(String.fetchAll(db, sql: "SELECT bookID FROM download"))
             var removed = Set<String>()
             for id in stored.subtracting(listed) where try !Self.keepAsNotOnServer(db, bookID: id) {
                 try db.execute(sql: "DELETE FROM book WHERE id = ?", arguments: [id])
@@ -112,8 +113,10 @@ extension AppDatabase {
                     """,
                 arguments: [syncedAt.timeIntervalSince1970]
             )
-            return AppliedLibraryList(removedBookIDs: removed)
+            return (AppliedLibraryList(removedBookIDs: removed), removed.intersection(downloads))
         }
+        if !removedDownloads.isEmpty { downloadsRemovedFromLibrary.send(removedDownloads) }
+        return applied
     }
 
     /// Every Book as a Library row, in no particular order.

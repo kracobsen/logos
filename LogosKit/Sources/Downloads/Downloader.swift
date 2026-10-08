@@ -56,6 +56,7 @@ public actor Downloader {
     var isSignedOut = false
     /// Files that got a 404 and were retried once with a re-read Book (in memory, like ``backingOff``).
     private var retriedAfterNotFound: Set<FileTransfer> = []
+    private var followingLibrary: Task<Void, Never>?
 
     /// - Parameters:
     ///   - covers: where the cover cache keeps covers; a Download shares its Book's cover file with it.
@@ -93,6 +94,30 @@ public actor Downloader {
         await transfers.setEventHandler { [weak self] event in
             await self?.handle(event)
         }
+        let removals = database.downloadsRemovedFromLibraryUpdates()
+        followingLibrary = Task { [weak self] in
+            for await bookIDs in removals {
+                guard let self else { return }
+                await self.removedFromLibrary(bookIDs)
+            }
+        }
+    }
+
+    deinit {
+        followingLibrary?.cancel()
+    }
+
+    /// Stage 1 deleted these Books (and their Downloads) because the Server no longer lists them: every file goes
+    /// straight away, partial ones included, and the next Book starts.
+    private func removedFromLibrary(_ bookIDs: Set<String>) async {
+        guard !isSignedOut else { return }
+        for bookID in bookIDs.sorted() {
+            log.notice("\(bookID, privacy: .public) left the Library; dropping its Download")
+            stopBackoff(ofBook: bookID)
+            await transfers.cancel(bookID: bookID)
+            files.deleteBook(bookID)
+        }
+        await advance()
     }
 
     /// The "Allow downloads over cellular" setting: saved, and applied to the transfers, running ones included.
