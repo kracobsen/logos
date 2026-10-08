@@ -33,6 +33,7 @@ extension Player {
         saving?.cancel()
         saving = nil
         audio.rebuild()
+        mediaServicesResets += 1
         guard let book, state != .idle else { return }
         let wasPlaying = state == .playing
         state = .loading
