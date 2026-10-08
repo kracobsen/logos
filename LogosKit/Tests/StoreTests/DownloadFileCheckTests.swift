@@ -48,7 +48,7 @@ struct DownloadFileCheckTests {
 
         let check = try database.checkDownloadFiles(files)
 
-        #expect(check == DownloadFileCheck(lostBookIDs: [], deletedBookIDs: []))
+        #expect(check == DownloadFileCheck(lostBookIDs: []))
         #expect(try database.downloadStatus(ofBook: "a")?.state == .downloaded)
         #expect(files.size(ofBook: "a", relPath: "CD 2/02.mp3") == 10)
     }
@@ -71,17 +71,27 @@ struct DownloadFileCheckTests {
         #expect(files.size(ofBook: "a", relPath: "01.mp3") == nil)
     }
 
-    @Test("A Not on Server Book whose files are missing is deleted, as when its Download is removed")
+    @Test("A Not on Server Book whose files are missing is kept with its progress, as a damaged Download")
     func missingNotOnServer() throws {
         let (database, files) = try open()
         try download("a", database, files)
+        let progress = BookProgress(
+            bookID: "a", position: 42, lastChanged: Date(millisecondsSince1970: 1_800_000_000_000), isFinished: false)
+        try database.saveProgress(progress)
         try database.applyLibraryList([listedBook("B", id: "b")], syncedAt: now)
         try FileManager.default.removeItem(at: files.folder(forBook: "a"))
 
         let check = try database.checkDownloadFiles(files)
 
-        #expect(check == DownloadFileCheck(lostBookIDs: ["a"], deletedBookIDs: ["a"]))
-        #expect(try database.bookIDs() == ["b"])
+        #expect(check == DownloadFileCheck(lostBookIDs: ["a"]))
+        #expect(try database.bookIDs() == ["a", "b"])
+        #expect(try database.progress(ofBook: "a") == progress)
+        #expect(try database.bookDetail(id: "a")?.isNotOnServer == true)
+        #expect(try database.downloadStatus(ofBook: "a") == nil)
+
+        // The next stage 1 keeps it too, until the listener removes it.
+        try database.applyLibraryList([listedBook("B", id: "b")], syncedAt: now)
+        #expect(try database.bookIDs() == ["a", "b"])
     }
 
     @Test("A verified file missing from an unfinished Download is fetched again; folders without a Download go")
@@ -93,7 +103,7 @@ struct DownloadFileCheckTests {
 
         let check = try database.checkDownloadFiles(files)
 
-        #expect(check == DownloadFileCheck(lostBookIDs: [], deletedBookIDs: []))
+        #expect(check == DownloadFileCheck(lostBookIDs: []))
         #expect(try database.downloadStatus(ofBook: "a")?.state == .downloading)
         #expect(try database.downloadFiles(ofBook: "a").map(\.isVerified) == [false, true])
         #expect(!FileManager.default.fileExists(atPath: files.folder(forBook: "c").path(percentEncoded: false)))

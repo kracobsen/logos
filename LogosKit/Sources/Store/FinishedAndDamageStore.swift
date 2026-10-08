@@ -40,6 +40,6 @@ extension AppDatabase {
             try db.execute(sql: "DELETE FROM download WHERE bookID = ?", arguments: [bookID])
         }
         files.deleteBook(bookID)
-        log.notice("A damaged Download was discarded")
+        log.notice("The damaged Download of \(bookID, privacy: .public) was discarded")
     }
 }
