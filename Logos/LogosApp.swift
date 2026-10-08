@@ -84,18 +84,21 @@ private final class Services {
     let clock: any Clock = SystemClock()
     /// One `Auth` and one Downloads per signed-in identity, shared by everything that needs them (one refresh).
     private var shared: Shared?
+    /// The launch environment's sign-out hook (test launches reseed after it).
+    private let signedOutHook: @MainActor () -> Void
 
     init() throws {
-        let backend = try Backend.forThisLaunch()
-        let directory = backend.directory
-        api = backend.api
-        tokenStore = backend.tokenStore
+        let environment = try LaunchEnvironment.forThisLaunch()
+        let directory = environment.directory
+        signedOutHook = environment.signedOut
+        api = environment.api
+        tokenStore = environment.tokenStore
         database = try AppDatabase.open(at: directory.appending(path: "Logos.sqlite"))
         // Before anything can play: a listening session still open now was left open by a kill.
         try? database.closeListeningSessionsLeftOpen()
         signIn = SignIn(
             api: api, tokenStore: tokenStore, database: database,
-            allowsPlainHTTPOnLoopback: backend.allowsPlainHTTPOnLoopback)
+            allowsPlainHTTPOnLoopback: environment.allowsPlainHTTPOnLoopback)
         // Covers are excluded from backups. Without the directory, the app still works, with placeholders.
         covers = try? CoverFiles(directory: directory.appending(path: "Covers"))
         // Downloads are excluded from backups, and in Application Support so iOS never evicts them.
@@ -129,6 +132,7 @@ private final class Services {
     /// user) builds fresh ones.
     func signedOut() {
         shared = nil
+        signedOutHook()
     }
 
     private func shared(for identity: ServerIdentity) -> Shared {

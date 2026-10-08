@@ -25,21 +25,23 @@
         /// Bump when the seeded data changes shape, so old seeds are made again.
         static let seedVersion = 1
 
-        static func backend(environment: [String: String] = ProcessInfo.processInfo.environment) throws -> Backend? {
-            guard let mode = environment[modeKey], !mode.isEmpty else { return nil }
-            let root = try Backend.applicationSupport().appending(path: "TestLaunch")
+        static func launchEnvironment(
+            _ variables: [String: String] = ProcessInfo.processInfo.environment
+        ) throws -> LaunchEnvironment? {
+            guard let mode = variables[modeKey], !mode.isEmpty else { return nil }
+            let root = try LaunchEnvironment.applicationSupport().appending(path: "TestLaunch")
             if mode == "signedOut" {
                 let directory = root.appending(path: "signedOut")
                 try? FileManager.default.removeItem(at: directory)
                 try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-                return Backend(
+                return LaunchEnvironment(
                     directory: directory, api: AudiobookshelfClient(), tokenStore: InMemoryTokenStore(),
                     allowsPlainHTTPOnLoopback: true)
             }
             if mode.hasPrefix("library"), let count = Int(mode.dropFirst("library".count)), count > 0 {
                 let directory = root.appending(path: "\(mode)-v\(seedVersion)")
-                return try libraryBackend(
-                    bookCount: count, directory: directory, reset: environment[resetKey] == "1")
+                return try libraryEnvironment(
+                    bookCount: count, directory: directory, reset: variables[resetKey] == "1")
             }
             throw UnknownMode(mode: mode)
         }
@@ -52,7 +54,9 @@
 
         static let serverAddress = URL(string: "https://fixture.logos.invalid")!
 
-        private static func libraryBackend(bookCount: Int, directory: URL, reset: Bool) throws -> Backend {
+        private static func libraryEnvironment(
+            bookCount: Int, directory: URL, reset: Bool
+        ) throws -> LaunchEnvironment {
             let marker = directory.appending(path: "seeded")
             if reset || !FileManager.default.fileExists(atPath: marker.path(percentEncoded: false)) {
                 try? FileManager.default.removeItem(at: directory)
@@ -71,7 +75,10 @@
                 server.progress = library.progress
             }
             server.beforeHandling { _ in await prepared.value }
-            return Backend(directory: directory, api: server, tokenStore: tokens)
+            var environment = LaunchEnvironment(directory: directory, api: server, tokenStore: tokens)
+            // Signing out wiped the seeded data: the next launch of this mode seeds it again.
+            environment.signedOut = { try? FileManager.default.removeItem(at: marker) }
+            return environment
         }
 
         /// Writes the Library into a new database in `directory`, as if it had been synced and the downloaded Books
