@@ -145,22 +145,36 @@ struct PickUpTests {
     func noticeGoesAway() async throws {
         let (player, following) = try await pausedPlayer(at: 100)
         defer { following.cancel() }
+
         try await fetch(position: 1500)
-
-        player.play()
-
-        #expect(player.pickedUp == nil)
-        #expect(player.position == 1500)
-
-        player.pause()
-        try await fetch(position: 2000, secondsAgo: -10)
-        #expect(player.pickedUp?.position == 2000)
+        #expect(player.pickedUp?.position == 1500)
         player.skip(by: 30)
         #expect(player.pickedUp == nil)
+        #expect(player.position == 1530)
 
-        try await fetch(position: 3000, secondsAgo: -20)
+        try await fetch(position: 2000, secondsAgo: -10)
         player.dismissPickUp()
         #expect(player.pickedUp == nil)
+        #expect(player.position == 2000)
+
+        try await fetch(position: 3000, secondsAgo: -20)
+        player.play()
+        #expect(player.pickedUp == nil)
         #expect(player.position == 3000)
+    }
+
+    @Test("A paused Book with listening not yet sent isn't picked up")
+    func unsentListeningIsKept() async throws {
+        let (player, following) = try await pausedPlayer(at: 100)
+        defer { following.cancel() }
+        player.play()
+        fixture.audio.advance(to: 160)
+        await fixture.advance(by: .seconds(1))
+        player.pause()
+
+        try await fetch(position: 1500, secondsAgo: -10)
+
+        #expect(player.position == 160)
+        #expect(player.pickedUp == nil)
     }
 }

@@ -26,7 +26,7 @@ extension ProgressIntegrationTests {
         let sync = LibrarySync(database: database, api: client, auth: auth, clock: SystemClock())
         let accessToken = try #require(try tokens.load()).accessToken
         #expect(await sync.sync(.launch) == .synced)
-        let book = try #require(try database.libraryRows().first { $0.title == "Second Dawn" })
+        let book = try #require(try database.libraryRows().first { $0.title == "Plain Silence" })
         let now = Date().millisecondsSince1970
         try database.saveProgress(
             BookProgress(
@@ -38,21 +38,31 @@ extension ProgressIntegrationTests {
         try await server.patchProgress(of: book.id, ["currentTime": 30], accessToken: accessToken)
         try await server.patchProgress(
             of: book.id, ["currentTime": 90, "lastUpdate": now - 60_000], accessToken: accessToken)
-        #expect(await sync.progress.fetch() == .fetched(changedBookIDs: [book.id]))
+        #expect(try await changed(by: sync).contains(book.id))
 
         // Then nudged it by a second: newer, but no real change.
         try await server.patchProgress(
             of: book.id, ["currentTime": 91, "lastUpdate": now - 30_000], accessToken: accessToken)
-        #expect(await sync.progress.fetch() == .fetched(changedBookIDs: []))
+        #expect(try await !changed(by: sync).contains(book.id))
         // And moved on for real.
         try await server.patchProgress(
             of: book.id, ["currentTime": 110, "lastUpdate": now - 10_000], accessToken: accessToken)
-        #expect(await sync.progress.fetch() == .fetched(changedBookIDs: [book.id]))
+        #expect(try await changed(by: sync).contains(book.id))
 
         var picked: [Double] = []
         while picked.count < 2, let adopted = await pickUps.next() {
             picked += adopted.filter { $0.bookID == book.id }.map(\.position)
         }
         #expect(picked == [90, 110])
+    }
+
+    /// The Books a progress fetch changed. Other suites change other Books' progress on the shared Server meanwhile,
+    /// so the test checks only its own Book.
+    private func changed(by sync: LibrarySync) async throws -> Set<String> {
+        guard case .fetched(let changed) = await sync.progress.fetch() else {
+            Issue.record("the progress fetch didn't succeed")
+            return []
+        }
+        return changed
     }
 }
