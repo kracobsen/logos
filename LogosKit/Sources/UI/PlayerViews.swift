@@ -85,7 +85,8 @@ struct MiniPlayerView: View {
 }
 
 /// The full player sheet: cover, Chapter name, Book title and author; a Chapter-scoped scrubber with elapsed and left;
-/// a thin whole-Book line with "left in Book"; skip back / Play-Pause / skip forward; and the Chapters list.
+/// a thin whole-Book line with "left in Book" (left times are real time at the speed); skip back / Play-Pause / skip
+/// forward with the configured intervals; the Chapters list and the Speed control.
 struct PlayerSheet: View {
     let player: Player
     @State private var scrubbing: Double?
@@ -94,7 +95,8 @@ struct PlayerSheet: View {
     var body: some View {
         if let book = player.book {
             let times = PlaybackTimes(
-                position: scrubbing ?? player.position, chapters: book.chapters, bookDuration: book.duration)
+                position: scrubbing ?? player.position, chapters: book.chapters, bookDuration: book.duration,
+                speed: player.speed)
             VStack(spacing: 20) {
                 Capsule()
                     .fill(.secondary)
@@ -117,12 +119,15 @@ struct PlayerSheet: View {
                 scrubber(times)
                 bookLine(times)
                 controls
-                Button {
-                    showsChapters = true
-                } label: {
-                    Label("Chapters", systemImage: "list.bullet")
+                HStack(spacing: 12) {
+                    Button {
+                        showsChapters = true
+                    } label: {
+                        Label("Chapters", systemImage: "list.bullet")
+                    }
+                    .buttonStyle(.bordered)
+                    SpeedButton(player: player)
                 }
-                .buttonStyle(.bordered)
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 24)
@@ -152,7 +157,7 @@ struct PlayerSheet: View {
             HStack {
                 Text(BookDetailModel.clock(times.chapterElapsed))
                 Spacer()
-                Text("-\(BookDetailModel.clock(times.chapterLeft))")
+                Text("-\(BookDetailModel.clock(times.chapterLeftAtSpeed))")
             }
             .font(.caption.monospacedDigit())
             .foregroundStyle(.secondary)
@@ -164,7 +169,7 @@ struct PlayerSheet: View {
             ProgressView(value: times.bookFraction)
                 .progressViewStyle(.linear)
                 .scaleEffect(x: 1, y: 0.5, anchor: .center)
-            Text("\(timeLeftText(times.bookLeft)) in Book")
+            Text("\(timeLeftText(times.bookLeftAtSpeed)) in Book")
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(.secondary)
         }
@@ -174,12 +179,12 @@ struct PlayerSheet: View {
     private var controls: some View {
         HStack(spacing: 44) {
             Button {
-                player.skip(by: -SkipIntervals.back)
+                player.skipBack()
             } label: {
-                Image(systemName: "gobackward.\(Int(SkipIntervals.back))")
+                Image(systemName: "gobackward.\(player.skipBackInterval.rawValue)")
                     .font(.title)
             }
-            .accessibilityLabel("Skip back \(Int(SkipIntervals.back)) seconds")
+            .accessibilityLabel("Skip back \(player.skipBackInterval.rawValue) seconds")
             Button {
                 player.togglePlayPause()
             } label: {
@@ -189,12 +194,12 @@ struct PlayerSheet: View {
             .accessibilityLabel(player.isPlaying ? "Pause" : "Play")
             .disabled(player.state == .loading)
             Button {
-                player.skip(by: SkipIntervals.forward)
+                player.skipForward()
             } label: {
-                Image(systemName: "goforward.\(Int(SkipIntervals.forward))")
+                Image(systemName: "goforward.\(player.skipForwardInterval.rawValue)")
                     .font(.title)
             }
-            .accessibilityLabel("Skip forward \(Int(SkipIntervals.forward)) seconds")
+            .accessibilityLabel("Skip forward \(player.skipForwardInterval.rawValue) seconds")
         }
         .buttonStyle(.plain)
     }

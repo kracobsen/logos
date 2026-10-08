@@ -23,12 +23,6 @@ public enum PlayAction: Sendable, Hashable {
     }
 }
 
-/// The skip intervals the player uses, in seconds. #31 makes them settings.
-enum SkipIntervals {
-    static let back = 15.0
-    static let forward = 30.0
-}
-
 extension Player {
     /// The button for a downloaded Book: Pause while it plays, Resume when it's loaded part-way or `resumes` (the
     /// listener has started it), else Play.

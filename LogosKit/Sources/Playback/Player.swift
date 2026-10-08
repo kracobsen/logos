@@ -38,8 +38,12 @@ public final class Player {
     public private(set) var position: Double = 0
     /// Whether the loaded Book is Finished.
     public private(set) var isFinished = false
-    /// The speed playing runs at.
-    public private(set) var rate: Float
+    /// The global speed playing runs at, one of ``PlaybackSpeed/all``. Kept in the Store across launches.
+    public internal(set) var speed: Double
+    /// How far ``skipBack()`` moves. Kept in the Store.
+    public internal(set) var skipBackInterval: SkipInterval
+    /// How far ``skipForward()`` moves. Kept in the Store.
+    public internal(set) var skipForwardInterval: SkipInterval
     public private(set) var problem: Problem?
 
     /// How often the position is published while playing, in seconds.
@@ -51,9 +55,9 @@ public final class Player {
     /// How far before a decode failure playing restarts after reloading, in seconds.
     public static let decodeRetryBackoff = 1.0
 
-    @ObservationIgnored private let database: AppDatabase
+    @ObservationIgnored let database: AppDatabase
     @ObservationIgnored private let files: DownloadFiles
-    @ObservationIgnored private let audio: any AudioPlayer
+    @ObservationIgnored let audio: any AudioPlayer
     @ObservationIgnored private let clock: any Clock
     @ObservationIgnored private var timeObservation: AudioPlayerObservation?
     @ObservationIgnored private var saving: Task<Void, Never>?
@@ -69,7 +73,11 @@ public final class Player {
         self.files = files
         self.audio = audio
         self.clock = clock
-        rate = audio.rate
+        let settings = Self.readSettings(database)
+        speed = settings.speed
+        skipBackInterval = settings.skipBack
+        skipForwardInterval = settings.skipForward
+        audio.rate = Float(settings.speed)
         timeObservation = audio.observeTime(every: Self.publishInterval) { [weak self] time in
             self?.timePassed(time)
         }
@@ -296,12 +304,6 @@ public final class Player {
     public func jump(toChapter index: Int) {
         guard let chapters = book?.chapters.chapters, chapters.indices.contains(index) else { return }
         seek(to: chapters[index].start)
-    }
-
-    /// Sets the speed playing runs at.
-    public func setRate(_ rate: Float) {
-        audio.rate = rate
-        self.rate = rate
     }
 
     /// The app is going to the background: saves now if playing (a paused Book is already saved).
