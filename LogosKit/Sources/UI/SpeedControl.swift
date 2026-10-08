@@ -2,7 +2,7 @@ import Domain
 import Playback
 import SwiftUI
 
-/// The player's Speed control: shows the global speed and opens the speed picker.
+/// The player's Speed control (in the sheet's bordered row): shows the global speed and opens the speed picker.
 struct SpeedButton: View {
     let player: Player
     @State private var isPicking = false
@@ -11,10 +11,9 @@ struct SpeedButton: View {
         Button {
             isPicking = true
         } label: {
-            Label(PlaybackSpeed.label(player.speed), systemImage: "gauge.with.dots.needle.67percent")
+            Text(PlaybackSpeed.label(player.speed))
                 .monospacedDigit()
         }
-        .buttonStyle(.bordered)
         .accessibilityLabel("Speed")
         .accessibilityValue(PlaybackSpeed.label(player.speed))
         .sheet(isPresented: $isPicking) {
