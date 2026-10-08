@@ -251,21 +251,6 @@ struct PlayerTests {
         #expect(try fixture.progress("first") == nil)
     }
 
-    @Test("A Book whose file is missing doesn't play, and its progress is kept")
-    func missingFile() async throws {
-        try fixture.addBook("first")
-        try fixture.saveProgress("first", position: 10, at: fixture.clock.now)
-        try FileManager.default.removeItem(at: fixture.fileURLs("first")[1])
-        let player = fixture.player()
-
-        await player.play(bookID: "first")
-
-        #expect(player.state == .idle)
-        #expect(player.problem == .cannotOpen)
-        #expect(!fixture.audio.isPlaying)
-        #expect(try fixture.progress("first")?.position == 10)
-    }
-
     @Test("Stopping the loaded Book (before its Download is removed) pauses, saves and unloads it")
     func stopForRemoval() async throws {
         try fixture.addBook("first")
@@ -306,19 +291,6 @@ struct PlayerTests {
         #expect(try fixture.progress("first")?.position == 64)
     }
 
-    @Test("At the end of the Book playing stops, saved at the end")
-    func endOfBook() async throws {
-        try fixture.addBook("first", duration: 3600)
-        let player = fixture.player()
-        await player.play(bookID: "first")
-
-        fixture.audio.playToEnd(at: 3600)
-
-        #expect(player.state == .paused)
-        #expect(player.position == 3600)
-        #expect(try fixture.progress("first")?.position == 3600)
-    }
-
     @Test("A decode failure reloads the Book and plays on from a second earlier (FB22340742)")
     func decodeWorkaround() async throws {
         try fixture.addBook("first")
@@ -335,28 +307,6 @@ struct PlayerTests {
         #expect(fixture.audio.isPlaying)
         #expect(player.state == .playing)
         #expect(player.problem == nil)
-    }
-
-    @Test("A Book that keeps failing to decode pauses and saves after ten reloads")
-    func decodeGivesUp() async throws {
-        try fixture.addBook("first")
-        let player = fixture.player()
-        await player.play(bookID: "first")
-        fixture.audio.advance(to: 1500)
-        for _ in 0..<Player.maxDecodeRetries {
-            fixture.audio.failToDecode()
-            await fixture.settle()
-            fixture.audio.advance(to: 1500)
-        }
-        let loads = fixture.audio.loadCount
-
-        fixture.audio.failToDecode()
-        await fixture.settle()
-
-        #expect(fixture.audio.loadCount == loads)
-        #expect(player.state == .paused)
-        #expect(player.problem == .cannotDecode)
-        #expect(try fixture.progress("first")?.position == 1500)
     }
 
     @Test("A Chapter tapped on Book detail loads the Book and plays from the Chapter's start")

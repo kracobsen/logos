@@ -64,10 +64,20 @@ final class PlayerFixture {
         try database.queueDownload(ofBook: id)
         _ = try database.startNextDownload()
         try database.setDownloadFiles(tracks, ofBook: id)
+        for var file in try database.downloadFiles(ofBook: id) {
+            file.isVerified = true
+            try database.saveDownloadFile(file)
+        }
         try database.finishDownload(ofBook: id, at: clock.now)
     }
 
     private var books: [ListedBook] = []
+
+    /// The Server stops listing the Book: a downloaded one is kept as Not on Server.
+    func removeFromServer(_ id: String) throws {
+        books.removeAll { $0.id == id }
+        try database.applyLibraryList(books, syncedAt: clock.now)
+    }
 
     func fileURLs(_ id: String, count: Int = 2) -> [URL] {
         (0..<count).map { files.url(forBook: id, relPath: "Part \($0 + 1).m4b") }
