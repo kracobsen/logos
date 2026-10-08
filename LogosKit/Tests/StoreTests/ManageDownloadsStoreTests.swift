@@ -38,7 +38,7 @@ struct ManageDownloadsStoreTests {
 
         #expect(try database.downloadQueue() == ["a", "d", "b", "c"])
         #expect(try database.downloadsList().queue.map(\.id) == ["a", "d", "b", "c"])
-        try database.finishDownload(ofBook: "a")
+        try database.finishDownload(ofBook: "a", at: now)
         #expect(try database.startNextDownload() == "d")
     }
 

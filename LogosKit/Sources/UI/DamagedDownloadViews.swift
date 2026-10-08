@@ -96,12 +96,18 @@ struct DamagedNotOnServerLabel: View {
     }
 }
 
-/// Book detail's Mark as Finished / Clear Finished.
+/// Book detail's Mark as Finished / Clear Finished (through the player, so not without one).
 struct FinishedButton: View {
     let model: BookDetailModel
     @Environment(Player.self) private var player: Player?
 
     var body: some View {
+        if let player {
+            button(player)
+        }
+    }
+
+    @ViewBuilder private func button(_ player: Player) -> some View {
         if model.isFinished {
             Button("Clear Finished", systemImage: "arrow.counterclockwise") {
                 model.setFinished(false, player: player)

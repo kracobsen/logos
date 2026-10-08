@@ -77,10 +77,7 @@ struct LibraryView: View {
                 notice("Syncing Library…")
             } else if let message = model.refreshMessage {
                 notice(message)
-                    .task(id: message) {
-                        try? await Task.sleep(for: .seconds(4))
-                        model.dismissRefreshMessage()
-                    }
+                    .task(id: message) { await model.dismissRefreshMessageLater() }
             }
         }
         .animation(.default, value: model.refreshMessage)

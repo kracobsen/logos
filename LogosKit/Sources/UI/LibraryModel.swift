@@ -195,6 +195,19 @@ public final class LibraryModel {
         refreshMessage = nil
     }
 
+    /// How long the Refresh message shows.
+    static let refreshMessageDuration = Duration.seconds(4)
+
+    /// Shows the Refresh message for ``refreshMessageDuration``, then clears it (on the sync's Clock).
+    func dismissRefreshMessageLater() async {
+        do {
+            try await sync.clock.sleep(for: Self.refreshMessageDuration)
+        } catch {
+            return
+        }
+        dismissRefreshMessage()
+    }
+
     private func run(_ trigger: SyncTrigger) async -> SyncOutcome {
         isSyncing = true
         isFirstSync = lastUpdated == nil

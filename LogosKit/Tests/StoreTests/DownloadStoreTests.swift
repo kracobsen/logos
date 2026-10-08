@@ -55,7 +55,7 @@ struct DownloadStoreTests {
         #expect(try database.downloadStatus(ofBook: "b")?.state == .downloading)
         #expect(try database.downloadStatus(ofBook: "a")?.state == .queued)
 
-        try database.finishDownload(ofBook: "b")
+        try database.finishDownload(ofBook: "b", at: now)
 
         #expect(try database.downloadStatus(ofBook: "b")?.state == .downloaded)
         #expect(try database.downloadQueue() == ["a"])
@@ -131,7 +131,7 @@ struct DownloadStoreTests {
         for id in ["c", "a"] {
             _ = try database.startNextDownload()
             try database.setDownloadFiles([track("01.mp3", size: id == "c" ? 100 : 50)], ofBook: id)
-            try database.finishDownload(ofBook: id)
+            try database.finishDownload(ofBook: id, at: now)
         }
         try database.saveProgress(BookProgress(bookID: "a", position: 5, lastChanged: now, isFinished: false))
 

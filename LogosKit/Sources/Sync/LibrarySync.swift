@@ -49,7 +49,8 @@ public actor LibrarySync {
     let database: AppDatabase
     let api: any ServerAPI
     let auth: Auth
-    let clock: any Clock
+    /// The sync's Clock, for the UI's timed messages too.
+    public nonisolated let clock: any Clock
     private var running: Task<SyncOutcome, Never>?
     private let coverSync: CoverSync?
     /// The progress fetch, sharing this sync's `Auth`. Each sync runs it after stage 1; a foreground return runs it

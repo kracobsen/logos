@@ -103,7 +103,7 @@ extension AppDatabase {
     }
 
     /// Marks the Book downloaded: every file is verified.
-    public func finishDownload(ofBook bookID: String, at date: Date = Date()) throws {
+    public func finishDownload(ofBook bookID: String, at date: Date) throws {
         try pool.write { db in
             try db.execute(
                 sql: "UPDATE download SET state = ?, completedAt = ? WHERE bookID = ?",

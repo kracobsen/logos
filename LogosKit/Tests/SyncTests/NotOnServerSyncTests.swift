@@ -21,7 +21,7 @@ struct NotOnServerSyncTests {
         try fixture.database.queueDownload(ofBook: first.id)
         _ = try fixture.database.startNextDownload()
         try fixture.database.setDownloadFiles([track], ofBook: first.id)
-        try fixture.database.finishDownload(ofBook: first.id)
+        try fixture.database.finishDownload(ofBook: first.id, at: fixture.clock.now)
         return fixture
     }
 
@@ -50,7 +50,7 @@ struct NotOnServerSyncTests {
         try fixture.database.queueDownload(ofBook: first.id)
         _ = try fixture.database.startNextDownload()
         try fixture.database.setDownloadFiles([track], ofBook: first.id)
-        try fixture.database.finishDownload(ofBook: first.id)
+        try fixture.database.finishDownload(ofBook: first.id, at: fixture.clock.now)
         try fixture.database.applyLibraryList([plain], syncedAt: fixture.clock.now)
 
         await fixture.librarySync().fetchFullDataNow(ofBook: first.id)

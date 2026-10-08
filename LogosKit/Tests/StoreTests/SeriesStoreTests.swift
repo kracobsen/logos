@@ -78,7 +78,7 @@ struct SeriesStoreTests {
         ])
         try database.queueDownload(ofBook: "one")
         _ = try database.startNextDownload()
-        try database.finishDownload(ofBook: "one")
+        try database.finishDownload(ofBook: "one", at: .now)
         try database.queueDownload(ofBook: "two")
 
         let page = try #require(try database.seriesPage(id: "saga"))

@@ -39,6 +39,7 @@ public final class BackgroundFileTransfers: NSObject, FileTransfers, Sendable {
     }
 
     private let state = Mutex(State())
+    private let clock: any Clock
     private let sessionBox = Mutex<URLSession?>(nil)
     private let items: AsyncStream<Item>
     private let continuation: AsyncStream<Item>.Continuation
@@ -57,8 +58,11 @@ public final class BackgroundFileTransfers: NSObject, FileTransfers, Sendable {
         return configuration
     }
 
-    /// - Parameter configuration: ``backgroundConfiguration(identifier:)`` in the app; a plain one in tests.
-    public init(configuration: URLSessionConfiguration) {
+    /// - Parameters:
+    ///   - configuration: ``backgroundConfiguration(identifier:)`` in the app; a plain one in tests.
+    ///   - clock: paces the progress events.
+    public init(configuration: URLSessionConfiguration, clock: any Clock = SystemClock()) {
+        self.clock = clock
         (items, continuation) = AsyncStream.makeStream(of: Item.self)
         super.init()
         let queue = OperationQueue()
@@ -253,7 +257,7 @@ extension BackgroundFileTransfers: URLSessionDownloadDelegate {
         totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64
     ) {
         guard let description = Self.description(of: downloadTask) else { return }
-        let now = Date()
+        let now = clock.now
         let due = state.withLock { state in
             if let last = state.lastProgress[downloadTask.taskIdentifier], now.timeIntervalSince(last) < 0.5 {
                 return false
