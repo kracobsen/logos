@@ -85,7 +85,7 @@ let package = Package(
         // real Server. Not in the Logos scheme, so scripts/test.sh doesn't run it.
         .testTarget(
             name: "IntegrationTests",
-            dependencies: ["ServerAPI", "Sync", "Store", "Domain"],
+            dependencies: ["ServerAPI", "Sync", "Downloads", "Store", "Domain"],
             swiftSettings: strict
         ),
     ]
