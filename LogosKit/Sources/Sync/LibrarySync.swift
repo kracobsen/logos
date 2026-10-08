@@ -49,12 +49,15 @@ public actor LibrarySync {
     private let auth: Auth
     private let clock: any Clock
     private var running: Task<SyncOutcome, Never>?
+    private let coverSync: CoverSync?
 
-    public init(database: AppDatabase, api: any ServerAPI, auth: Auth, clock: any Clock) {
+    /// - Parameter covers: where stage 3 keeps covers. Without it, covers aren't synced.
+    public init(database: AppDatabase, api: any ServerAPI, auth: Auth, clock: any Clock, covers: CoverFiles? = nil) {
         self.database = database
         self.api = api
         self.auth = auth
         self.clock = clock
+        coverSync = covers.map { CoverSync(database: database, api: api, auth: auth, covers: $0) }
     }
 
     /// Syncs, or joins the sync already running.
@@ -95,7 +98,11 @@ public actor LibrarySync {
         defer { interval.end() }
 
         if let stop = await checkVersion(of: identity.serverURL) { return stop }
-        return await applyList(of: identity)
+        let outcome = await applyList(of: identity)
+        guard outcome == .synced else { return outcome }
+        // Stage 3: covers. Failures leave them behind for the next sync; they don't change the outcome.
+        await coverSync?.run(on: identity.serverURL)
+        return outcome
     }
 
     /// `nil` if the Server may be synced with, otherwise why not.

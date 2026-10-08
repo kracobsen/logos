@@ -27,6 +27,10 @@ public protocol ServerAPI: Sendable {
     /// as a whole is `unreadableResponse`.
     func books(inLibrary libraryID: String, on server: URL, accessToken: String) async throws(ServerAPIError)
         -> [ListedBook]
+
+    /// `GET /api/items/:id/cover?width=600&format=jpeg`: the Book's cover as JPEG data, about 600 px wide. A Book
+    /// without a cover is `unexpectedStatus(404)`. (The Server doesn't require auth here; the token is harmless.)
+    func cover(ofBook bookID: String, on server: URL, accessToken: String) async throws(ServerAPIError) -> Data
 }
 
 /// Why a Server call failed.
