@@ -34,6 +34,10 @@ public struct AudiobookshelfClient: ServerAPI {
         try Responses.signedInUser(await send(Requests.refresh(server, refreshToken: refreshToken)))
     }
 
+    public func logOut(on server: URL, refreshToken: String) async throws(ServerAPIError) {
+        _ = try await send(Requests.logOut(server, refreshToken: refreshToken))
+    }
+
     public func libraries(on server: URL, accessToken: String) async throws(ServerAPIError) -> [ServerLibrary] {
         try Responses.libraries(await send(Requests.libraries(server, accessToken: accessToken)))
     }

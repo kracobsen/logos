@@ -15,6 +15,8 @@ public final class SettingsModel {
     public private(set) var skipForward: SkipInterval
     /// Takes skip changes, so its buttons use them at once. Set by ``LaunchModel``.
     public var player: Player?
+    /// Sign out. Set by ``LaunchModel``; without it, Settings has no Sign out.
+    public var signOut: SignOutModel?
 
     private let database: AppDatabase
     private let downloader: Downloader?

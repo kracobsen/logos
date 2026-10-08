@@ -31,8 +31,15 @@ public actor Auth {
 
     private var tokens: TokenPair?
     private var refreshing: Task<TokenPair, any Error>?
-    /// True once the Server has rejected the refresh token.
-    public private(set) var needsSignIn = false
+    /// True once the Server has rejected the refresh token (or there are no tokens): Needs sign-in. Only
+    /// ``signedInAgain(with:)`` leaves it.
+    public private(set) var needsSignIn = false {
+        didSet {
+            guard needsSignIn != oldValue else { return }
+            for continuation in watchers.values { continuation.yield(needsSignIn) }
+        }
+    }
+    private var watchers: [UUID: AsyncStream<Bool>.Continuation] = [:]
 
     public init(server: URL, api: any ServerAPI, tokenStore: any TokenStore, clock: any Clock) {
         self.server = server
@@ -75,6 +82,60 @@ public actor Auth {
         return try await refreshed(replacing: current).accessToken
     }
 
+    /// Whether Auth is in Needs sign-in: the current state, then every change, until the stream is dropped.
+    public func needsSignInUpdates() -> AsyncStream<Bool> {
+        let (stream, continuation) = AsyncStream.makeStream(of: Bool.self, bufferingPolicy: .bufferingNewest(1))
+        let id = UUID()
+        watchers[id] = continuation
+        continuation.yield(needsSignIn)
+        continuation.onTermination = { [weak self] _ in
+            Task { await self?.stopWatching(id) }
+        }
+        return stream
+    }
+
+    private func stopWatching(_ id: UUID) {
+        watchers[id] = nil
+    }
+
+    /// The listener signed in again as the same user (the caller has checked that): the new pair is saved, then
+    /// used, and Needs sign-in ends. If it can't be saved, nothing changes.
+    public func signedInAgain(with pair: TokenPair) throws(AuthError) {
+        do {
+            try tokenStore.save(pair)
+        } catch {
+            log.error("Couldn't save the tokens from signing in again: \(String(describing: error), privacy: .public)")
+            throw .tokenStoreFailed
+        }
+        refreshing?.cancel()
+        refreshing = nil
+        tokens = pair
+        needsSignIn = false
+        log.notice("Signed in again")
+    }
+
+    /// Signing out: a best-effort `POST /logout` with the refresh token (so the Server revokes it), then the stored
+    /// pair is cleared. From then on every call fails with ``AuthError/needsSignIn`` without reaching the Server.
+    public func signOut() async {
+        let refreshToken = tokens?.refreshToken ?? (try? tokenStore.load())?.refreshToken
+        needsSignIn = true
+        tokens = nil
+        refreshing?.cancel()
+        refreshing = nil
+        if let refreshToken {
+            do {
+                try await api.logOut(on: server, refreshToken: refreshToken)
+            } catch {
+                log.info("Logout failed (best effort): \(String(describing: error), privacy: .public)")
+            }
+        }
+        do {
+            try tokenStore.clear()
+        } catch {
+            log.error("Couldn't clear the tokens: \(String(describing: error), privacy: .public)")
+        }
+    }
+
     /// The current pair, refreshed first if the access token is close to expiry.
     private func usableTokens(margin: Duration = refreshMargin) async throws(AuthError) -> TokenPair {
         if needsSignIn { throw .needsSignIn }
@@ -101,7 +162,10 @@ public actor Auth {
             log.error("Couldn't read the tokens: \(String(describing: error), privacy: .public)")
             throw .tokenStoreFailed
         }
-        guard let stored else { throw .needsSignIn }
+        guard let stored else {
+            needsSignIn = true
+            throw .needsSignIn
+        }
         tokens = stored
         return stored
     }
@@ -116,6 +180,8 @@ public actor Auth {
         } else {
             task = Task { [server, api, tokenStore] in
                 let user = try await api.refresh(on: server, refreshToken: stale.refreshToken)
+                // Signed out or in again meanwhile: this pair must not overwrite what's stored now.
+                try Task.checkCancellation()
                 do {
                     try tokenStore.save(user.tokens)
                 } catch {
@@ -134,6 +200,7 @@ public actor Auth {
             finish(task, with: nil)
             throw error
         } catch ServerAPIError.unauthorized {
+            guard refreshing == task else { throw .server(.unauthorized) }  // stale: from before signing in again
             finish(task, with: nil)
             log.notice("The Server rejected the refresh token: needs sign-in")
             needsSignIn = true

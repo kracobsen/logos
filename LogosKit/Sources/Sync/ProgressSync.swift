@@ -11,6 +11,8 @@ public enum ProgressFetchOutcome: Sendable, Hashable {
     case notNeeded
     case unreachable
     case needsSignIn
+    /// The last sync found the Server too old: nothing was fetched.
+    case serverTooOld(found: String)
     /// The Server answered with an error or something unreadable. Nothing was applied.
     case failed
 }
@@ -26,12 +28,15 @@ public actor ProgressSync {
     private let database: AppDatabase
     private let api: any ServerAPI
     private let auth: Auth
+    private let connection: Connection?
     private var running: Task<ProgressFetchOutcome, Never>?
 
-    public init(database: AppDatabase, api: any ServerAPI, auth: Auth) {
+    /// - Parameter connection: when it says the Server is too old, nothing is fetched.
+    public init(database: AppDatabase, api: any ServerAPI, auth: Auth, connection: Connection? = nil) {
         self.database = database
         self.api = api
         self.auth = auth
+        self.connection = connection
     }
 
     /// Fetches and applies the Server's progress, or joins the fetch already running.
@@ -46,6 +51,7 @@ public actor ProgressSync {
     }
 
     private func run() async -> ProgressFetchOutcome {
+        if let found = await connection?.tooOldVersion { return .serverTooOld(found: found) }
         let identity: ServerIdentity
         do {
             guard let signedIn = try database.serverIdentity() else { return .notNeeded }

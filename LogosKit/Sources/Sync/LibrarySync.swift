@@ -57,6 +57,9 @@ public actor LibrarySync {
     public nonisolated let progress: ProgressSync
     /// The listening-sessions outbox, sharing this sync's `Auth`; it runs a progress fetch after each send.
     public nonisolated let outbox: SessionOutbox
+    /// Needs sign-in and Server too old, signing in again and the token side of signing out, sharing this sync's
+    /// `Auth`.
+    public nonisolated let connection: Connection
 
     /// - Parameter covers: where stage 3 keeps covers. Without it, covers aren't synced.
     public init(database: AppDatabase, api: any ServerAPI, auth: Auth, clock: any Clock, covers: CoverFiles? = nil) {
@@ -65,8 +68,10 @@ public actor LibrarySync {
         self.auth = auth
         self.clock = clock
         coverSync = covers.map { CoverSync(database: database, api: api, auth: auth, covers: $0) }
-        progress = ProgressSync(database: database, api: api, auth: auth)
-        outbox = SessionOutbox(database: database, api: api, auth: auth, clock: clock, progress: progress)
+        connection = Connection(database: database, auth: auth)
+        progress = ProgressSync(database: database, api: api, auth: auth, connection: connection)
+        outbox = SessionOutbox(
+            database: database, api: api, auth: auth, clock: clock, progress: progress, connection: connection)
     }
 
     /// Syncs, or joins the sync already running.
@@ -130,8 +135,10 @@ public actor LibrarySync {
             let status = try await api.status(of: server)
             guard status.isSupported else {
                 log.notice("Server version \(status.reportedVersion, privacy: .public) is below 2.36: not syncing")
+                await connection.serverVersionChecked(tooOld: status.reportedVersion)
                 return .serverTooOld(found: status.reportedVersion)
             }
+            await connection.serverVersionChecked(tooOld: nil)
             return nil
         } catch .unreachable {
             return .unreachable

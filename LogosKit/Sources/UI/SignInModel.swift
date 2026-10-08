@@ -64,23 +64,32 @@ public final class SignInModel {
         }
     }
 
-    /// Drops a pending Library pick; the user has to sign in again.
+    /// Drops a pending Library pick (revoking it on the Server); the user has to sign in again.
     public func cancelLibraryChoice() {
+        guard let choice = pendingChoice else { return }
         pendingChoice = nil
+        let signIn = signIn
+        Task { await signIn.cancel(choice) }
     }
 
-    public var errorPlacement: ErrorPlacement? {
-        guard let error else { return nil }
-        return switch error {
-        case .invalidAddress, .httpsRequired, .cantReachServer, .serverTooOld, .localSignInNotAllowed: .address
-        case .wrongCredentials, .tooManyAttempts: .credentials
+    public var errorPlacement: ErrorPlacement? { error.map(Self.placement(for:)) }
+
+    public var errorMessage: String? { error.map(Self.message(for:)) }
+
+    /// Where an error shows on a sign-in form.
+    static func placement(for error: SignInError) -> ErrorPlacement {
+        switch error {
+        case .invalidAddress, .httpsRequired, .cantReachServer, .serverTooOld, .localSignInNotAllowed,
+            .differentServer:
+            .address
+        case .wrongCredentials, .tooManyAttempts, .differentUser: .credentials
         case .noBookLibrary, .serverError, .couldNotSave: .general
         }
     }
 
-    public var errorMessage: String? {
-        guard let error else { return nil }
-        return switch error {
+    /// What a sign-in form says about an error.
+    static func message(for error: SignInError) -> String {
+        switch error {
         case .invalidAddress: "Enter the Server's address, like abs.example.com."
         case .httpsRequired: "Logos only connects over HTTPS. Use an https:// address."
         case .cantReachServer: "Can't reach the Server. Check the address and your connection."
@@ -92,6 +101,10 @@ public final class SignInModel {
         case .noBookLibrary: "No book Library: this account can't see any audiobook Library on the Server."
         case .serverError(let code): "The Server returned an error (\(code)). Try again later."
         case .couldNotSave: "Couldn't save the sign-in on this iPhone. Try again."
+        case .differentServer:
+            "That's a different Server. To change Server, sign out in Settings, then sign in again."
+        case .differentUser:
+            "That's a different account. To change account, sign out in Settings, then sign in again."
         }
     }
 }

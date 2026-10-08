@@ -20,6 +20,9 @@ public protocol ServerAPI: Sendable {
     /// refresh token: Needs sign-in.
     func refresh(on server: URL, refreshToken: String) async throws(ServerAPIError) -> SignedInUser
 
+    /// `POST /logout` with `x-refresh-token`: revokes that refresh token's session on the Server (this device only).
+    func logOut(on server: URL, refreshToken: String) async throws(ServerAPIError)
+
     /// `GET /api/libraries`: every Library the user can access, podcast ones included.
     func libraries(on server: URL, accessToken: String) async throws(ServerAPIError) -> [ServerLibrary]
 

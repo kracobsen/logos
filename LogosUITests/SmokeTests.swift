@@ -65,12 +65,30 @@ final class SmokeTests: XCTestCase {
             for: NSPredicate { element, _ in (element as? XCUIElement)?.value as? String != started },
             evaluatedWith: position)
         wait(for: [moved], timeout: 15)
+
+        // Sign out from Settings: it asks first, then the app is back at an empty sign-in screen.
+        let window = app.windows.firstMatch
+        window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08))
+            .press(forDuration: 0.1, thenDragTo: window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.95)))
+        // The gear is on each tab's first screen; Library is showing Book detail.
+        app.openTab("In Progress")
+        let settings = app.buttons["Settings"].firstMatch
+        require(settings, in: app, timeout: 10, "No Settings button")
+        settings.tap()
+        let signOut = app.buttons["Sign Out"].firstMatch
+        require(signOut, in: app, timeout: 10, "No Sign Out in Settings")
+        signOut.tap()
+        let confirm = app.buttons["Sign Out and Remove"].firstMatch
+        require(confirm, in: app, timeout: 30, "Sign out didn't ask to confirm")
+        confirm.tap()
+        require(app.navigationBars["Sign In"], in: app, timeout: 30, "Sign out didn't go back to sign-in")
+        XCTAssertEqual(app.secureTextFields["Password"].value as? String, "Password", "The form isn't empty")
     }
 
     /// The Passwords app may offer to save the password after signing in.
     private func dismissSavePasswordPrompt() {
         let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
         let notNow = springboard.buttons["Not Now"]
-        if notNow.waitForExistence(timeout: 3) { notNow.tap() }
+        if notNow.waitForExistence(timeout: 10) { notNow.tap() }
     }
 }

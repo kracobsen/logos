@@ -42,7 +42,7 @@ public actor Downloader {
     let database: AppDatabase
     private let api: any ServerAPI
     private let auth: Auth
-    private let transfers: any FileTransfers
+    let transfers: any FileTransfers
     let files: DownloadFiles
     let covers: CoverFiles?
     private let clock: any Clock
@@ -51,7 +51,9 @@ public actor Downloader {
     private var isStarted = false
     private var lastProgressWrite: [FileTransfer: Date] = [:]
     /// Files waiting out their backoff before they're enqueued again (in memory: a relaunch retries at once).
-    private var backingOff: [FileTransfer: Task<Void, Never>] = [:]
+    var backingOff: [FileTransfer: Task<Void, Never>] = [:]
+    /// Signed out: nothing starts or is handled any more (``signOut()``).
+    var isSignedOut = false
     /// Files that got a 404 and were retried once with a re-read Book (in memory, like ``backingOff``).
     private var retriedAfterNotFound: Set<FileTransfer> = []
 
@@ -148,7 +150,7 @@ public actor Downloader {
 
     /// Starts Books until one is in flight or the queue is empty. Only in the foreground.
     private func advance() async {
-        guard isInForeground else { return }
+        guard isInForeground, !isSignedOut else { return }
         while true {
             guard checkStorage() else { return }
             let bookID: String?
@@ -321,6 +323,7 @@ public actor Downloader {
     // MARK: Events
 
     private func handle(_ event: FileTransferEvent) async {
+        guard !isSignedOut else { return }
         switch event {
         case .progress(let transfer, let received):
             recordProgress(transfer, received: received)

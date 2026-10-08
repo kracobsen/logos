@@ -21,6 +21,7 @@ public final class LaunchModel {
             downloads = identity.map(makeDownloads)
             settings = identity.map(makeSettings)
             listening = library.map(makeListening)
+            makeConnectionModels()
         }
     }
     /// The Library tab's model, while signed in.
@@ -35,26 +36,42 @@ public final class LaunchModel {
     public private(set) var listening: ListeningReporter?
     /// The Settings screen's model, while signed in.
     public private(set) var settings: SettingsModel?
+    /// The needs-sign-in (and Server too old) banner and the sign-in sheet, while signed in.
+    public private(set) var signInAgain: SignInAgainModel?
+    /// Sign out (in Settings), while signed in.
+    public private(set) var signOut: SignOutModel?
 
     private let database: AppDatabase
     private let makeLibrarySync: (ServerIdentity) -> LibrarySync
     private let makeDownloader: ((ServerIdentity) -> Downloader?)?
     private let player: Player?
+    private let signIn: SignIn?
+    private let covers: CoverFiles?
+    private let onSignedOut: (() -> Void)?
 
     /// - Parameters:
     ///   - makeLibrarySync: builds the sync for a signed-in identity (its Server and Library).
     ///   - makeDownloader: gives the Downloads for a signed-in identity. Without it, Download buttons do nothing.
     ///   - player: stopped before the Download of the Book it plays is removed.
+    ///   - signIn: for signing in again from needs sign-in. Without it, there's no sign-in sheet.
+    ///   - covers: deleted when signing out.
+    ///   - onSignedOut: after the sign-out wipe; the app drops the identity's `Auth` and Downloads there.
     public init(
         database: AppDatabase,
         makeLibrarySync: @escaping (ServerIdentity) -> LibrarySync,
         makeDownloader: ((ServerIdentity) -> Downloader?)? = nil,
-        player: Player? = nil
+        player: Player? = nil,
+        signIn: SignIn? = nil,
+        covers: CoverFiles? = nil,
+        onSignedOut: (() -> Void)? = nil
     ) {
         self.database = database
         self.makeLibrarySync = makeLibrarySync
         self.makeDownloader = makeDownloader
         self.player = player
+        self.signIn = signIn
+        self.covers = covers
+        self.onSignedOut = onSignedOut
         do {
             identity = try database.serverIdentity()
         } catch {
@@ -66,6 +83,7 @@ public final class LaunchModel {
         downloads = identity.map(makeDownloads)
         settings = identity.map(makeSettings)
         listening = library.map(makeListening)
+        makeConnectionModels()
     }
 
     /// Follows the identity in the database until cancelled.
@@ -77,6 +95,31 @@ public final class LaunchModel {
         } catch {
             log.error("Stopped observing the Server identity: \(String(describing: error), privacy: .public)")
         }
+    }
+
+    /// Builds (or drops) the banner, sign-in sheet and sign-out models for the current identity.
+    private func makeConnectionModels() {
+        guard let identity, let library else {
+            signInAgain = nil
+            signOut = nil
+            return
+        }
+        let sync = library.sync
+        let downloads = downloads
+        signInAgain = signIn.map { signIn in
+            SignInAgainModel(identity: identity, connection: sync.connection, signIn: signIn) {
+                // Sending first: the sync's progress fetch then never meets this device's unsent listening.
+                await sync.outbox.send()
+                async let synced = sync.sync(.manual)
+                await downloads?.resume()
+                _ = await synced
+            }
+        }
+        let signOut = SignOutModel(
+            database: database, sync: sync, downloader: makeDownloader?(identity) ?? nil, player: player,
+            covers: covers, onSignedOut: onSignedOut)
+        self.signOut = signOut
+        settings?.signOut = signOut
     }
 
     private func makeSettings(for identity: ServerIdentity) -> SettingsModel {

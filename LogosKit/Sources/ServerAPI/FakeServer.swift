@@ -31,6 +31,8 @@ public final class FakeServer: ServerAPI {
         case status(URL)
         case logIn(URL, username: String)
         case refresh(URL, refreshToken: String)
+        /// `POST /logout` with the refresh token.
+        case logOut(URL, refreshToken: String)
         case libraries(URL, accessToken: String)
         case books(URL, libraryID: String, accessToken: String)
         case bookDataBatch(URL, ids: [String], accessToken: String)
@@ -227,6 +229,18 @@ public final class FakeServer: ServerAPI {
             else { throw .unauthorized }
             return issue(for: account, in: &state)
         }
+    }
+
+    /// Like 2.37.1: revokes the refresh token (an unknown one is still a 200). Access tokens already issued stay
+    /// valid until they expire.
+    public func logOut(on server: URL, refreshToken: String) async throws(ServerAPIError) {
+        try await receive(.logOut(server, refreshToken: refreshToken), at: server)
+        state.withLock { _ = $0.refreshTokens.removeValue(forKey: refreshToken) }
+    }
+
+    /// Whether the Server would still accept this refresh token (not revoked, logged out or used).
+    public func accepts(refreshToken: String) -> Bool {
+        state.withLock { $0.refreshTokens[refreshToken] != nil }
     }
 
     public func libraries(on server: URL, accessToken: String) async throws(ServerAPIError) -> [ServerLibrary] {

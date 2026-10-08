@@ -13,6 +13,7 @@ public struct RootView: View {
     let player: Player?
     let settings: SettingsModel?
     let listening: ListeningReporter?
+    let signInAgain: SignInAgainModel?
     @State private var selection: AppTab = .inProgress
     @State private var showsSettings = false
     @Environment(\.scenePhase) private var scenePhase
@@ -26,7 +27,8 @@ public struct RootView: View {
         downloads: DownloadsModel? = nil,
         player: Player? = nil,
         settings: SettingsModel? = nil,
-        listening: ListeningReporter? = nil
+        listening: ListeningReporter? = nil,
+        signInAgain: SignInAgainModel? = nil
     ) {
         self.library = library
         self.inProgress = inProgress
@@ -37,6 +39,7 @@ public struct RootView: View {
         self.player = player
         self.settings = settings
         self.listening = listening
+        self.signInAgain = signInAgain
     }
 
     public var body: some View {
@@ -61,6 +64,9 @@ public struct RootView: View {
                                 }
                             }
                         }
+                        .safeAreaInset(edge: .top, spacing: 0) {
+                            if let signInAgain { ConnectionBannerView(model: signInAgain) }
+                        }
                         .toolbar {
                             if settings != nil {
                                 ToolbarItem(placement: .topBarLeading) {
@@ -77,8 +83,15 @@ public struct RootView: View {
         .sheet(isPresented: $showsSettings) {
             if let settings { SettingsView(model: settings) }
         }
+        .sheet(
+            isPresented: Binding(
+                get: { signInAgain?.isPresented ?? false }, set: { signInAgain?.isPresented = $0 })
+        ) {
+            if let signInAgain { SignInAgainSheet(model: signInAgain) }
+        }
         .environment(covers)
         .environment(downloads)
+        .task { await signInAgain?.observe() }
         .task { await library.observe() }
         .task { await inProgress.observe() }
         .task { await series.observe() }

@@ -30,7 +30,8 @@ struct LogosApp: App {
                     launchSignpost: launchSignpost,
                     covers: services.covers,
                     makeDownloader: services.downloader,
-                    player: services.player
+                    player: services.player,
+                    onSignedOut: services.signedOut
                 )
             case .failure(let error):
                 // The database is never deleted automatically: say so, and keep the file.
@@ -122,6 +123,12 @@ private final class Services {
     /// The Downloads for a signed-in identity, or `nil` if the Downloads directory couldn't be made.
     func downloader(for identity: ServerIdentity) -> Downloader? {
         shared(for: identity).downloader
+    }
+
+    /// Signing out wiped everything: the identity's `Auth` and Downloads go too, so a new sign-in (even as the same
+    /// user) builds fresh ones.
+    func signedOut() {
+        shared = nil
     }
 
     private func shared(for identity: ServerIdentity) -> Shared {

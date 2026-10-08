@@ -24,6 +24,13 @@ enum Requests {
         return request
     }
 
+    static func logOut(_ server: URL, refreshToken: String) -> URLRequest {
+        var request = URLRequest(url: server.appending(path: "logout"))
+        request.httpMethod = "POST"
+        request.setValue(refreshToken, forHTTPHeaderField: "x-refresh-token")
+        return request
+    }
+
     static func libraries(_ server: URL, accessToken: String) -> URLRequest {
         authorized(URLRequest(url: server.appending(path: "api/libraries")), accessToken)
     }

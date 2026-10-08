@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Settings, opened from the gear on every tab: Skip back and Skip forward, and Downloads. Sign out joins it later.
+/// Settings, opened from the gear on every tab: Skip back and Skip forward, Downloads, and Sign out.
 struct SettingsView: View {
     let model: SettingsModel
     @Environment(\.dismiss) private var dismiss
@@ -35,6 +35,9 @@ struct SettingsView: View {
                     Text("Downloads")
                 } footer: {
                     Text("When this is off, Downloads wait for Wi-Fi. Low Data Mode networks are never used.")
+                }
+                if let signOut = model.signOut {
+                    SignOutSection(model: signOut)
                 }
             }
             .navigationTitle("Settings")

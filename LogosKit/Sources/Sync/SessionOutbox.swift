@@ -14,6 +14,8 @@ public enum OutboxSendOutcome: Sendable, Hashable {
     case notNeeded
     case unreachable
     case needsSignIn
+    /// The last sync found the Server too old: nothing was sent.
+    case serverTooOld(found: String)
     /// The Server answered with an error or something unreadable. Nothing was confirmed.
     case failed
 }
@@ -41,12 +43,18 @@ public actor SessionOutbox {
     let auth: Auth
     private let clock: any Clock
     private let progress: ProgressSync
+    private let connection: Connection?
     private var running: Task<OutboxSendOutcome, Never>?
     private var sendsAgain = false
     /// Books whose sessions the Server rejected, with the catalogue sync time they were rejected at.
     private var rejectedBooks: [String: Date?] = [:]
 
-    public init(database: AppDatabase, api: any ServerAPI, auth: Auth, clock: any Clock, progress: ProgressSync) {
+    /// - Parameter connection: when it says the Server is too old, nothing is sent.
+    public init(
+        database: AppDatabase, api: any ServerAPI, auth: Auth, clock: any Clock, progress: ProgressSync,
+        connection: Connection? = nil
+    ) {
+        self.connection = connection
         self.database = database
         self.api = api
         self.auth = auth
@@ -92,6 +100,7 @@ public actor SessionOutbox {
     }
 
     private func run() async -> OutboxSendOutcome {
+        if let found = await connection?.tooOldVersion { return .serverTooOld(found: found) }
         let identity: ServerIdentity
         var entries: [OutboxSession]
         var changes: [PendingFinishedChange]

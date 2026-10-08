@@ -52,6 +52,15 @@ public struct DownloadFiles: Sendable {
         try? FileManager.default.removeItem(at: folder(forBook: bookID))
     }
 
+    /// Deletes everything in the directory (signing out); the directory itself stays, empty.
+    public func deleteAll() {
+        let items =
+            (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
+        for item in items {
+            try? FileManager.default.removeItem(at: item)
+        }
+    }
+
     /// The id of every Book with a folder here.
     public func bookIDs() throws -> Set<String> {
         let folders = try FileManager.default.contentsOfDirectory(

@@ -37,6 +37,15 @@ public struct CoverFiles: Sendable {
         try? FileManager.default.removeItem(at: url(forBook: bookID))
     }
 
+    /// Deletes every cover (signing out); the directory itself stays, empty.
+    public func deleteAll() {
+        let items =
+            (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
+        for item in items {
+            try? FileManager.default.removeItem(at: item)
+        }
+    }
+
     /// The Books that have a cover file.
     public func bookIDs() throws -> Set<String> {
         let names = try FileManager.default.contentsOfDirectory(atPath: directory.path(percentEncoded: false))

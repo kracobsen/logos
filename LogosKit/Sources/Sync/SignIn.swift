@@ -25,6 +25,10 @@ public enum SignInError: Error, Sendable, Hashable {
     case serverError(Int)
     /// The tokens or the identity couldn't be saved on the device.
     case couldNotSave
+    /// Signing in again (needs sign-in) named another Server than the one Logos is signed in to.
+    case differentServer
+    /// Signing in again (needs sign-in) was as another Server user than the one Logos is signed in as.
+    case differentUser
 }
 
 /// A book Library the user can pick.
@@ -105,16 +109,82 @@ public struct SignIn: Sendable {
         do {
             libraries = try await api.libraries(on: server, accessToken: user.tokens.accessToken)
         } catch {
+            await logOut(user, on: server)
             throw Self.signInError(error, unauthorized: .serverError(401))
         }
         let books = libraries.filter { $0.mediaType == .book }.map { LibraryOption(id: $0.id, name: $0.name) }
 
         let choice = LibraryChoice(libraries: books, server: server, user: user)
         switch books.count {
-        case 0: throw .noBookLibrary
-        case 1: return .signedIn(try choose(books[0], from: choice))
+        case 0:
+            await logOut(user, on: server)
+            throw .noBookLibrary
+        case 1:
+            do {
+                return .signedIn(try choose(books[0], from: choice))
+            } catch {
+                await logOut(user, on: server)
+                throw error
+            }
         default: return .chooseLibrary(choice)
         }
+    }
+
+    /// The listener gave up on picking a Library: the pending sign-in is revoked on the Server (best effort).
+    public func cancel(_ choice: LibraryChoice) async {
+        await logOut(choice.user, on: choice.server)
+    }
+
+    /// Signing in again from needs sign-in: the same steps up to login, then a check that it's the same Server and
+    /// the same Server user id as `identity`. Saves nothing; returns the new pair. Another user's sign-in is revoked.
+    func logInAgain(as identity: ServerIdentity, address: String, username: String, password: String)
+        async throws(SignInError) -> TokenPair
+    {
+        let server = try serverURL(from: address)
+        guard Self.isSameServer(server, identity.serverURL) else { throw .differentServer }
+        let status: ServerStatus
+        do {
+            status = try await api.status(of: identity.serverURL)
+        } catch {
+            log.info("Signing in again: status failed: \(String(describing: error), privacy: .public)")
+            throw .cantReachServer
+        }
+        guard status.isSupported else { throw .serverTooOld(found: status.reportedVersion) }
+        guard status.allowsLocalSignIn else { throw .localSignInNotAllowed }
+        let user: SignedInUser
+        do {
+            user = try await api.logIn(to: identity.serverURL, username: username, password: password)
+        } catch {
+            throw Self.signInError(error, unauthorized: .wrongCredentials)
+        }
+        guard user.id == identity.userID else {
+            log.notice("Signing in again as another user: refused")
+            await logOut(user, on: identity.serverURL)
+            throw .differentUser
+        }
+        return user.tokens
+    }
+
+    /// Best effort: revokes a login Logos won't keep, so no session is left behind on the Server.
+    private func logOut(_ user: SignedInUser, on server: URL) async {
+        do {
+            try await api.logOut(on: server, refreshToken: user.tokens.refreshToken)
+        } catch {
+            log.info("Couldn't log out an unused sign-in: \(String(describing: error), privacy: .public)")
+        }
+    }
+
+    /// Scheme, host (any case), port and path (ignoring a trailing slash) match.
+    static func isSameServer(_ one: URL, _ other: URL) -> Bool {
+        func key(_ url: URL) -> String? {
+            guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return nil }
+            var path = components.path
+            while path.hasSuffix("/") { path.removeLast() }
+            let scheme = components.scheme?.lowercased() ?? ""
+            let port = components.port ?? (scheme == "https" ? 443 : 80)
+            return "\(scheme)://\(components.host?.lowercased() ?? ""):\(port)\(path)"
+        }
+        return key(one) != nil && key(one) == key(other)
     }
 
     /// Finishes a sign-in with the user's pick: saves the tokens, then the identity.
