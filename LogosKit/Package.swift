@@ -57,7 +57,12 @@ let package = Package(
         ),
 
         .testTarget(name: "DomainTests", dependencies: ["Domain"], swiftSettings: strict),
-        .testTarget(name: "ServerAPITests", dependencies: ["ServerAPI"], swiftSettings: strict),
+        .testTarget(
+            name: "ServerAPITests",
+            dependencies: ["ServerAPI"],
+            resources: [.copy("Payloads")],
+            swiftSettings: strict
+        ),
         .testTarget(name: "StoreTests", dependencies: ["Store"], swiftSettings: strict),
         .testTarget(name: "SyncTests", dependencies: ["Sync"], swiftSettings: strict),
         .testTarget(name: "DownloadsTests", dependencies: ["Downloads"], swiftSettings: strict),

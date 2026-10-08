@@ -16,6 +16,18 @@ public struct AppDatabase: Sendable {
     }
 
     static var migrator: DatabaseMigrator {
-        DatabaseMigrator()
+        var migrator = DatabaseMigrator()
+        migrator.registerMigration("v1-serverIdentity") { db in
+            // One row at most (id is always 1): the Server, user and Library Logos is signed in to.
+            try db.create(table: "serverIdentity") { table in
+                table.primaryKey("id", .integer).check { $0 == 1 }
+                table.column("serverURL", .text).notNull()
+                table.column("userID", .text).notNull()
+                table.column("username", .text).notNull()
+                table.column("libraryID", .text).notNull()
+                table.column("libraryName", .text).notNull()
+            }
+        }
+        return migrator
     }
 }
