@@ -43,6 +43,8 @@ public final class Player {
     public private(set) var problem: Problem?
     /// The notice after the paused Book moved to a newer position from another device (Player+PickUp.swift).
     public internal(set) var pickedUp: PickedUp?
+    /// The Sleep Timer set on the loaded Book, if any (see `Player+SleepTimer.swift`).
+    public internal(set) var sleepTimer: SleepTimer?
 
     /// How often the position is published while playing, in seconds.
     public static let publishInterval = 0.25
@@ -55,7 +57,7 @@ public final class Player {
 
     @ObservationIgnored let database: AppDatabase
     @ObservationIgnored private let files: DownloadFiles
-    @ObservationIgnored private let audio: any AudioPlayer
+    @ObservationIgnored let audio: any AudioPlayer
     @ObservationIgnored private let clock: any Clock
     @ObservationIgnored private var timeObservation: AudioPlayerObservation?
     @ObservationIgnored private var saving: Task<Void, Never>?
@@ -69,6 +71,8 @@ public final class Player {
     @ObservationIgnored var beforePickUp: (position: Double, isFinished: Bool)?
     /// A fetch for the Book while it was loading, picked up once it's loaded.
     @ObservationIgnored var pendingPickUp: BookProgress?
+    @ObservationIgnored var sleepTimerObservation: AudioPlayerObservation?
+    @ObservationIgnored var stopObservers: [UUID: AsyncStream<PlaybackStop>.Continuation] = [:]
 
     public init(database: AppDatabase, files: DownloadFiles, audio: any AudioPlayer, clock: any Clock) {
         self.database = database
@@ -143,7 +147,8 @@ public final class Player {
 
     /// Loads the Book paused at its saved position. Returns whether it's loaded (and no later load replaced it).
     private func load(_ bookID: String) async -> Bool {
-        pause()
+        pause(because: .switchedBook)
+        cancelSleepTimer()
         loadGeneration += 1
         let generation = loadGeneration
         problem = nil
@@ -192,7 +197,7 @@ public final class Player {
     /// Stops playing and unloads the Book if it's the one loaded (before its Download is removed). Saves first.
     public func stop(bookID: String) {
         guard book?.id == bookID else { return }
-        pause()
+        pause(because: .stopped)
         loadGeneration += 1
         unload(problem: nil)
     }
@@ -211,6 +216,7 @@ public final class Player {
     }
 
     private func unload(problem: Problem?) {
+        cancelSleepTimer()
         saving?.cancel()
         saving = nil
         audio.unload()
@@ -269,13 +275,23 @@ public final class Player {
 
     /// Pauses and saves. Does nothing unless playing.
     public func pause() {
-        guard state == .playing else { return }
+        pause(because: .paused)
+    }
+
+    /// Pauses, saves (at `landing`, moving there, if given) and reports the stop. Does nothing unless playing.
+    func pause(because reason: PlaybackStop.Reason, landingAt landing: Double? = nil) {
+        guard let book, state == .playing else { return }
         audio.pause()
         state = .paused
         saving?.cancel()
         saving = nil
-        if pendingSeeks == 0 { position = audio.currentTime }
-        save()
+        if let landing {
+            seek(to: landing)
+        } else {
+            if pendingSeeks == 0 { position = audio.currentTime }
+            save()
+        }
+        reportStop(PlaybackStop(bookID: book.id, position: position, reason: reason))
     }
 
     public func togglePlayPause() {
@@ -287,6 +303,7 @@ public final class Player {
         guard let book, state != .idle else { return }
         clearPickUp()
         let target = min(max(time, 0), book.duration)
+        sleepTimerSeeked(to: target)
         position = target
         pendingSeeks += 1
         save()
@@ -339,8 +356,10 @@ public final class Player {
             state = .paused
             saving?.cancel()
             saving = nil
+            cancelSleepTimer()
             position = book.duration
             save()
+            reportStop(PlaybackStop(bookID: book.id, position: position, reason: .endOfBook))
         case .decodeFailed(let time):
             Task { await decodeFailed(at: time) }
         }
@@ -353,7 +372,7 @@ public final class Player {
         let wasPlaying = state == .playing
         guard decodeRetries < Self.maxDecodeRetries else {
             log.error("A Book kept failing to decode; giving up")
-            pause()
+            pause(because: .failed)
             problem = .cannotDecode
             return
         }
@@ -366,7 +385,7 @@ public final class Player {
             try await audio.load(fileURLs(of: book))
         } catch {
             guard generation == loadGeneration else { return }
-            pause()
+            pause(because: .failed)
             unload(problem: .cannotOpen)
             return
         }
