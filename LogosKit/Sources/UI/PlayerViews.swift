@@ -57,7 +57,7 @@ struct MiniPlayerView: View {
                             Text(book.title)
                                 .font(.subheadline.weight(.semibold))
                                 .lineLimit(1)
-                            Text(player.chapter?.title ?? book.authorName)
+                            Text(player.pickedUp.map(PickUpNotice.text) ?? player.chapter?.title ?? book.authorName)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
@@ -68,6 +68,11 @@ struct MiniPlayerView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityHint("Opens the player")
+                if player.pickedUp != nil {
+                    Button("Undo") { player.undoPickUp() }
+                        .font(.subheadline.weight(.semibold))
+                        .accessibilityHint("Goes back to where this iPhone was")
+                }
                 Button {
                     player.togglePlayPause()
                 } label: {
@@ -101,6 +106,7 @@ struct PlayerSheet: View {
                     .frame(width: 36, height: 5)
                     .padding(.top, 8)
                     .accessibilityHidden(true)
+                PickUpBanner(player: player)
                 Spacer(minLength: 0)
                 CoverView(bookID: book.id, side: 300, cornerRadius: 10)
                 VStack(spacing: 4) {

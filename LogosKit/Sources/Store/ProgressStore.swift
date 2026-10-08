@@ -69,21 +69,34 @@ extension AppDatabase {
     /// ever deleted.
     @discardableResult
     public func applyFetchedProgress(_ records: [FetchedProgress]) throws -> AppliedProgress {
-        try pool.write { db in
+        let adopted = try pool.write { db in
             let books = try Set(String.fetchAll(db, sql: "SELECT id FROM book"))
+            let protected = try Self.bookIDsWithUnsentProgress(db)
             var local: [String: BookProgress] = [:]
             for record in try ProgressRecord.fetchAll(db) {
                 local[record.bookID] = record.progress
             }
-            var changed: Set<String> = []
-            for fetched in records where books.contains(fetched.bookID) {
-                guard let adopted = ProgressMerge.adopting(fetched, over: local[fetched.bookID]) else { continue }
-                try ProgressRecord(adopted).upsert(db)
-                local[fetched.bookID] = adopted
-                changed.insert(fetched.bookID)
+            var adopted: [String: BookProgress] = [:]
+            for fetched in records where books.contains(fetched.bookID) && !protected.contains(fetched.bookID) {
+                guard let progress = ProgressMerge.adopting(fetched, over: local[fetched.bookID]) else { continue }
+                try ProgressRecord(progress).upsert(db)
+                local[fetched.bookID] = progress
+                adopted[fetched.bookID] = progress
             }
-            return AppliedProgress(changedBookIDs: changed)
+            return adopted
         }
+        if !adopted.isEmpty {
+            fetchedProgress.send(adopted.values.sorted { $0.bookID < $1.bookID })
+        }
+        return AppliedProgress(changedBookIDs: Set(adopted.keys))
+    }
+
+    /// Books a fetch must never overwrite because they have listening not yet sent to the Server.
+    ///
+    /// Empty until the listening sessions outbox (#36) exists: it should return the ids with unsent outbox entries
+    /// (or Finished changes), read in the same transaction as the apply.
+    static func bookIDsWithUnsentProgress(_ db: Database) throws -> Set<String> {
+        []
     }
 
     /// The In Progress Books in the Library (started, not Finished), most recently changed first.

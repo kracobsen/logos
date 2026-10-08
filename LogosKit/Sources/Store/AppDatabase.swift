@@ -8,6 +8,8 @@ import GRDB
 /// ``migrator`` by hand, in order, and are never edited once shipped.
 public struct AppDatabase: Sendable {
     let pool: DatabasePool
+    /// What applied fetches adopted, for ``fetchedProgressUpdates()``.
+    let fetchedProgress = FetchedProgressBroadcast()
 
     /// Why the database couldn't be opened, beyond SQLite's own errors.
     public enum OpenError: Error, Sendable, Hashable {

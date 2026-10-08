@@ -41,6 +41,8 @@ public final class Player {
     /// The speed playing runs at.
     public private(set) var rate: Float
     public private(set) var problem: Problem?
+    /// The notice after the paused Book moved to a newer position from another device (Player+PickUp.swift).
+    public internal(set) var pickedUp: PickedUp?
 
     /// How often the position is published while playing, in seconds.
     public static let publishInterval = 0.25
@@ -51,7 +53,7 @@ public final class Player {
     /// How far before a decode failure playing restarts after reloading, in seconds.
     public static let decodeRetryBackoff = 1.0
 
-    @ObservationIgnored private let database: AppDatabase
+    @ObservationIgnored let database: AppDatabase
     @ObservationIgnored private let files: DownloadFiles
     @ObservationIgnored private let audio: any AudioPlayer
     @ObservationIgnored private let clock: any Clock
@@ -63,6 +65,10 @@ public final class Player {
     @ObservationIgnored private var pendingSeeks = 0
     @ObservationIgnored private var decodeRetries = 0
     @ObservationIgnored private var playToAudio: SignpostInterval?
+    /// What the loaded Book had before it was picked up, for Undo.
+    @ObservationIgnored var beforePickUp: (position: Double, isFinished: Bool)?
+    /// A fetch for the Book while it was loading, picked up once it's loaded.
+    @ObservationIgnored var pendingPickUp: BookProgress?
 
     public init(database: AppDatabase, files: DownloadFiles, audio: any AudioPlayer, clock: any Clock) {
         self.database = database
@@ -142,6 +148,7 @@ public final class Player {
         let generation = loadGeneration
         problem = nil
         decodeRetries = 0
+        clearPickUp()
         let detail: BookDetail
         let saved: BookProgress?
         do {
@@ -178,6 +185,7 @@ public final class Player {
             guard generation == loadGeneration else { return false }
         }
         state = .paused
+        pickUpPending()
         return true
     }
 
@@ -206,6 +214,7 @@ public final class Player {
         saving?.cancel()
         saving = nil
         audio.unload()
+        clearPickUp()
         book = nil
         position = 0
         isFinished = false
@@ -231,6 +240,7 @@ public final class Player {
             signpost.end()
             return
         }
+        clearPickUp()
         if isFinished {
             isFinished = false
             seek(to: 0)
@@ -275,6 +285,7 @@ public final class Player {
     /// Moves to `time` (in Book seconds): the position moves at once, the audio follows. Saves.
     public func seek(to time: Double) {
         guard let book, state != .idle else { return }
+        clearPickUp()
         let target = min(max(time, 0), book.duration)
         position = target
         pendingSeeks += 1
@@ -368,10 +379,28 @@ public final class Player {
         if wasPlaying, state == .playing { audio.play() }
     }
 
+    /// Moves to `time` and sets Finished without saving (for picking up from another device: the Store has it).
+    func move(to time: Double, isFinished: Bool) {
+        guard let book, state != .idle else { return }
+        self.isFinished = isFinished
+        let target = min(max(time, 0), book.duration)
+        position = target
+        pendingSeeks += 1
+        Task {
+            await audio.seek(to: target)
+            pendingSeeks -= 1
+        }
+    }
+
+    /// The live position while playing (unless a seek is landing), for saving.
+    func catchUpPosition() {
+        if pendingSeeks == 0 { position = audio.currentTime }
+    }
+
     // MARK: - Saving
 
     /// Writes the position, now as the last-changed time, and Finished.
-    private func save() {
+    func save() {
         guard let book else { return }
         let now = Date(millisecondsSince1970: clock.now.millisecondsSince1970)
         let progress = BookProgress(bookID: book.id, position: position, lastChanged: now, isFinished: isFinished)

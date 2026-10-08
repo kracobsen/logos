@@ -4,7 +4,7 @@ import SwiftUI
 
 /// Puts the player into the tab shell: the player in the environment, the mini-player as the tab view's bottom
 /// accessory (once a Book is loaded) opening the full-height player sheet, the last-played Book restored paused just
-/// after launch, playback stopped when the loaded Book's Download goes away, and a save on going to the background.
+/// after launch, playback stopped when the loaded Book's Download goes away, the paused Book picked up from another device, and a save on going to the background.
 struct PlayerChrome: ViewModifier {
     let player: Player?
     @State private var showsPlayer = false
@@ -33,6 +33,7 @@ struct PlayerChrome: ViewModifier {
                 await player?.restoreLastPlayed()
             }
             .task { await player?.observeDownloads() }
+            .task { await player?.observePickUps() }
             .onChange(of: scenePhase) { _, phase in
                 if phase == .background { player?.enteredBackground() }
             }
