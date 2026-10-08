@@ -23,6 +23,8 @@ public final class LibraryModel {
     public private(set) var lastUpdated: Date?
     /// A sync this model started is running.
     public private(set) var isSyncing = false
+    /// The sync running started before the Library was ever synced: it's the first sync, until all its stages end.
+    private var isFirstSync = false
     /// A short message after a manual Refresh that didn't work. The view clears it after a few seconds.
     public private(set) var refreshMessage: String?
 
@@ -97,8 +99,9 @@ public final class LibraryModel {
         showsIndex = results.showsIndex
     }
 
-    /// "Syncing Library…": the first sync is running, so the Library may still be filling in.
-    public var showsFirstSync: Bool { isSyncing && lastUpdated == nil }
+    /// "Syncing Library…": the first sync is running (all its stages, not just the list), so the Library may still be
+    /// filling in.
+    public var showsFirstSync: Bool { isSyncing && isFirstSync }
 
     /// Follows the rows, Series, progress and last sync time in the database until cancelled.
     public func observe() async {
@@ -194,7 +197,11 @@ public final class LibraryModel {
 
     private func run(_ trigger: SyncTrigger) async -> SyncOutcome {
         isSyncing = true
-        defer { isSyncing = false }
+        isFirstSync = lastUpdated == nil
+        defer {
+            isSyncing = false
+            isFirstSync = false
+        }
         return await sync.sync(trigger)
     }
 

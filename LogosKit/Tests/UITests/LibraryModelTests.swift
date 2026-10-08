@@ -95,6 +95,27 @@ struct LibraryModelTests {
         await later.value
     }
 
+    @Test("Syncing Library… stays through the later stages, until the first sync is done")
+    func syncingLibraryUntilDone() async throws {
+        server.books = [FakeServer.book("One")]
+        let gate = Gate()
+        server.beforeHandling { request throws(ServerAPIError) in
+            if case .bookDataBatch = request { await gate.wait() }
+        }
+        let model = model()
+        let observing = Task { await model.observe() }
+        defer { observing.cancel() }
+
+        let first = Task { await model.syncOnLaunch() }
+        await eventually { model.lastUpdated != nil }
+        #expect(model.lastUpdated != nil)
+        #expect(model.showsFirstSync)
+
+        await gate.open()
+        await first.value
+        #expect(!model.showsFirstSync)
+    }
+
     @Test("A manual Refresh briefly says when the Server couldn't be reached")
     func refreshUnreachable() async throws {
         server.isReachable = { _ in false }
