@@ -43,3 +43,15 @@ _Avoid_: Track, file, part
 **Sleep Timer**:
 A request to stop playback at the end of the Xth Chapter from now, counting the Chapter currently playing as the first.
 _Avoid_: Timer, sleep mode
+
+**Listening session**:
+One stretch of listening to one Book, as reported to the Server for its history and stats; it carries on across short pauses and ends on a long pause, a switch to another Book, Finished or a Sleep Timer stop.
+_Avoid_: Play session, listen, playback session
+
+**Finished change**:
+A change to a Book's Finished, made on this device and stamped with when the listener made it, waiting to reach the Server; a later change to the same Book replaces it.
+_Avoid_: Finished update, completion event
+
+**Outbox**:
+What this device holds for the Server and hasn't had acknowledged yet: listening sessions and Finished changes. A Book with anything in the outbox is never overwritten by progress from the Server.
+_Avoid_: Queue, pending sync, upload queue
