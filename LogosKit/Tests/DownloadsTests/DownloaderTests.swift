@@ -71,7 +71,7 @@ struct DownloadsFixture {
     }
 }
 
-func book(_ id: String, files: [(String, Int64)], cover: Bool = false) -> BookData {
+func book(_ id: String, files: [(String, Int64)], cover: Bool = false, ino: String? = nil) -> BookData {
     var listed = FakeServer.book(id.capitalized, id: id)
     listed = ListedBook(
         id: listed.id, mediaID: listed.mediaID, title: listed.title, subtitle: nil, authorName: listed.authorName,
@@ -80,7 +80,7 @@ func book(_ id: String, files: [(String, Int64)], cover: Bool = false) -> BookDa
         size: files.reduce(0) { $0 + $1.1 }, hasCover: cover)
     let tracks = files.enumerated().map { index, file in
         AudioTrack(
-            index: index + 1, ino: "ino-\(id)-\(file.0)", relPath: file.0, size: file.1, duration: 60,
+            index: index + 1, ino: ino ?? "ino-\(id)-\(file.0)", relPath: file.0, size: file.1, duration: 60,
             startOffset: 60 * Double(index), mimeType: "audio/mpeg")
     }
     return BookData(book: listed, chapters: [], tracks: tracks, series: [])

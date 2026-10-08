@@ -42,6 +42,8 @@ public actor Downloader {
     private var lastProgressWrite: [FileTransfer: Date] = [:]
     /// Files waiting out their backoff before they're enqueued again (in memory: a relaunch retries at once).
     private var backingOff: [FileTransfer: Task<Void, Never>] = [:]
+    /// Files that got a 404 and were retried once with a re-read Book (in memory, like ``backingOff``).
+    private var retriedAfterNotFound: Set<FileTransfer> = []
 
     /// - Parameters:
     ///   - covers: where the cover cache keeps covers; a Download shares its Book's cover file with it.
@@ -296,6 +298,17 @@ public actor Downloader {
                 return
             }
             await continueActive(transfer.bookID)
+        case 403:
+            log.notice("A file transfer was forbidden (403); failing its Book")
+            await failActive(transfer.bookID)
+        case 404 where !retriedAfterNotFound.contains(transfer):
+            // The ino may have changed: re-reading the Book gives the fresh one (or drops a file it no longer lists).
+            log.notice("A file transfer got 404; re-reading the Book and retrying once")
+            retriedAfterNotFound.insert(transfer)
+            await continueActive(transfer.bookID)
+        case 404:
+            log.notice("A file transfer got 404 again; failing its Book")
+            await failActive(transfer.bookID)
         default:
             log.info("A file transfer got status \(status)")
             await retry(file)
@@ -333,6 +346,7 @@ public actor Downloader {
     }
 
     private func stopBackoff(ofBook bookID: String) {
+        retriedAfterNotFound = retriedAfterNotFound.filter { $0.bookID != bookID }
         for (transfer, task) in backingOff where transfer.bookID == bookID {
             task.cancel()
             backingOff[transfer] = nil

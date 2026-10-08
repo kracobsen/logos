@@ -34,6 +34,120 @@ struct DownloadFailureTests {
         #expect(try fixture.state("a") == .failed)
         #expect(fixture.pending == [transfer("b", "01.mp3")])
     }
+
+    @Test("429 and 5xx answers back off like a dropped transfer", arguments: [429, 500, 503])
+    func transientStatuses(status: Int) async throws {
+        let fixture = try await DownloadsFixture(books: [book("a", files: [("01.mp3", 10)])])
+        let downloader = await fixture.downloader()
+        await downloader.download("a")
+        fixture.server.failFiles(with: status)
+
+        await fixture.server.transfers.complete(transfer("a", "01.mp3"))
+
+        #expect(fixture.pending.isEmpty)
+        #expect(try fixture.state("a") == .downloading)
+        fixture.server.beforeHandling(nil)
+        await fixture.clock.advance(by: .seconds(60))
+        await fixture.eventually { !fixture.pending.isEmpty }
+        await fixture.server.transfers.completeAll()
+        #expect(try fixture.state("a") == .downloaded)
+    }
+
+    @Test("A 403 fails the Book straight away, and the queue moves on")
+    func forbidden() async throws {
+        let fixture = try await DownloadsFixture(books: [
+            book("a", files: [("01.mp3", 10), ("02.mp3", 10)]), book("b", files: [("01.mp3", 10)]),
+        ])
+        let downloader = await fixture.downloader()
+        await downloader.download("a")
+        await downloader.download("b")
+        await fixture.server.transfers.complete(transfer("a", "01.mp3"))
+        fixture.server.failFiles(with: 403)
+
+        await fixture.server.transfers.complete(transfer("a", "02.mp3"))
+
+        #expect(try fixture.state("a") == .failed)
+        #expect(fixture.onDisk("a", "01.mp3")?.count == 10, "completed files are kept")
+        #expect(fixture.pending == [transfer("b", "01.mp3")])
+    }
+
+    @Test("A 404 on a file the Server still lists re-reads the Book and retries once, with the fresh ino")
+    func notFoundRetriesOnce() async throws {
+        let fixture = try await DownloadsFixture(books: [book("a", files: [("01.mp3", 10)])])
+        let downloader = await fixture.downloader()
+        await downloader.download("a")
+        // The file moved: the old ino is gone, the Book now lists a new one.
+        fixture.server.transfers.stopServing(bookID: "a", ino: "ino-a-01.mp3")
+        fixture.server.bookData = [book("a", files: [("01.mp3", 10)], ino: "moved")]
+        fixture.server.transfers.serve(Data(count: 10), bookID: "a", ino: "moved")
+
+        await fixture.server.transfers.complete(transfer("a", "01.mp3"))
+
+        #expect(fixture.server.transfers.pending.map(\.ino) == ["moved"], "retried at once")
+        await fixture.server.transfers.complete(transfer("a", "01.mp3"))
+        #expect(try fixture.state("a") == .downloaded)
+    }
+
+    @Test("A second 404 for the same file fails the Book")
+    func notFoundTwice() async throws {
+        let fixture = try await DownloadsFixture(books: [
+            book("a", files: [("01.mp3", 10)]), book("b", files: [("01.mp3", 10)]),
+        ])
+        let downloader = await fixture.downloader()
+        await downloader.download("a")
+        await downloader.download("b")
+        fixture.server.transfers.stopServing(bookID: "a", ino: "ino-a-01.mp3")
+
+        await fixture.server.transfers.complete(transfer("a", "01.mp3"))
+        #expect(try fixture.state("a") == .downloading)
+        await fixture.server.transfers.complete(transfer("a", "01.mp3"))
+
+        #expect(try fixture.state("a") == .failed)
+        #expect(fixture.pending == [transfer("b", "01.mp3")])
+    }
+
+    @Test("A 404 for a file the re-read Book no longer lists drops that file; the rest finish the Book")
+    func notFoundFileGone() async throws {
+        let fixture = try await DownloadsFixture(books: [book("a", files: [("01.mp3", 10), ("02.mp3", 10)])])
+        let downloader = await fixture.downloader()
+        await downloader.download("a")
+        fixture.server.transfers.stopServing(bookID: "a", ino: "ino-a-02.mp3")
+        fixture.server.bookData = [book("a", files: [("01.mp3", 10)])]
+
+        await fixture.server.transfers.complete(transfer("a", "02.mp3"))
+        await fixture.server.transfers.complete(transfer("a", "01.mp3"))
+
+        #expect(try fixture.state("a") == .downloaded)
+        #expect(try fixture.database.downloadFiles(ofBook: "a").map(\.relPath) == ["01.mp3"])
+    }
+
+    @Test("Retry after a failure fetches only the files still missing")
+    func retryFetchesMissingOnly() async throws {
+        let fixture = try await DownloadsFixture(books: [book("a", files: [("01.mp3", 10), ("02.mp3", 10)])])
+        let downloader = await fixture.downloader()
+        await downloader.download("a")
+        await fixture.server.transfers.complete(transfer("a", "01.mp3"))
+        fixture.server.failFiles(with: 403)
+        await fixture.server.transfers.complete(transfer("a", "02.mp3"))
+        #expect(try fixture.state("a") == .failed)
+        fixture.server.beforeHandling(nil)
+
+        await downloader.download("a")
+
+        #expect(fixture.pending == [transfer("a", "02.mp3")])
+        await fixture.server.transfers.completeAll()
+        #expect(try fixture.state("a") == .downloaded)
+    }
+}
+
+extension FakeServer {
+    /// Answers every file transfer with `status` (until `beforeHandling(nil)`).
+    func failFiles(with status: Int) {
+        beforeHandling { request throws(ServerAPIError) in
+            guard case .file = request else { return }
+            throw status == 429 ? .rateLimited : .unexpectedStatus(status)
+        }
+    }
 }
 
 extension DownloadsFixture {
