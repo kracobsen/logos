@@ -1,0 +1,336 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		1A0000000000000000000101 /* LogosKit in Frameworks */ = {isa = PBXBuildFile; productRef = 1A0000000000000000000302 /* LogosKit */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		1A0000000000000000000521 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 1A0000000000000000000006 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 1A0000000000000000000005;
+			remoteInfo = Logos;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		1A0000000000000000000001 /* Logos.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Logos.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		1A0000000000000000000011 /* Base.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Base.xcconfig; sourceTree = "<group>"; };
+		1A0000000000000000000012 /* Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Debug.xcconfig; sourceTree = "<group>"; };
+		1A0000000000000000000013 /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Release.xcconfig; sourceTree = "<group>"; };
+		1A0000000000000000000014 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		1A0000000000000000000015 /* Logos.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Logos.entitlements; sourceTree = "<group>"; };
+		1A0000000000000000000016 /* LogosKit */ = {isa = PBXFileReference; lastKnownFileType = wrapper; path = LogosKit; sourceTree = "<group>"; };
+		1A0000000000000000000017 /* Performance.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Performance.xcconfig; sourceTree = "<group>"; };
+		1A0000000000000000000018 /* LogosUITests.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = LogosUITests.xcconfig; sourceTree = "<group>"; };
+		1A0000000000000000000501 /* LogosUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LogosUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		1A0000000000000000000002 /* Logos */ = {isa = PBXFileSystemSynchronizedRootGroup; path = Logos; sourceTree = "<group>"; };
+		1A0000000000000000000502 /* LogosUITests */ = {isa = PBXFileSystemSynchronizedRootGroup; path = LogosUITests; sourceTree = "<group>"; };
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		1A0000000000000000000201 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1A0000000000000000000101 /* LogosKit in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		1A0000000000000000000511 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		1A0000000000000000000003 = {
+			isa = PBXGroup;
+			children = (
+				1A0000000000000000000002 /* Logos */,
+				1A0000000000000000000502 /* LogosUITests */,
+				1A0000000000000000000010 /* Config */,
+				1A0000000000000000000016 /* LogosKit */,
+				1A0000000000000000000004 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		1A0000000000000000000004 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				1A0000000000000000000001 /* Logos.app */,
+				1A0000000000000000000501 /* LogosUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		1A0000000000000000000010 /* Config */ = {
+			isa = PBXGroup;
+			children = (
+				1A0000000000000000000011 /* Base.xcconfig */,
+				1A0000000000000000000012 /* Debug.xcconfig */,
+				1A0000000000000000000013 /* Release.xcconfig */,
+				1A0000000000000000000017 /* Performance.xcconfig */,
+				1A0000000000000000000018 /* LogosUITests.xcconfig */,
+				1A0000000000000000000014 /* Info.plist */,
+				1A0000000000000000000015 /* Logos.entitlements */,
+			);
+			path = Config;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		1A0000000000000000000005 /* Logos */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 1A0000000000000000000402 /* Build configuration list for PBXNativeTarget "Logos" */;
+			buildPhases = (
+				1A0000000000000000000202 /* Sources */,
+				1A0000000000000000000201 /* Frameworks */,
+				1A0000000000000000000203 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				1A0000000000000000000002 /* Logos */,
+			);
+			name = Logos;
+			packageProductDependencies = (
+				1A0000000000000000000302 /* LogosKit */,
+			);
+			productName = Logos;
+			productReference = 1A0000000000000000000001 /* Logos.app */;
+			productType = "com.apple.product-type.application";
+		};
+		1A0000000000000000000505 /* LogosUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 1A0000000000000000000403 /* Build configuration list for PBXNativeTarget "LogosUITests" */;
+			buildPhases = (
+				1A0000000000000000000512 /* Sources */,
+				1A0000000000000000000511 /* Frameworks */,
+				1A0000000000000000000513 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				1A0000000000000000000522 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				1A0000000000000000000502 /* LogosUITests */,
+			);
+			name = LogosUITests;
+			productName = LogosUITests;
+			productReference = 1A0000000000000000000501 /* LogosUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		1A0000000000000000000006 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2700;
+				LastUpgradeCheck = 2700;
+				TargetAttributes = {
+					1A0000000000000000000005 = {
+						CreatedOnToolsVersion = 27.0;
+					};
+					1A0000000000000000000505 = {
+						CreatedOnToolsVersion = 27.0;
+						TestTargetID = 1A0000000000000000000005;
+					};
+				};
+			};
+			buildConfigurationList = 1A0000000000000000000401 /* Build configuration list for PBXProject "Logos" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 1A0000000000000000000003;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				1A0000000000000000000301 /* XCLocalSwiftPackageReference "LogosKit" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 1A0000000000000000000004 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				1A0000000000000000000005 /* Logos */,
+				1A0000000000000000000505 /* LogosUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		1A0000000000000000000203 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		1A0000000000000000000513 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		1A0000000000000000000202 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		1A0000000000000000000512 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		1A0000000000000000000522 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 1A0000000000000000000005 /* Logos */;
+			targetProxy = 1A0000000000000000000521 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		1A0000000000000000000411 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 1A0000000000000000000012 /* Debug.xcconfig */;
+			buildSettings = {
+			};
+			name = Debug;
+		};
+		1A0000000000000000000412 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 1A0000000000000000000013 /* Release.xcconfig */;
+			buildSettings = {
+			};
+			name = Release;
+		};
+		1A0000000000000000000421 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+			};
+			name = Debug;
+		};
+		1A0000000000000000000422 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+			};
+			name = Release;
+		};
+		1A0000000000000000000413 /* Performance */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 1A0000000000000000000017 /* Performance.xcconfig */;
+			buildSettings = {
+			};
+			name = Performance;
+		};
+		1A0000000000000000000423 /* Performance */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+			};
+			name = Performance;
+		};
+		1A0000000000000000000431 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 1A0000000000000000000018 /* LogosUITests.xcconfig */;
+			buildSettings = {
+			};
+			name = Debug;
+		};
+		1A0000000000000000000432 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 1A0000000000000000000018 /* LogosUITests.xcconfig */;
+			buildSettings = {
+			};
+			name = Release;
+		};
+		1A0000000000000000000433 /* Performance */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 1A0000000000000000000018 /* LogosUITests.xcconfig */;
+			buildSettings = {
+			};
+			name = Performance;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		1A0000000000000000000401 /* Build configuration list for PBXProject "Logos" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1A0000000000000000000411 /* Debug */,
+				1A0000000000000000000412 /* Release */,
+				1A0000000000000000000413 /* Performance */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		1A0000000000000000000402 /* Build configuration list for PBXNativeTarget "Logos" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1A0000000000000000000421 /* Debug */,
+				1A0000000000000000000422 /* Release */,
+				1A0000000000000000000423 /* Performance */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		1A0000000000000000000403 /* Build configuration list for PBXNativeTarget "LogosUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1A0000000000000000000431 /* Debug */,
+				1A0000000000000000000432 /* Release */,
+				1A0000000000000000000433 /* Performance */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		1A0000000000000000000301 /* XCLocalSwiftPackageReference "LogosKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = LogosKit;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		1A0000000000000000000302 /* LogosKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = LogosKit;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 1A0000000000000000000006 /* Project object */;
+}

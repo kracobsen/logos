@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Format, module graph, build and unit tests
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode 27
+        run: |
+          xcode=$(ls -d /Applications/Xcode_27*.app | sort -V | tail -1)
+          echo "Using $xcode"
+          echo "DEVELOPER_DIR=$xcode/Contents/Developer" >> "$GITHUB_ENV"
+
+      - name: Format check
+        run: scripts/format.sh
+
+      - name: Module graph check
+        run: scripts/check-module-graph.sh
+
+      - name: Pick an iPhone simulator
+        run: |
+          device=$(xcrun simctl list devices available iOS | grep -m1 -oE 'iPhone [^(]+' | sed 's/ *$//')
+          echo "Using $device"
+          echo "DEVICE=$device" >> "$GITHUB_ENV"
+
+      - name: Build and unit tests
+        run: scripts/test.sh

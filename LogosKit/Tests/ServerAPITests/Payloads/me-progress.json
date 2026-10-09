@@ -1,0 +1,40 @@
+{
+    "mediaProgress": [
+        {
+            "id": "726764eb-f195-42e1-b9be-2264a00b2046",
+            "userId": "3b8c9de4-d914-4edb-afcb-acdc73a3a694",
+            "libraryItemId": "19ccbae2-534e-4869-8d18-f31b290323c6",
+            "episodeId": null,
+            "mediaItemId": "3df9ab53-33ef-45c5-91d1-3aceee94db88",
+            "mediaItemType": "book",
+            "duration": 120,
+            "progress": 0.354,
+            "currentTime": 42.5,
+            "isFinished": false,
+            "hideFromContinueListening": false,
+            "ebookLocation": null,
+            "ebookProgress": 0,
+            "lastUpdate": 1791466306865,
+            "startedAt": 1791466306865,
+            "finishedAt": null
+        },
+        {
+            "id": "3e54e37f-e54c-480f-805f-23e9e0b31e9c",
+            "userId": "3b8c9de4-d914-4edb-afcb-acdc73a3a694",
+            "libraryItemId": "4bce66aa-8cea-4e12-baa7-6f65af369614",
+            "episodeId": null,
+            "mediaItemId": "eeff5bd1-33ef-42d2-ba39-c92306d300ab",
+            "mediaItemType": "book",
+            "duration": 0,
+            "progress": 1,
+            "currentTime": 0,
+            "isFinished": true,
+            "hideFromContinueListening": false,
+            "ebookLocation": null,
+            "ebookProgress": 0,
+            "lastUpdate": 1791466306883,
+            "startedAt": 1791466306883,
+            "finishedAt": 1791466306883
+        }
+    ]
+}

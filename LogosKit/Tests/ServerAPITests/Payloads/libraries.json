@@ -1,0 +1,114 @@
+{
+    "libraries": [
+        {
+            "id": "0d811c9d-491c-471b-808b-9b8a5c8dab90",
+            "name": "Fixtures",
+            "folders": [
+                {
+                    "id": "b80d56f3-8574-453b-9b51-cd66fbec55ca",
+                    "fullPath": "/audiobooks",
+                    "libraryId": "0d811c9d-491c-471b-808b-9b8a5c8dab90",
+                    "addedAt": 1791464643607
+                }
+            ],
+            "displayOrder": 1,
+            "icon": "database",
+            "mediaType": "book",
+            "provider": "google",
+            "settings": {
+                "coverAspectRatio": 1,
+                "disableWatcher": true,
+                "autoScanCronExpression": null,
+                "skipMatchingMediaWithAsin": false,
+                "skipMatchingMediaWithIsbn": false,
+                "audiobooksOnly": false,
+                "epubsAllowScriptedContent": false,
+                "hideSingleBookSeries": false,
+                "onlyShowLaterBooksInContinueSeries": false,
+                "metadataPrecedence": [
+                    "folderStructure",
+                    "audioMetatags",
+                    "nfoFile",
+                    "txtFiles",
+                    "opfFile",
+                    "absMetadata"
+                ],
+                "markAsFinishedPercentComplete": null,
+                "markAsFinishedTimeRemaining": 10
+            },
+            "lastScan": 1791464643901,
+            "lastScanVersion": "2.37.1",
+            "createdAt": 1791464643604,
+            "lastUpdate": 1791464643901
+        },
+        {
+            "id": "3dbbba6c-6a13-4c2c-aeb7-08346d064ac9",
+            "name": "Podcasts",
+            "folders": [
+                {
+                    "id": "a7e0f38e-7356-46dc-b28a-1772f908d877",
+                    "fullPath": "/podcasts",
+                    "libraryId": "3dbbba6c-6a13-4c2c-aeb7-08346d064ac9",
+                    "addedAt": 1791464670804
+                }
+            ],
+            "displayOrder": 2,
+            "icon": "database",
+            "mediaType": "podcast",
+            "provider": "google",
+            "settings": {
+                "coverAspectRatio": 1,
+                "disableWatcher": true,
+                "autoScanCronExpression": null,
+                "podcastSearchRegion": "us",
+                "markAsFinishedPercentComplete": null,
+                "markAsFinishedTimeRemaining": 10
+            },
+            "lastScan": null,
+            "lastScanVersion": null,
+            "createdAt": 1791464670798,
+            "lastUpdate": 1791464670798
+        },
+        {
+            "id": "d153be81-ba4e-4356-9fd2-45fc21e23b10",
+            "name": "More Books",
+            "folders": [
+                {
+                    "id": "83a33ccc-e518-4aa7-85d5-3573aaae3e9e",
+                    "fullPath": "/morebooks",
+                    "libraryId": "d153be81-ba4e-4356-9fd2-45fc21e23b10",
+                    "addedAt": 1791464670824
+                }
+            ],
+            "displayOrder": 3,
+            "icon": "database",
+            "mediaType": "book",
+            "provider": "google",
+            "settings": {
+                "coverAspectRatio": 1,
+                "disableWatcher": true,
+                "autoScanCronExpression": null,
+                "skipMatchingMediaWithAsin": false,
+                "skipMatchingMediaWithIsbn": false,
+                "audiobooksOnly": false,
+                "epubsAllowScriptedContent": false,
+                "hideSingleBookSeries": false,
+                "onlyShowLaterBooksInContinueSeries": false,
+                "metadataPrecedence": [
+                    "folderStructure",
+                    "audioMetatags",
+                    "nfoFile",
+                    "txtFiles",
+                    "opfFile",
+                    "absMetadata"
+                ],
+                "markAsFinishedPercentComplete": null,
+                "markAsFinishedTimeRemaining": 10
+            },
+            "lastScan": null,
+            "lastScanVersion": null,
+            "createdAt": 1791464670819,
+            "lastUpdate": 1791464670819
+        }
+    ]
+}

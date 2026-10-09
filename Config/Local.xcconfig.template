@@ -1,0 +1,5 @@
+// Copy to Config/Local.xcconfig (git-ignored) and fill in to build for a device or TestFlight.
+// Simulator builds work without it.
+
+DEVELOPMENT_TEAM = YOUR_TEAM_ID
+BUNDLE_ID_PREFIX = com.example
