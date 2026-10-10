@@ -1,0 +1,186 @@
+<!doctype html>
+<!--
+  PROTOTYPE, throwaway. Never merged.
+  Question (wayfinder ticket #47, map #46): which icon direction fits Logos?
+  Ten clearly different concepts in one shared Liquid Glass-like style (same background, same
+  white glass + amber accent glass, same specular and shadow), so the idea is judged, not the rendering.
+  Open in a browser. Switch with the bottom bar, the ← → keys, or by clicking the strip. ?variant=1..10, ?dark=1
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PROTOTYPE · Logos icon directions</title>
+<style>
+  :root {
+    --bg1: #3C5BD6; --bg2: #6A3FB4;
+    --fg1: #FFFFFF; --fg2: #DCE4FF;
+    --ac1: #FFD27A; --ac2: #FF9F43;
+    --page: #F2F2F7; --text: #111; --muted: #666;
+    --wall1: #A7C4F2; --wall2: #F3C6D9;
+  }
+  body.dark {
+    --bg1: #1C1C22; --bg2: #08080B;
+    --fg1: #B9C8FF; --fg2: #7E8FF0;
+    --ac1: #FFC266; --ac2: #F08A2E;
+    --page: #000; --text: #EEE; --muted: #999;
+    --wall1: #1B2440; --wall2: #3A1E33;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px -apple-system, system-ui, sans-serif; background: var(--page); color: var(--text); padding: 32px 32px 120px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .muted { color: var(--muted); }
+  .stage { display: flex; gap: 48px; align-items: center; justify-content: center; margin: 28px 0; flex-wrap: wrap; }
+  .big svg { width: 360px; height: 360px; display: block; }
+  .phone { width: 300px; height: 420px; border-radius: 44px; padding: 40px 24px; background: linear-gradient(160deg, var(--wall1), var(--wall2));
+           display: grid; grid-template-columns: repeat(4, 60px); gap: 26px 12px; justify-content: center; align-content: start; }
+  .app { text-align: center; font-size: 11px; color: #fff; text-shadow: 0 1px 2px #0006; }
+  .app svg, .app .ph { width: 60px; height: 60px; display: block; margin-bottom: 4px; }
+  .ph { border-radius: 14px; opacity: .9; }
+  .strip { display: flex; gap: 18px; justify-content: center; flex-wrap: wrap; }
+  .strip button { all: unset; cursor: pointer; text-align: center; font-size: 12px; width: 92px; }
+  .strip svg { width: 76px; height: 76px; display: block; margin: 0 auto 6px; border-radius: 18px; outline: 3px solid transparent; outline-offset: 3px; }
+  .strip button[aria-current="true"] svg { outline-color: #0A84FF; }
+  .bar { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: #111; color: #fff; border-radius: 999px;
+         padding: 10px 14px; display: flex; gap: 14px; align-items: center; box-shadow: 0 6px 24px #0005; z-index: 9; }
+  .bar button { all: unset; cursor: pointer; padding: 4px 10px; border-radius: 999px; background: #333; }
+  .bar .label { min-width: 260px; text-align: center; }
+  .state { text-align: center; font: 12px ui-monospace, monospace; }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1024" gradientUnits="userSpaceOnUse">
+      <stop offset="0" style="stop-color: var(--bg1)"/><stop offset="1" style="stop-color: var(--bg2)"/>
+    </linearGradient>
+    <linearGradient id="fg" x1="0" y1="200" x2="0" y2="830" gradientUnits="userSpaceOnUse">
+      <stop offset="0" style="stop-color: var(--fg1)"/><stop offset="1" style="stop-color: var(--fg2)"/>
+    </linearGradient>
+    <linearGradient id="ac" x1="0" y1="200" x2="0" y2="830" gradientUnits="userSpaceOnUse">
+      <stop offset="0" style="stop-color: var(--ac1)"/><stop offset="1" style="stop-color: var(--ac2)"/>
+    </linearGradient>
+    <clipPath id="squircle"><rect width="1024" height="1024" rx="230"/></clipPath>
+    <!-- shared "glass": soft drop shadow + specular rim lit from directly above -->
+    <filter id="glass" x="-20%" y="-20%" width="140%" height="150%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="12" result="blur"/>
+      <feSpecularLighting in="blur" surfaceScale="7" specularConstant="0.8" specularExponent="22" lighting-color="#fff" result="spec">
+        <feDistantLight azimuth="270" elevation="50"/>
+      </feSpecularLighting>
+      <feComposite in="spec" in2="SourceAlpha" operator="in" result="specIn"/>
+      <feGaussianBlur in="SourceAlpha" stdDeviation="18" result="sh"/>
+      <feOffset in="sh" dy="18" result="sho"/>
+      <feFlood flood-color="#000" flood-opacity="0.28"/>
+      <feComposite in2="sho" operator="in" result="shadow"/>
+      <feMerge><feMergeNode in="shadow"/><feMergeNode in="SourceGraphic"/><feMergeNode in="specIn"/></feMerge>
+    </filter>
+  </defs>
+</svg>
+
+<h1>PROTOTYPE · Logos icon directions</h1>
+<div class="muted">Ten ideas in one shared style: same background, white glass plus amber accent glass, same light. Judge the idea, not the polish.</div>
+
+<div class="stage">
+  <div class="big" id="big"></div>
+  <div class="phone" id="phone"></div>
+</div>
+<div class="state" id="state"></div>
+<h3 style="text-align:center">All ten, side by side</h3>
+<div class="strip" id="strip"></div>
+
+<div class="bar">
+  <button id="prev" title="Previous (←)">←</button>
+  <span class="label" id="label"></span>
+  <button id="next" title="Next (→)">→</button>
+  <button id="mode" title="Toggle appearance (D)">Light / Dark</button>
+</div>
+
+<script>
+const S = (d, cls, w = 0) => w
+  ? `<path d="${d}" fill="none" stroke="url(#${cls})" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round"/>`
+  : `<path d="${d}" fill="url(#${cls})"/>`;
+
+const concepts = [
+  { name: "Λ letterform", note: "Capital lambda for λόγος. One bold glass glyph.",
+    art: () => S("M262 790 L512 250 L762 790", "fg", 130) },
+
+  { name: "Speaking λ", note: "Lowercase lambda with sound waves leaving it: the spoken word.",
+    art: () => S("M240 250 Q340 240 390 360 L580 800", "fg", 110) + S("M460 520 L270 800", "fg", 110)
+      + S("M650 330 Q730 420 650 510", "ac", 50) + S("M740 250 Q860 420 740 590", "ac", 50) },
+
+  { name: "Book becomes sound", note: "An open Book whose pages rise into a waveform.",
+    art: () => S("M512 770 Q380 710 220 740 L220 570 Q380 540 512 600 Z", "fg")
+      + S("M512 770 Q644 710 804 740 L804 570 Q644 540 512 600 Z", "fg")
+      + [[352,70],[416,150],[480,250],[544,200],[608,120],[672,60]]
+          .map(([x,h]) => S(`M${x} ${390-h/2} L${x} ${390+h/2}`, "ac", 40)).join("") },
+
+  { name: "Headphones on a Book", note: "Headphones wrapped around an upright Book spine.",
+    art: () => `<rect x="402" y="330" width="220" height="440" rx="30" fill="url(#fg)"/>`
+      + S("M305 600 L305 520 A207 207 0 0 1 719 520 L719 600", "ac", 56)
+      + `<rect x="250" y="560" width="110" height="200" rx="50" fill="url(#ac)"/>`
+      + `<rect x="664" y="560" width="110" height="200" rx="50" fill="url(#ac)"/>` },
+
+  { name: "Speech-bubble Book", note: "A speech bubble that holds an open Book.",
+    art: () => S("M340 260 H684 A120 120 0 0 1 804 380 V560 A120 120 0 0 1 684 680 H450 L300 800 L330 680 A120 120 0 0 1 220 560 V380 A120 120 0 0 1 340 260 Z", "fg")
+      + S("M512 600 Q430 560 330 580 L330 380 Q430 360 512 400 Z", "ac")
+      + S("M512 600 Q594 560 694 580 L694 380 Q594 360 512 400 Z", "ac") },
+
+  { name: "Waveform bookmark", note: "A bookmark ribbon with a waveform running down it: where you left off.",
+    art: () => S("M372 190 H652 V830 L512 720 L372 830 Z", "fg")
+      + [[432,90],[472,200],[512,300],[552,160],[592,80]]
+          .map(([x,h]) => S(`M${x} ${450-h/2} L${x} ${450+h/2}`, "ac", 26)).join("") },
+
+  { name: "Play on a Book", note: "A closed Book cover with a play triangle on it.",
+    art: () => `<rect x="290" y="220" width="460" height="580" rx="44" fill="url(#fg)"/>`
+      + `<rect x="290" y="220" width="80" height="580" rx="40" fill="url(#ac)"/>`
+      + S("M480 390 L650 510 L480 630 Z", "ac", 40) + S("M480 390 L650 510 L480 630 Z", "ac") },
+
+  { name: "Glass monogram", note: "An abstract L from two overlapping glass bars, with a voice dot.",
+    art: () => `<rect x="300" y="240" width="150" height="540" rx="75" fill="url(#fg)" opacity=".9"/>`
+      + `<rect x="300" y="630" width="430" height="150" rx="75" fill="url(#ac)" opacity=".85"/>`
+      + `<circle cx="650" cy="340" r="90" fill="url(#fg)"/>` },
+
+  { name: "Shelf of sound", note: "Book spines on a shelf whose heights form a waveform: an audiobookshelf.",
+    art: () => [[257,220],[345,340],[433,470],[521,300],[609,400],[697,240]]
+          .map(([x,h],i) => `<rect x="${x}" y="${740-h}" width="70" height="${h}" rx="18" fill="url(#${i==2?"ac":"fg"})"/>`).join("")
+      + `<rect x="220" y="750" width="584" height="40" rx="20" fill="url(#ac)"/>` },
+
+  { name: "Quotation mark", note: "An opening quote: someone is speaking. Two glass drops.",
+    art: () => `<circle cx="390" cy="590" r="110" fill="url(#fg)"/>` + S("M292 560 Q290 380 450 300", "fg", 84)
+      + `<circle cx="650" cy="590" r="110" fill="url(#ac)"/>` + S("M552 560 Q550 380 710 300", "ac", 84) },
+];
+
+const icon = c => `<svg viewBox="0 0 1024 1024"><g clip-path="url(#squircle)">
+  <rect width="1024" height="1024" fill="url(#bg)"/><g filter="url(#glass)">${c.art()}</g></g></svg>`;
+
+const params = new URLSearchParams(location.search);
+let i = Math.min(Math.max((parseInt(params.get("variant")) || 1) - 1, 0), concepts.length - 1);
+if (params.get("dark") === "1") document.body.classList.add("dark");
+
+const placeholders = ["#34C759","#FF9500","#5AC8FA","#FF2D55","#AF52DE","#FFCC00","#8E8E93","#007AFF","#30B0C7","#FF3B30","#A2845E"];
+function render() {
+  const c = concepts[i];
+  big.innerHTML = icon(c);
+  phone.innerHTML = placeholders.map((col, k) =>
+    k === 5 ? `<div class="app">${icon(c)}Logos</div>`
+            : `<div class="app"><div class="ph" style="background:${col}"></div>App</div>`).join("");
+  strip.innerHTML = concepts.map((x, k) =>
+    `<button data-k="${k}" aria-current="${k === i}">${icon(x)}${k + 1}. ${x.name}</button>`).join("");
+  label.textContent = `${i + 1} / ${concepts.length} · ${c.name}`;
+  const dark = document.body.classList.contains("dark");
+  state.textContent = `variant=${i + 1}  appearance=${dark ? "dark" : "light"}  ·  ${c.note}`;
+  const p = new URLSearchParams({ variant: i + 1 }); if (dark) p.set("dark", "1");
+  history.replaceState(null, "", "?" + p);
+}
+const go = d => { i = (i + d + concepts.length) % concepts.length; render(); };
+prev.onclick = () => go(-1); next.onclick = () => go(1);
+mode.onclick = () => { document.body.classList.toggle("dark"); render(); };
+strip.onclick = e => { const b = e.target.closest("button"); if (b) { i = +b.dataset.k; render(); } };
+addEventListener("keydown", e => {
+  if (e.target.closest("input, textarea, [contenteditable]")) return;
+  if (e.key === "ArrowLeft") go(-1); else if (e.key === "ArrowRight") go(1);
+  else if (e.key.toLowerCase() === "d") mode.onclick();
+});
+render();
+</script>
+</body>
+</html>
