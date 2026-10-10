@@ -1,6 +1,8 @@
 #!/bin/bash
 # Builds the app and runs every LogosKit unit test on the iOS Simulator, through the shared Logos scheme.
 # Packages resolve only from the checked-in LogosKit/Package.resolved.
+# No simulator diagnostics: any issue (even a runtime warning) triggers a sysdiagnose-like collection
+# that hangs on GitHub's runners until its 600 s timeout.
 #
 # Usage: scripts/test.sh [extra xcodebuild args, e.g. -only-testing:DomainTests]
 # Env:   DEVICE (default "iPhone 18 Pro"), DERIVED_DATA (default .build/DerivedData)
@@ -17,5 +19,6 @@ xcodebuild test \
     -destination "platform=iOS Simulator,name=$DEVICE" \
     -derivedDataPath "$DERIVED_DATA" \
     -disableAutomaticPackageResolution \
+    -collect-test-diagnostics never \
     -quiet \
     "$@"

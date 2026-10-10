@@ -12,14 +12,17 @@ concurrency:
 jobs:
   check:
     name: Format, module graph, build and unit tests
-    runs-on: macos-26
+    # Xcode 27 ships only on the xcode-27 image (a GitHub preview), not on macos-26.
+    runs-on: xcode-27
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
       - name: Select Xcode 27
         run: |
-          xcode=$(ls -d /Applications/Xcode_27*.app | sort -V | tail -1)
+          # Pinned: a glob would pick up betas (the image also has 27.1 and 27.2 betas).
+          xcode=/Applications/Xcode_27.0.app
+          test -d "$xcode" || { echo "::error::$xcode is not installed on this runner"; exit 1; }
           echo "Using $xcode"
           echo "DEVELOPER_DIR=$xcode/Contents/Developer" >> "$GITHUB_ENV"
 
