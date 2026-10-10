@@ -5,24 +5,12 @@ import Foundation
 /// It stops hard there and saves the start of the next Chapter. It survives pauses and interruptions (it's not
 /// touched by them), lives in memory only, and is cleared when another Book loads or the Book is stopped.
 extension Player {
-    /// What the picker offers now: "End of this Chapter", then 2, 3 … Chapters (the one playing counts as the first).
-    public var sleepTimerOptions: [SleepTimer] {
-        guard let book else { return [] }
-        return SleepTimer.options(from: position, in: book.chapters, bookDuration: book.duration)
-    }
-
     /// Sets (or re-picks) the Sleep Timer to stop at the end of the `count`th Chapter from the position, counting the
     /// Chapter playing as the first.
     public func setSleepTimer(chapters count: Int) {
         guard let book, state != .idle,
             let timer = SleepTimer(chapters: count, from: position, in: book.chapters, bookDuration: book.duration)
         else { return }
-        arm(timer)
-    }
-
-    /// +1 Chapter: moves the stop to the end of the next Chapter. Does nothing if it stops in the last Chapter already.
-    public func extendSleepTimer() {
-        guard let book, let timer = sleepTimer?.extended(in: book.chapters, bookDuration: book.duration) else { return }
         arm(timer)
     }
 

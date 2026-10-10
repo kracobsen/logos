@@ -83,27 +83,6 @@ struct SleepTimerTests {
         #expect(!timer.endsBook)
     }
 
-    @Test("The picker offers every Chapter left, from \"End of this Chapter\" to the last")
-    func options() {
-        let options = SleepTimer.options(from: 900, in: chapters, bookDuration: 3600)
-
-        #expect(options.map(\.chapterNumber) == [2, 3, 4])
-        #expect(options.map(\.stopAt) == [1500, 2400, 3600])
-    }
-
-    @Test("+1 Chapter moves the stop to the end of the next Chapter, until there's none")
-    func extended() throws {
-        let timer = try #require(SleepTimer(chapters: 1, from: 900, in: chapters, bookDuration: 3600))
-
-        let plusOne = try #require(timer.extended(in: chapters, bookDuration: 3600))
-
-        #expect(plusOne.chapterNumber == 3)
-        #expect(plusOne.stopAt == 2400)
-        #expect(plusOne.resumeAt == 2400)
-        let last = try #require(plusOne.extended(in: chapters, bookDuration: 3600))
-        #expect(last.extended(in: chapters, bookDuration: 3600) == nil)
-    }
-
     @Test("The projected time to the stop is wall-clock at the playing speed")
     func timeLeft() throws {
         let timer = try #require(SleepTimer(chapters: 2, from: 900, in: chapters, bookDuration: 3600))

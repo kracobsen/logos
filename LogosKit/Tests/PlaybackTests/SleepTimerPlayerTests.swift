@@ -84,24 +84,18 @@ struct SleepTimerPlayerTests {
         #expect(player.state == .playing)
     }
 
-    @Test("+1 Chapter moves the stop a Chapter on; Cancel clears it; re-picking replaces it")
+    @Test("Re-picking replaces the Sleep Timer; Cancel clears it")
     func adjust() async throws {
         let player = try await playing(at: 900)
-        #expect(player.sleepTimerOptions.map(\.chapterNumber) == [2, 3, 4, 5, 6])
 
         player.setSleepTimer(chapters: 1)
-        player.extendSleepTimer()
-        #expect(player.sleepTimer?.stopAt == 1800)
+        player.setSleepTimer(chapters: 3)
+        #expect(player.sleepTimer?.stopAt == 2400)
         fixture.audio.advance(to: 1200.5)
         #expect(player.state == .playing)
 
-        player.setSleepTimer(chapters: 3)
-        #expect(player.sleepTimer?.stopAt == 3000)
-        fixture.audio.advance(to: 1800.5)
-        #expect(player.state == .playing)
-
         player.cancelSleepTimer()
-        fixture.audio.advance(to: 3000.5)
+        fixture.audio.advance(to: 2400.5)
         #expect(player.state == .playing)
         #expect(player.sleepTimer == nil)
     }
@@ -127,7 +121,6 @@ struct SleepTimerPlayerTests {
         let player = fixture.player()
         await player.play(bookID: "plain")
 
-        #expect(player.sleepTimerOptions.count == 1)
         player.setSleepTimer(chapters: 1)
         #expect(player.sleepTimer?.stopAt == 1200)
     }
