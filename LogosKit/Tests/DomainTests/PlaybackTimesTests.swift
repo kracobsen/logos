@@ -35,7 +35,7 @@ struct PlaybackTimesTests {
         #expect(empty.chapterFraction == 0)
     }
 
-    @Test("Left times are wall-clock at the speed; the position and fractions stay in Book time")
+    @Test("Elapsed and left times are wall-clock at the speed; the position and fractions stay in Book time")
     func speedAdjusted() {
         let times = PlaybackTimes(position: 900, chapters: chapters, bookDuration: 3600, speed: 1.5)
 
@@ -44,14 +44,17 @@ struct PlaybackTimesTests {
         #expect(times.chapterLeftAtSpeed == 400)
         #expect(times.bookLeftAtSpeed == 1800)
         #expect(times.chapterElapsed == 300)
+        #expect(times.chapterElapsedAtSpeed == 200)
         #expect(times.position == 900)
         #expect(times.bookFraction == 0.25)
 
         let slow = PlaybackTimes(position: 900, chapters: chapters, bookDuration: 3600, speed: 0.5)
+        #expect(slow.chapterElapsedAtSpeed == 600)
         #expect(slow.chapterLeftAtSpeed == 1200)
         #expect(slow.bookLeftAtSpeed == 5400)
 
         let normal = PlaybackTimes(position: 900, chapters: chapters, bookDuration: 3600)
+        #expect(normal.chapterElapsedAtSpeed == 300)
         #expect(normal.chapterLeftAtSpeed == 600)
         #expect(normal.bookLeftAtSpeed == 2700)
     }

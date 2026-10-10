@@ -7,7 +7,7 @@ import Observation
 ///
 /// The framework observes this `@Observable` object, so the system updates whenever ``show(_:)`` stores a new state.
 /// The spec wants the Chapter name as the title and "Book title · author" as the subtitle, so `BookContent`'s title
-/// and author carry those; the duration and elapsed time are the Chapter's.
+/// and author carry those; the duration and elapsed time are the Chapter's, at the speed.
 @Observable
 public final class SystemNowPlayingCenter: NowPlayingCenter, MediaSessionRepresentable {
     nonisolated public let id = "logos.player"

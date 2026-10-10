@@ -1,8 +1,8 @@
 import Foundation
 
 /// What the player shows for a position: elapsed and left in the current Chapter (for the Chapter-scoped scrubber),
-/// and how far through the whole Book it is. All in Book seconds, except the `…AtSpeed` left times, which are the
-/// wall-clock seconds playing them takes at ``speed``.
+/// and how far through the whole Book it is. All in Book seconds, except the `…AtSpeed` times, which are the
+/// wall-clock seconds playing them takes (or took) at ``speed``.
 public struct PlaybackTimes: Sendable, Hashable {
     /// Held to the Book.
     public let position: Double
@@ -26,6 +26,8 @@ public struct PlaybackTimes: Sendable, Hashable {
     /// 0...1 through the Book.
     public var bookFraction: Double { bookDuration > 0 ? position / bookDuration : 0 }
 
+    /// The real time the Chapter so far takes at ``speed``.
+    public var chapterElapsedAtSpeed: Double { chapterElapsed / speed }
     /// The real time the rest of the Chapter takes at ``speed``.
     public var chapterLeftAtSpeed: Double { chapterLeft / speed }
     /// The real time the rest of the Book takes at ``speed``.

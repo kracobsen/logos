@@ -91,7 +91,7 @@ struct MiniPlayerView: View {
 }
 
 /// The full player sheet: cover, Chapter name, Book title and author; a Chapter-scoped scrubber with elapsed and left;
-/// a thin whole-Book line with "left in Book" (left times are real time at the speed); skip back / Play-Pause / skip
+/// a thin whole-Book line with "left in Book" (the times are real time at the speed); skip back / Play-Pause / skip
 /// forward with the configured intervals; and a row with the Sleep Timer, Chapters and Speed.
 struct PlayerSheet: View {
     let player: Player
@@ -161,9 +161,9 @@ struct PlayerSheet: View {
                 }
             }
             .accessibilityLabel("Position in Chapter")
-            .accessibilityValue(BookDetailModel.clock(times.chapterElapsed))
+            .accessibilityValue(BookDetailModel.clock(times.chapterElapsedAtSpeed))
             HStack {
-                Text(BookDetailModel.clock(times.chapterElapsed))
+                Text(BookDetailModel.clock(times.chapterElapsedAtSpeed))
                 Spacer()
                 Text("-\(BookDetailModel.clock(times.chapterLeftAtSpeed))")
             }

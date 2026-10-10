@@ -40,10 +40,10 @@ struct NowPlayingTests {
         #expect(item.chapterCount == 6)
     }
 
-    @Test("Progress is Chapter-scoped: the Chapter's length, the time into it, and the speed while playing")
+    @Test("Progress is Chapter-scoped and wall-clock at the speed: the Chapter's length and the time into it")
     func chapterScopedProgress() async throws {
         try fixture.addBook("first")
-        try fixture.saveProgress("first", position: 700, at: fixture.clock.now)
+        try fixture.saveProgress("first", position: 750, at: fixture.clock.now)
         let player = fixture.player()
         player.setSpeed(1.5)
         let following = follow(player)
@@ -52,11 +52,13 @@ struct NowPlayingTests {
         await player.play(bookID: "first")
         await fixture.settle()
 
+        // The system shows left as duration − elapsed and runs it at the rate, so both are at the speed and the rate
+        // is 1.
         let state = try #require(center.state)
         #expect(state.item.chapterStart == 600)
-        #expect(state.item.duration == 600)
+        #expect(state.item.duration == 400)
         #expect(state.playback.elapsed == 100)
-        #expect(state.playback.status == .playing(rate: 1.5))
+        #expect(state.playback.status == .playing(rate: 1))
         #expect(state.playback.speed == 1.5)
         #expect(state.playback.date == fixture.clock.now)
 
@@ -230,6 +232,41 @@ struct NowPlayingTests {
         #expect(try fixture.progress("first")?.position == 630)
     }
 
+    @Test("Scrubbing at a speed turns the wall-clock time shown back into Book time")
+    func scrubbingAtSpeed() async throws {
+        try fixture.addBook("first")
+        try fixture.saveProgress("first", position: 700, at: fixture.clock.now)
+        let player = fixture.player()
+        player.setSpeed(1.5)
+        let following = follow(player)
+        defer { following.cancel() }
+        await player.play(bookID: "first")
+        await fixture.settle()
+
+        center.send(.seek(to: 30))
+
+        #expect(player.position == 645)
+    }
+
+    @Test("Playing along at a speed isn't re-sent: the system's wall-clock extrapolation keeps up")
+    func playingAlongAtSpeed() async throws {
+        try fixture.addBook("first")
+        let player = fixture.player()
+        player.setSpeed(2)
+        let following = follow(player)
+        defer { following.cancel() }
+        await player.play(bookID: "first")
+        await fixture.settle()
+        let sent = center.shown.count
+
+        for _ in 0..<4 {
+            fixture.audio.advance(by: 1)
+            await fixture.advance(by: .milliseconds(500))
+        }
+
+        #expect(center.shown.count == sent)
+    }
+
     @Test("The speed menu offers the presets and sets the global speed")
     func speedMenu() async throws {
         try fixture.addBook("first")
@@ -245,7 +282,8 @@ struct NowPlayingTests {
 
         #expect(player.speed == 1.75)
         #expect(fixture.audio.rate == 1.75)
-        #expect(center.state?.playback.status == .playing(rate: 1.75))
+        #expect(center.state?.playback.speed == 1.75)
+        #expect(center.state?.playback.status == .playing(rate: 1))
     }
 
     @Test("Play, pause and play/pause control the player")
