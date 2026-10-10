@@ -127,7 +127,7 @@ struct PlayerSheet: View {
                 bookLine(times)
                 controls
                 HStack(spacing: 12) {
-                    SleepTimerMenu(player: player)
+                    SleepTimerButton(player: player)
                     Button {
                         showsChapters = true
                     } label: {
