@@ -52,13 +52,26 @@ public final class SystemAudioPlayer: AudioPlayer {
         }
     }
 
-    /// Keeps sped-up speech natural. The spec allows `.timeDomain` instead if that sounds better on a device.
-    public static let timePitchAlgorithm = AVAudioTimePitchAlgorithm.spectral
+    /// PROTOTYPE (time-pitch ticket #45): switchable from the speed sheet. Applies to the loaded item at once and to
+    /// every later load.
+    public static var timePitchAlgorithm = AVAudioTimePitchAlgorithm.spectral {
+        didSet { current?.applyAlgorithm() }
+    }
+    /// PROTOTYPE: the live player, so the speed sheet can switch its algorithm.
+    public private(set) static weak var current: SystemAudioPlayer?
+
+    private func applyAlgorithm() {
+        guard let madePlayer, let item = madePlayer.currentItem else { return }
+        item.audioTimePitchAlgorithm = Self.timePitchAlgorithm
+        // Re-seek to the same spot so the new algorithm takes over now rather than after what's already rendered.
+        let now = madePlayer.currentTime()
+        madePlayer.seek(to: now, toleranceBefore: .zero, toleranceAfter: .zero)
+    }
 
     /// The time-pitch algorithm of what's loaded (nil when nothing is).
     public var pitchAlgorithm: AVAudioTimePitchAlgorithm? { madePlayer?.currentItem?.audioTimePitchAlgorithm }
 
-    public init() {}
+    public init() { Self.current = self }
 
     private func setUp(_ player: AVPlayer) {
         player.automaticallyWaitsToMinimizeStalling = false
