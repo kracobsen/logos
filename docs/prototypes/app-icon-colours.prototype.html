@@ -1,0 +1,139 @@
+<!doctype html>
+<!--
+  PROTOTYPE, throwaway. Never merged.
+  Question (wayfinder ticket #49, map #46): which colour palette should the Speaking λ icon use?
+  The motif, geometry and glass are fixed (direction 2 from app-icon-directions.prototype.html); only colour changes.
+  Each palette is shown in its Default (light) and Dark appearance, large and at 60 pt on a home screen.
+  Open in a browser. Switch with the bottom bar, the ← → keys, or by clicking the grid. ?variant=1..8
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PROTOTYPE · Logos icon colours</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px -apple-system, system-ui, sans-serif; background: #F2F2F7; color: #111; padding: 32px 32px 120px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .muted { color: #666; }
+  .stage { display: flex; gap: 32px; align-items: center; justify-content: center; margin: 28px 0 12px; flex-wrap: wrap; }
+  .cap { text-align: center; font-size: 12px; color: #666; margin-top: 8px; }
+  .big svg { width: 280px; height: 280px; display: block; }
+  .phone { width: 210px; height: 300px; border-radius: 36px; padding: 28px 14px;
+           display: grid; grid-template-columns: repeat(3, 60px); gap: 22px 10px; justify-content: center; align-content: start; }
+  .phone.light { background: linear-gradient(160deg, #A7C4F2, #F3C6D9); }
+  .phone.dark { background: linear-gradient(160deg, #1B2440, #3A1E33); }
+  .app { text-align: center; font-size: 11px; color: #fff; text-shadow: 0 1px 2px #0006; }
+  .app svg, .app .ph { width: 60px; height: 60px; display: block; margin-bottom: 4px; }
+  .ph { border-radius: 14px; opacity: .9; }
+  .phone.dark .ph { filter: brightness(.75); }
+  .state { text-align: center; font: 12px ui-monospace, monospace; margin-bottom: 24px; }
+  .grid { display: flex; gap: 22px; justify-content: center; flex-wrap: wrap; }
+  .grid button { all: unset; cursor: pointer; text-align: center; font-size: 12px; width: 150px; padding: 8px; border-radius: 16px; border: 3px solid transparent; }
+  .grid button[aria-current="true"] { border-color: #0A84FF; }
+  .pair { display: flex; gap: 6px; justify-content: center; margin-bottom: 6px; }
+  .pair svg { width: 64px; height: 64px; display: block; }
+  .bar { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: #111; color: #fff; border-radius: 999px;
+         padding: 10px 14px; display: flex; gap: 14px; align-items: center; box-shadow: 0 6px 24px #0005; z-index: 9; }
+  .bar button { all: unset; cursor: pointer; padding: 4px 10px; border-radius: 999px; background: #333; }
+  .bar .label { min-width: 240px; text-align: center; }
+</style>
+</head>
+<body>
+<h1>PROTOTYPE · Logos icon colours (Speaking λ)</h1>
+<div class="muted">Same mark, same glass, eight palettes. Each shown as Default (light) and Dark. λ is the main glass, the waves are the accent glass.</div>
+
+<div class="stage">
+  <div><div class="big" id="bigL"></div><div class="cap">Default</div></div>
+  <div><div class="big" id="bigD"></div><div class="cap">Dark</div></div>
+  <div><div class="phone light" id="phoneL"></div><div class="cap">Home screen, light</div></div>
+  <div><div class="phone dark" id="phoneD"></div><div class="cap">Home screen, dark</div></div>
+</div>
+<div class="state" id="state"></div>
+<div class="grid" id="grid"></div>
+
+<div class="bar">
+  <button id="prev" title="Previous (←)">←</button>
+  <span class="label" id="label"></span>
+  <button id="next" title="Next (→)">→</button>
+</div>
+
+<script>
+// [bg top, bg bottom, λ top, λ bottom, waves top, waves bottom]
+const palettes = [
+  { name: "Indigo & amber", note: "The prototype's palette: violet-blue background, white λ, amber waves.",
+    light: ["#3C5BD6","#6A3FB4","#FFFFFF","#DCE4FF","#FFD27A","#FF9F43"],
+    dark:  ["#1C1C22","#08080B","#B9C8FF","#7E8FF0","#FFC266","#F08A2E"] },
+  { name: "Midnight & gold", note: "Deep navy, white λ, gold waves. Calm, bedtime listening.",
+    light: ["#1F2F66","#0E1A3A","#FFFFFF","#E3E8F5","#FFE08A","#E8B23A"],
+    dark:  ["#15151B","#060608","#C9D3F2","#8E9CCB","#FFD873","#D9A22E"] },
+  { name: "Terracotta (Greek vase)", note: "Red-figure pottery: terracotta ground, near-black λ, cream waves.",
+    light: ["#E0703F","#B0421F","#3A2418","#1E120C","#FFF4E0","#F2D9B6"],
+    dark:  ["#1E1714","#0A0706","#F08A5B","#C9572E","#FFE9C7","#E6C79A"] },
+  { name: "Aegean", note: "Sea blue background, white λ, warm sand waves.",
+    light: ["#2196D9","#0B4F8A","#FFFFFF","#DFF1FF","#FFE6B0","#F5C778"],
+    dark:  ["#121A22","#05080B","#8FD0FF","#4FA3E0","#FFE0A3","#E8B866"] },
+  { name: "Sunset coral", note: "Coral to pink, white λ, pale yellow waves. Warm and friendly.",
+    light: ["#FF8A5B","#E8457C","#FFFFFF","#FFE8EE","#FFF4A8","#FFD866"],
+    dark:  ["#1F1517","#0A0608","#FFA889","#F0668F","#FFF0A0","#F5CE55"] },
+  { name: "Forest & lime", note: "Deep green, cream λ, lime waves.",
+    light: ["#23845F","#0F4D3A","#FFFBEF","#EDE6CF","#D6F77F","#A6DB3A"],
+    dark:  ["#131A17","#050807","#9FE0C0","#5EB892","#D2F57A","#9CCB33"] },
+  { name: "Graphite & orange", note: "Neutral graphite, white λ, vivid orange waves. Close to Apple's System Dark gradient.",
+    light: ["#4A4A50","#1C1C1E","#FFFFFF","#E5E5EA","#FFB340","#FF8A00"],
+    dark:  ["#1A1A1C","#050505","#E5E5EA","#AEAEB2","#FFB340","#FF8A00"] },
+  { name: "Light & indigo", note: "Apple's System Light grey gradient, indigo λ, orange waves. Inverted: coloured mark on a pale ground.",
+    light: ["#FBFBFD","#E3E5EC","#4F6BE8","#5A3FB4","#FFB54A","#FF8A1F"],
+    dark:  ["#1C1C22","#08080B","#9DB0FF","#7A6BF0","#FFC266","#F08A2E"] },
+];
+
+let uid = 0;
+function icon(c) {
+  const id = "i" + (uid++);
+  const grad = (n, a, b, y1, y2) => `<linearGradient id="${id}${n}" x1="0" y1="${y1}" x2="0" y2="${y2}" gradientUnits="userSpaceOnUse">
+    <stop offset="0" stop-color="${a}"/><stop offset="1" stop-color="${b}"/></linearGradient>`;
+  const S = (d, n, w) => `<path d="${d}" fill="none" stroke="url(#${id}${n})" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round"/>`;
+  return `<svg viewBox="0 0 1024 1024"><defs>
+    ${grad("bg", c[0], c[1], 0, 1024)}${grad("fg", c[2], c[3], 200, 830)}${grad("ac", c[4], c[5], 200, 830)}
+    <clipPath id="${id}clip"><rect width="1024" height="1024" rx="230"/></clipPath>
+    <filter id="${id}glass" x="-20%" y="-20%" width="140%" height="150%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="12" result="blur"/>
+      <feSpecularLighting in="blur" surfaceScale="7" specularConstant="0.8" specularExponent="22" lighting-color="#fff" result="spec">
+        <feDistantLight azimuth="270" elevation="50"/></feSpecularLighting>
+      <feComposite in="spec" in2="SourceAlpha" operator="in" result="specIn"/>
+      <feGaussianBlur in="SourceAlpha" stdDeviation="18" result="sh"/><feOffset in="sh" dy="18" result="sho"/>
+      <feFlood flood-color="#000" flood-opacity="0.28"/><feComposite in2="sho" operator="in" result="shadow"/>
+      <feMerge><feMergeNode in="shadow"/><feMergeNode in="SourceGraphic"/><feMergeNode in="specIn"/></feMerge>
+    </filter></defs>
+    <g clip-path="url(#${id}clip)"><rect width="1024" height="1024" fill="url(#${id}bg)"/>
+    <g filter="url(#${id}glass)">
+      ${S("M240 250 Q340 240 390 360 L580 800", "fg", 110)}${S("M460 520 L270 800", "fg", 110)}
+      ${S("M650 330 Q730 420 650 510", "ac", 50)}${S("M740 250 Q860 420 740 590", "ac", 50)}
+    </g></g></svg>`;
+}
+
+const ph = ["#34C759","#FF9500","#5AC8FA","#FF2D55","#AF52DE","#FFCC00","#8E8E93","#007AFF"];
+const phone = c => ph.map((col, k) => k === 4 ? `<div class="app">${icon(c)}Logos</div>`
+  : `<div class="app"><div class="ph" style="background:${col}"></div>App</div>`).join("");
+
+let i = Math.min(Math.max((parseInt(new URLSearchParams(location.search).get("variant")) || 1) - 1, 0), palettes.length - 1);
+function render() {
+  const p = palettes[i];
+  bigL.innerHTML = icon(p.light); bigD.innerHTML = icon(p.dark);
+  phoneL.innerHTML = phone(p.light); phoneD.innerHTML = phone(p.dark);
+  grid.innerHTML = palettes.map((x, k) =>
+    `<button data-k="${k}" aria-current="${k === i}"><div class="pair">${icon(x.light)}${icon(x.dark)}</div>${k + 1}. ${x.name}</button>`).join("");
+  label.textContent = `${i + 1} / ${palettes.length} · ${p.name}`;
+  state.textContent = `variant=${i + 1}  ·  ${p.note}`;
+  history.replaceState(null, "", "?variant=" + (i + 1));
+}
+const go = d => { i = (i + d + palettes.length) % palettes.length; render(); };
+prev.onclick = () => go(-1); next.onclick = () => go(1);
+grid.onclick = e => { const b = e.target.closest("button"); if (b) { i = +b.dataset.k; render(); } };
+addEventListener("keydown", e => {
+  if (e.target.closest("input, textarea, [contenteditable]")) return;
+  if (e.key === "ArrowLeft") go(-1); else if (e.key === "ArrowRight") go(1);
+});
+render();
+</script>
+</body>
+</html>
