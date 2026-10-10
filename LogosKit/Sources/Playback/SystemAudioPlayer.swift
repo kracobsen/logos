@@ -52,8 +52,9 @@ public final class SystemAudioPlayer: AudioPlayer {
         }
     }
 
-    /// Keeps sped-up speech natural. The spec allows `.timeDomain` instead if that sounds better on a device.
-    public static let timePitchAlgorithm = AVAudioTimePitchAlgorithm.spectral
+    /// Keeps sped-up speech natural: `.timeDomain` is Apple's speech algorithm, the one other speech apps use.
+    /// `.spectral` is meant for music and makes speech sound tinny.
+    public static let timePitchAlgorithm = AVAudioTimePitchAlgorithm.timeDomain
 
     /// The time-pitch algorithm of what's loaded (nil when nothing is).
     public var pitchAlgorithm: AVAudioTimePitchAlgorithm? { madePlayer?.currentItem?.audioTimePitchAlgorithm }
