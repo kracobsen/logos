@@ -91,7 +91,7 @@ struct MiniPlayerView: View {
 }
 
 /// The full player sheet: cover, Chapter name, Book title and author; a Chapter-scoped scrubber with elapsed and left;
-/// a thin whole-Book line with "left in Book" (left times are real time at the speed); skip back / Play-Pause / skip
+/// a thin whole-Book line with "left in Book" (the times are real time at the speed); skip back / Play-Pause / skip
 /// forward with the configured intervals; and a row with the Sleep Timer, Chapters and Speed.
 struct PlayerSheet: View {
     let player: Player
@@ -161,9 +161,9 @@ struct PlayerSheet: View {
                 }
             }
             .accessibilityLabel("Position in Chapter")
-            .accessibilityValue(BookDetailModel.clock(times.chapterElapsed))
+            .accessibilityValue(BookDetailModel.clock(times.chapterElapsedAtSpeed))
             HStack {
-                Text(BookDetailModel.clock(times.chapterElapsed))
+                Text(BookDetailModel.clock(times.chapterElapsedAtSpeed))
                 Spacer()
                 Text("-\(BookDetailModel.clock(times.chapterLeftAtSpeed))")
             }
@@ -213,7 +213,8 @@ struct PlayerSheet: View {
     }
 }
 
-/// The loaded Book's Chapters with durations, the current one highlighted; tapping one jumps there.
+/// The loaded Book's Chapters with durations (and the time at the speed), the current one highlighted; tapping one
+/// jumps there.
 struct ChaptersList: View {
     let player: Player
     let chapters: [Chapter]
@@ -233,7 +234,7 @@ struct ChaptersList: View {
                                 .fontWeight(isCurrent ? .semibold : .regular)
                                 .lineLimit(2)
                             Spacer()
-                            Text(BookDetailModel.clock(chapter.duration))
+                            Text(BookDetailModel.chapterLength(chapter.duration, speed: player.speed))
                                 .font(.subheadline.monospacedDigit())
                                 .foregroundStyle(.secondary)
                         }
@@ -258,7 +259,7 @@ struct ChaptersList: View {
     }
 }
 
-/// One of Book detail's Chapters with its duration. When the Book is downloaded, tapping it plays from the Chapter's
+/// One of Book detail's Chapters with its duration (and the time at the speed). When the Book is downloaded, tapping it plays from the Chapter's
 /// start; the Chapter playing is highlighted.
 struct BookChapterRow: View {
     let bookID: String
@@ -288,7 +289,7 @@ struct BookChapterRow: View {
                 .fontWeight(isCurrent ? .semibold : .regular)
                 .lineLimit(2)
             Spacer()
-            Text(BookDetailModel.clock(chapter.duration))
+            Text(BookDetailModel.chapterLength(chapter.duration, speed: player?.speed ?? 1))
                 .font(.subheadline.monospacedDigit())
                 .foregroundStyle(.secondary)
         }

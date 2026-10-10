@@ -1,4 +1,5 @@
 import Domain
+import Playback
 import SwiftUI
 
 /// The In Progress tab: started, unfinished Books, most recently listened first. A row opens the Book's detail; its
@@ -51,9 +52,10 @@ struct InProgressView: View {
     }
 }
 
-/// One In Progress row: title, author and time left, with a thin progress line. Bounded height.
+/// One In Progress row: title, author and time left (and at the speed), with a thin progress line. Bounded height.
 struct InProgressRowView: View {
     let row: InProgressRow
+    @Environment(Player.self) private var player: Player?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -67,7 +69,7 @@ struct InProgressRowView: View {
                 }
                 Spacer(minLength: 8)
                 if row.duration > 0 {
-                    Text(timeLeftText(max(row.duration - row.position, 0)))
+                    Text(timeLeftText(max(row.duration - row.position, 0), speed: player?.speed ?? 1))
                         .monospacedDigit()
                 }
             }
@@ -85,6 +87,7 @@ struct InProgressRowView: View {
 /// A Book's progress, for its detail screen: Not started, how far in and how much is left, or Finished.
 struct BookProgressSection: View {
     let model: BookProgressModel
+    @Environment(Player.self) private var player: Player?
 
     var body: some View {
         Group {
@@ -94,7 +97,8 @@ struct BookProgressSection: View {
             case .inProgress(let fraction, let remaining):
                 VStack(alignment: .leading, spacing: 6) {
                     ProgressView(value: fraction)
-                    Text("\(fraction.formatted(.percent.precision(.fractionLength(0)))) · \(timeLeftText(remaining))")
+                    let percent = fraction.formatted(.percent.precision(.fractionLength(0)))
+                    Text("\(percent) · \(timeLeftText(remaining, speed: player?.speed ?? 1))")
                         .monospacedDigit()
                 }
             case .finished:
@@ -107,9 +111,22 @@ struct BookProgressSection: View {
     }
 }
 
+/// "1 hr, 5 min left (43 min)": the time left with the wall-clock time playing it takes at `speed` in parentheses,
+/// or the time left alone where the speed doesn't change it.
+func timeLeftText(_ seconds: TimeInterval, speed: Double) -> String {
+    let left = timeLeftText(seconds)
+    guard speed > 0, speed.isFinite else { return left }
+    let atSpeed = hoursAndMinutes(seconds / speed)
+    return atSpeed == hoursAndMinutes(seconds) ? left : "\(left) (\(atSpeed))"
+}
+
 /// "1 hr, 5 min left", at 1×.
 func timeLeftText(_ seconds: TimeInterval) -> String {
-    let left = Duration.seconds(seconds.rounded())
+    "\(hoursAndMinutes(seconds)) left"
+}
+
+/// "1 hr, 5 min".
+private func hoursAndMinutes(_ seconds: TimeInterval) -> String {
+    Duration.seconds(seconds.rounded())
         .formatted(.units(allowed: [.hours, .minutes], width: .abbreviated, maximumUnitCount: 2))
-    return "\(left) left"
 }

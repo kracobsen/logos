@@ -98,6 +98,15 @@ public final class BookDetailModel {
         return minutes >= 60 ? "\(minutes / 60) h \(minutes % 60) min" : "\(minutes) min"
     }
 
+    /// A Chapter's length with the wall-clock time playing it takes at `speed` in parentheses: "10:00 (6:40)" at
+    /// 1.5×, or "10:00" alone where the speed doesn't change it.
+    static func chapterLength(_ seconds: Double, speed: Double) -> String {
+        let length = clock(seconds)
+        guard speed > 0, speed.isFinite else { return length }
+        let atSpeed = clock(seconds / speed)
+        return atSpeed == length ? length : "\(length) (\(atSpeed))"
+    }
+
     /// A Chapter's length: "4:05", or "1:02:05" from an hour.
     static func clock(_ seconds: Double) -> String {
         let total = Int(seconds.rounded())

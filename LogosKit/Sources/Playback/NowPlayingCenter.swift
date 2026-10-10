@@ -25,7 +25,7 @@ public struct NowPlayingItem: Sendable, Hashable {
     public var chapterCount: Int
     /// Where the Chapter starts, in Book seconds (a seek command's time is relative to it).
     public var chapterStart: Double
-    /// The Chapter's length, in Book seconds.
+    /// The Chapter's length, in wall-clock seconds at the speed.
     public var duration: Double
     /// The cover file, if the Book has one on disk.
     public var coverURL: URL?
@@ -57,14 +57,15 @@ public struct NowPlayingPlayback: Sendable, Hashable {
         /// The Book's files are loading.
         case loading
         case paused
-        /// Playing at `rate` (the speed).
+        /// Playing, `rate` times as fast as wall-clock time moves `elapsed` (1, as `elapsed` is already at the
+        /// speed).
         case playing(rate: Double)
     }
 
     public var status: Status
-    /// The speed playing runs (or will run) at.
+    /// The speed playing runs (or will run) at, for the speed menu.
     public var speed: Double
-    /// Seconds into the Chapter, in Book time.
+    /// Seconds into the Chapter, in wall-clock seconds at the speed.
     public var elapsed: Double
     /// When `elapsed` was read.
     public var date: Date
@@ -109,7 +110,7 @@ public enum NowPlayingCommand: Sendable, Hashable {
     case skipForward
     case previousTrack
     case nextTrack
-    /// Scrubbing: seconds into the Chapter shown.
+    /// Scrubbing: seconds into the Chapter shown, in its wall-clock seconds at the speed.
     case seek(to: Double)
     case changeSpeed(Double)
 }

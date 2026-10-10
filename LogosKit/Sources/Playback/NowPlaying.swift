@@ -8,6 +8,9 @@ import Store
 ///
 /// It shows the current Chapter of the loaded Book (Chapter-scoped progress and scrubbing), the cover, both skips
 /// with the configured intervals and a speed menu with the presets; nothing about the Sleep Timer.
+///
+/// The system shows time left as duration − elapsed and runs it at the playback rate, so to show wall-clock times at
+/// the speed (as the player does) both are divided by the speed and the rate is 1.
 public final class NowPlaying {
     private let player: Player
     private let center: any NowPlayingCenter
@@ -77,7 +80,8 @@ public final class NowPlaying {
         let chapters = book.chapters
         let index = chapters.index(at: reading.position)
         let chapter = chapters.chapters[index]
-        let times = PlaybackTimes(position: reading.position, chapters: chapters, bookDuration: book.duration)
+        let times = PlaybackTimes(
+            position: reading.position, chapters: chapters, bookDuration: book.duration, speed: reading.speed)
         let item = NowPlayingItem(
             bookID: book.id,
             title: chapter.title,
@@ -85,16 +89,16 @@ public final class NowPlaying {
             chapterNumber: index + 1,
             chapterCount: chapters.count,
             chapterStart: chapter.start,
-            duration: chapter.duration,
+            duration: chapter.duration / times.speed,
             coverURL: coverURL(ofBook: book.id))
         let status: NowPlayingPlayback.Status =
             switch reading.state {
-            case .playing: .playing(rate: reading.speed)
+            case .playing: .playing(rate: 1)
             case .loading: .loading
             case .paused, .idle: .paused
             }
         let playback = NowPlayingPlayback(
-            status: status, speed: reading.speed, elapsed: times.chapterElapsed, date: clock.now)
+            status: status, speed: reading.speed, elapsed: times.chapterElapsedAtSpeed, date: clock.now)
         let controls = NowPlayingControls(
             skipBack: reading.skipBack.seconds, skipForward: reading.skipForward.seconds,
             speeds: PlaybackSpeed.presets)
@@ -110,9 +114,10 @@ public final class NowPlaying {
         case .skipBack, .previousTrack: player.skipBack()
         case .skipForward, .nextTrack: player.skipForward()
         case .seek(let time):
-            // Relative to the Chapter the listener saw when scrubbing.
-            guard let item = shown?.item, player.book?.id == item.bookID else { return }
-            player.seek(to: item.chapterStart + min(max(time, 0), item.duration))
+            // Relative to the Chapter the listener saw when scrubbing, in wall-clock seconds at the speed shown.
+            guard let shown, player.book?.id == shown.item.bookID else { return }
+            let speed = shown.playback.speed
+            player.seek(to: shown.item.chapterStart + min(max(time, 0), shown.item.duration) * speed)
         case .changeSpeed(let speed): player.setSpeed(speed)
         }
     }
