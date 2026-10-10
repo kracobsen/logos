@@ -213,7 +213,8 @@ struct PlayerSheet: View {
     }
 }
 
-/// The loaded Book's Chapters with durations, the current one highlighted; tapping one jumps there.
+/// The loaded Book's Chapters with durations (and the time at the speed), the current one highlighted; tapping one
+/// jumps there.
 struct ChaptersList: View {
     let player: Player
     let chapters: [Chapter]
@@ -233,7 +234,7 @@ struct ChaptersList: View {
                                 .fontWeight(isCurrent ? .semibold : .regular)
                                 .lineLimit(2)
                             Spacer()
-                            Text(BookDetailModel.clock(chapter.duration))
+                            Text(BookDetailModel.chapterLength(chapter.duration, speed: player.speed))
                                 .font(.subheadline.monospacedDigit())
                                 .foregroundStyle(.secondary)
                         }
@@ -258,7 +259,7 @@ struct ChaptersList: View {
     }
 }
 
-/// One of Book detail's Chapters with its duration. When the Book is downloaded, tapping it plays from the Chapter's
+/// One of Book detail's Chapters with its duration (and the time at the speed). When the Book is downloaded, tapping it plays from the Chapter's
 /// start; the Chapter playing is highlighted.
 struct BookChapterRow: View {
     let bookID: String
@@ -288,7 +289,7 @@ struct BookChapterRow: View {
                 .fontWeight(isCurrent ? .semibold : .regular)
                 .lineLimit(2)
             Spacer()
-            Text(BookDetailModel.clock(chapter.duration))
+            Text(BookDetailModel.chapterLength(chapter.duration, speed: player?.speed ?? 1))
                 .font(.subheadline.monospacedDigit())
                 .foregroundStyle(.secondary)
         }
