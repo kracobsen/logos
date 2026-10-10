@@ -97,6 +97,7 @@ struct PlayerSheet: View {
     let player: Player
     @State private var scrubbing: Double?
     @State private var showsChapters = false
+    @State private var prototypeSleep = PrototypeSleepModel()  // PROTOTYPE
 
     var body: some View {
         if let book = player.book {
@@ -126,19 +127,26 @@ struct PlayerSheet: View {
                 scrubber(times)
                 bookLine(times)
                 controls
-                HStack(spacing: 12) {
-                    SleepTimerMenu(player: player)
-                    Button {
-                        showsChapters = true
-                    } label: {
-                        Label("Chapters", systemImage: "list.bullet")
+                if prototypeSleep.inlineOpen {  // PROTOTYPE: A4
+                    PrototypeInlineRow(model: prototypeSleep)
+                        .transition(.blurReplace)
+                } else {
+                    HStack(spacing: 12) {
+                        PrototypeSleepTimerButton(model: prototypeSleep)  // PROTOTYPE: was SleepTimerMenu
+                        Button {
+                            showsChapters = true
+                        } label: {
+                            Label("Chapters", systemImage: "list.bullet")
+                        }
+                        SpeedButton(player: player)
                     }
-                    SpeedButton(player: player)
+                    .buttonStyle(.bordered)
+                    .transition(.blurReplace)
                 }
-                .buttonStyle(.bordered)
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 24)
+            .overlay(alignment: .bottom) { PrototypeSleepSwitcher(model: prototypeSleep) }  // PROTOTYPE
             .sheet(isPresented: $showsChapters) {
                 ChaptersList(player: player, chapters: book.chapters.chapters) { showsChapters = false }
             }
