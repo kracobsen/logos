@@ -2,22 +2,6 @@ import Domain
 import Playback
 import SwiftUI
 
-/// How a Sleep Timer choice reads: "End of this Chapter" or "3 Chapters", and the projected stop ("Stops at end of
-/// Chapter 7 · ~42 min", wall-clock at the playing speed).
-struct SleepTimerText: Hashable {
-    /// How many Chapters from now, the one playing counting as the first.
-    let count: Int
-    let title: String
-    let projection: String
-
-    init(timer: SleepTimer, position: Double, chapters: ChapterList, rate: Float) {
-        count = timer.chapterIndex - chapters.index(at: position) + 1
-        title = count <= 1 ? "End of this Chapter" : "\(count) Chapters"
-        let left = BookDetailModel.duration(timer.timeLeft(from: position, rate: rate))
-        projection = "Stops at end of Chapter \(timer.chapterNumber) · ~\(left)"
-    }
-}
-
 /// The player sheet's Sleep Timer button: "Sleep Timer" unset, the stop Chapter set. Opens the Sleep Timer sheet.
 struct SleepTimerButton: View {
     let player: Player
@@ -57,48 +41,49 @@ struct SleepTimerSheet: View {
     let player: Player
     let book: BookDetail
     let done: () -> Void
-    @State private var count: Int
+    /// The stop Chapter's index, so the stop stays put when the next Chapter starts.
+    @State private var stop: Int
 
     init(player: Player, book: BookDetail, done: @escaping () -> Void) {
         self.player = player
         self.book = book
         self.done = done
-        _count = State(
-            initialValue: SleepTimerPicker.startingCount(
+        _stop = State(
+            initialValue: SleepTimerChoice.startingStop(
                 for: player.sleepTimer, position: player.position, chapters: book.chapters))
     }
 
     var body: some View {
-        let picker = SleepTimerPicker(
-            count: count, position: player.position, chapters: book.chapters, bookDuration: book.duration,
+        let choice = SleepTimerChoice(
+            stopIndex: stop, position: player.position, chapters: book.chapters, bookDuration: book.duration,
             rate: player.rate)
         VStack(spacing: 16) {
             Text("Sleep Timer")
                 .font(.headline)
                 .padding(.top, 20)
-            strip(picker)
+            strip(choice)
             VStack(spacing: 2) {
-                Text(picker.stopTitle)
+                Text(choice.stopTitle)
                     .font(.title3.bold())
                     .lineLimit(1)
-                Text(picker.text.projection)
+                Text(choice.text.projection)
                     .font(.callout.monospacedDigit())
                     .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
             }
-            .accessibilityHidden(true)
-            stepper(picker)
-            actions(picker)
+            stepper(choice)
+            actions(choice)
         }
         .padding(.horizontal, 24)
     }
 
-    private func strip(_ picker: SleepTimerPicker) -> some View {
+    private func strip(_ choice: SleepTimerChoice) -> some View {
         let chapters = book.chapters.chapters
         return ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(alignment: .bottom, spacing: 3) {
                     ForEach(chapters.indices, id: \.self) { index in
-                        bar(index, chapter: chapters[index], picker: picker)
+                        bar(index, chapter: chapters[index], choice: choice)
                             .id(index)
                     }
                 }
@@ -106,8 +91,8 @@ struct SleepTimerSheet: View {
             }
             .frame(height: 64)
             .padding(.horizontal, -24)
-            .onChange(of: picker.stopIndex, initial: true) {
-                withAnimation { proxy.scrollTo(picker.stopIndex, anchor: .center) }
+            .onChange(of: choice.stopIndex, initial: true) {
+                withAnimation { proxy.scrollTo(choice.stopIndex, anchor: .center) }
             }
         }
         .accessibilityHidden(true)
@@ -115,8 +100,8 @@ struct SleepTimerSheet: View {
 
     /// One Chapter: as wide as it is long (a minute a point, at least 6 so short ones stay tappable), faded once
     /// played, in the accent colour from the one playing to the stop, and marked with a moon at the stop.
-    private func bar(_ index: Int, chapter: Chapter, picker: SleepTimerPicker) -> some View {
-        let role = picker.role(of: index)
+    private func bar(_ index: Int, chapter: Chapter, choice: SleepTimerChoice) -> some View {
+        let role = choice.role(of: index)
         let color: Color =
             switch role {
             case .played: .secondary.opacity(0.25)
@@ -127,44 +112,44 @@ struct SleepTimerSheet: View {
             Image(systemName: "moon.zzz.fill")
                 .font(.caption2)
                 .foregroundStyle(Color.accentColor)
-                .opacity(index == picker.stopIndex ? 1 : 0)
+                .opacity(index == choice.stopIndex ? 1 : 0)
             RoundedRectangle(cornerRadius: 3)
                 .fill(color)
                 .frame(width: max(6, chapter.duration / 60), height: role == .playing ? 30 : 22)
         }
         .contentShape(.rect)
         .onTapGesture {
-            if let stop = picker.countStopping(at: index) { count = stop }
+            if let tapped = choice.stopIndex(tapping: index) { stop = tapped }
         }
-        .animation(.snappy, value: picker.stopIndex)
+        .animation(.snappy, value: choice.stopIndex)
     }
 
     /// The big count between − and +; one adjustable element for VoiceOver in place of the buttons.
-    private func stepper(_ picker: SleepTimerPicker) -> some View {
+    private func stepper(_ choice: SleepTimerChoice) -> some View {
         HStack(spacing: 28) {
-            stepButton("minus", enabled: picker.canDecrease) { count = picker.stepped(by: -1) }
+            stepButton("minus", enabled: choice.canDecrease) { stop = choice.stepped(by: -1) }
             VStack(spacing: 2) {
-                Text("\(picker.count)")
+                Text("\(choice.count)")
                     .font(.system(size: 40, weight: .semibold, design: .rounded).monospacedDigit())
-                    .contentTransition(.numericText(value: Double(picker.count)))
-                Text(picker.count <= 1 ? "End of this Chapter" : "Chapters")
+                    .contentTransition(.numericText(value: Double(choice.count)))
+                Text(choice.count <= 1 ? "End of this Chapter" : "Chapters")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
             .frame(minWidth: 140)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Chapters")
-            .accessibilityValue(picker.accessibilityValue)
+            .accessibilityValue(choice.accessibilityValue)
             .accessibilityAdjustableAction { direction in
                 switch direction {
-                case .increment: count = picker.stepped(by: 1)
-                case .decrement: count = picker.stepped(by: -1)
+                case .increment: stop = choice.stepped(by: 1)
+                case .decrement: stop = choice.stepped(by: -1)
                 @unknown default: break
                 }
             }
-            stepButton("plus", enabled: picker.canIncrease) { count = picker.stepped(by: 1) }
+            stepButton("plus", enabled: choice.canIncrease) { stop = choice.stepped(by: 1) }
         }
-        .animation(.snappy, value: picker.count)
+        .animation(.snappy, value: choice.count)
     }
 
     private func stepButton(_ symbol: String, enabled: Bool, action: @escaping () -> Void) -> some View {
@@ -179,10 +164,10 @@ struct SleepTimerSheet: View {
         .accessibilityHidden(true)
     }
 
-    private func actions(_ picker: SleepTimerPicker) -> some View {
+    private func actions(_ choice: SleepTimerChoice) -> some View {
         VStack(spacing: 8) {
             Button {
-                player.setSleepTimer(chapters: picker.count)
+                player.setSleepTimer(chapters: choice.count)
                 done()
             } label: {
                 Text(player.sleepTimer == nil ? "Start" : "Update")
