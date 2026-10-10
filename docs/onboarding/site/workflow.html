@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Working in the repo · Logos onboarding</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<nav class="sidebar">
+<a class="brand" href="index.html"><span class="lambda">λ</span> Logos onboarding</a>
+<ul><li><a href="index.html">Start here</a></li><li><a href="primer.html">iOS &amp; Swift primer</a></li><li><a href="architecture.html">Architecture</a></li><li><a href="workflow.html" class="current">Working in the repo</a></li><li><a href="app.html">App target &amp; tooling</a></li><li><a href="domain.html">Domain</a></li><li><a href="serverapi.html">ServerAPI</a></li><li><a href="store.html">Store</a></li><li><a href="sync.html">Sync</a></li><li><a href="downloads.html">Downloads</a></li><li><a href="playback.html">Playback</a></li><li><a href="ui-shell.html">UI: shell &amp; browsing</a></li><li><a href="ui-player.html">UI: book, player &amp; downloads</a></li><li><a href="tests.html">Tests</a></li><li><a href="glossary.html">Glossary</a></li></ul>
+<div class="toc"><div class="toc-label">On this page</div><ul><li><a href="#setup">Getting set up</a></li><li><a href="#checks">The three checks CI runs</a></li><li><a href="#tests">Unit tests</a></li><li><a href="#integration-tests">Integration tests (against a real Server)</a></li><li><a href="#ui-tests">UI tests, test launches and performance tests</a></li><li><a href="#prs">Pull requests</a></li><li><a href="#house-rules">House rules, collected</a></li></ul></div>
+</nav>
+<main>
+<header class="page-head">
+<h1>Working in the repo</h1>
+<p class="subtitle">Setup, the checks CI runs, the kinds of tests and when to run each, and the rules a pull request
+has to meet.</p>
+</header>
+<div class="chapter">
+
+<h2 id="setup">Getting set up</h2>
+<ol>
+<li>Install an Xcode that ships the <strong>iOS 27 SDK</strong> and open it once so it can install its components.
+If <code>xcode-select -p</code> prints a CommandLineTools path, either run
+<code>sudo xcode-select -s /Applications/Xcode.app</code> or prefix Xcode commands with
+<code>DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer</code>. The scripts set it for you.</li>
+<li>Open <code>Logos.xcodeproj</code>, pick the <code>Logos</code> scheme and an iPhone simulator, and press
+<kbd>⌘R</kbd>. You don't need to configure anything to run in the Simulator. Xcode resolves GRDB from the checked-in
+<code>LogosKit/Package.resolved</code>.</li>
+<li>To run on a real iPhone, copy <code>Config/Local.xcconfig.template</code> to <code>Config/Local.xcconfig</code>
+(it is git-ignored) and fill in your own team ID and bundle-ID prefix. The README walks through Developer Mode and
+trusting the certificate. Never put signing settings in the project file.</li>
+<li>To sign in you need an audiobookshelf Server over <strong>HTTPS</strong>, because normal builds refuse plain
+HTTP. To try things locally without one, run <code>scripts/integration-test.sh --serve</code> (needs Docker). It
+starts a throwaway Server on <code>127.0.0.1</code> and prints its address. Debug builds launched with
+<code>LOGOS_TEST_LAUNCH=signedOut</code> are allowed to sign in to it over plain HTTP. See
+<a class="xref" href="app.html#f-logos-testlaunch-swift"><code>TestLaunch.swift</code></a>.</li>
+<li>Install Docker only if you will run the integration or UI smoke tests.</li>
+</ol>
+<aside class="box box-ios"><div class="box-label">iOS &amp; Swift</div><p>Where to find things in Xcode: the
+<em>Project navigator</em> (⌘1) shows files; <code>LogosKit</code> shows up there as a package, and you can open any
+module's sources from it. <em>Product › Test</em> (⌘U) runs the scheme's tests; the diamond next to a
+<code>@Test</code> runs just that one. ⌘-click a symbol to jump to its definition; ⌥-click shows its doc
+comment.</p></aside>
+
+<h2 id="checks">The three checks CI runs</h2>
+<p><code>.github/workflows/ci.yml</code> runs these on every pull request and on every push to <code>main</code>. Run
+them yourself before pushing:</p>
+<table>
+<tr><th>Command</th><th>What it checks</th><th>If it fails</th></tr>
+<tr><td><code>scripts/format.sh</code></td><td>swift-format lint in strict mode, with the repo's
+<code>.swift-format</code> (4-space indent, 120 columns, ordered imports).</td><td><code>scripts/format.sh --fix</code>
+rewrites the files.</td></tr>
+<tr><td><code>scripts/check-module-graph.sh</code></td><td>That <code>Package.swift</code> declares exactly the allowed
+module edges, that no file <code>import</code>s a module it may not, and that GRDB is the only third-party
+dependency.</td><td>Remove the import, or follow the procedure for changing an edge (<a class="xref" href="architecture.html#module-graph">The module graph</a>).</td></tr>
+<tr><td><code>scripts/test.sh</code></td><td>Builds the app and runs every LogosKit unit test on a simulator
+(<code>DEVICE</code>, default <code>iPhone 18 Pro</code>).</td><td>Narrow with
+<code>scripts/test.sh -only-testing:StoreTests</code> or
+<code>-only-testing:StoreTests/SomeSuite/someTest</code>.</td></tr>
+</table>
+<p>Warnings are errors everywhere, so "it builds" also means "it builds with no warnings".</p>
+
+<h2 id="tests">Unit tests</h2>
+<p>Each module has a test target named <code>&lt;Module&gt;Tests</code> in <code>LogosKit/Tests/</code>, written with
+Swift Testing. They are fast and run without a network. The main techniques, all shown on the
+<a href="tests.html">Tests</a> page:</p>
+<ul>
+<li><strong>A real database in a temporary directory.</strong> Tests open <code>AppDatabase</code> on a fresh file
+instead of mocking the Store, so the SQL and migrations are tested too.</li>
+<li><strong><code>TestClock</code></strong> instead of real time. Code in Sync, Downloads and Playback gets the time
+and sleeps only through the injected <code>Clock</code>, so a test can say "advance 10 minutes" and check that a
+<a class="term" href="glossary.html#term-listening-session">Listening session</a> ended, without waiting.</li>
+<li><strong>Fakes for every outside system</strong>: <code>FakeServer</code> (an in-memory audiobookshelf),
+<code>FakeFileTransfers</code>, <code>FakeAudioPlayer</code>, <code>FakeAudioSession</code>,
+<code>FakeNowPlayingCenter</code>, <code>InMemoryTokenStore</code>. They live in the module's own sources, next to
+the real implementation, so tests in other modules and the test launches can use them too.</li>
+<li><strong>Recorded server JSON</strong> in <code>Tests/ServerAPITests/Payloads/</code>, to check decoding against
+what audiobookshelf really sends.</li>
+</ul>
+
+<h2 id="integration-tests">Integration tests (against a real Server)</h2>
+<p><code>scripts/integration-test.sh</code> runs the <code>IntegrationTests</code> target against a real
+audiobookshelf. Here is what it does:</p>
+<ol>
+<li>Generates a small fixture Library of audio files (<code>scripts/integration/make-fixture-library.sh</code>).</li>
+<li>Starts audiobookshelf 2.37.1, pinned by image digest, in Docker on a free loopback port, with no persistent
+volume.</li>
+<li>Seeds it with an admin <code>root</code>/<code>rootpass</code>, a user <code>listener</code>/<code>listenerpass</code>
+and one book Library called "Fixtures".</li>
+<li>Runs the tests, <strong>fails if any test was skipped</strong>, and removes everything afterwards.</li>
+</ol>
+<aside class="box box-rule"><div class="box-label">House rule</div><p>Never point integration tests at a real Server.
+<code>IntegrationServer.current()</code> refuses any address that is not loopback. The credentials above belong only to
+the throwaway container. CI does not run these tests (it has no Docker), so <strong>a PR that touches ServerAPI or
+Sync attaches the integration test result</strong> in its description.</p></aside>
+<p>Without the harness running, the integration tests <em>skip</em> rather than fail. That is why
+<code>IntegrationTests</code> is outside the <code>Logos</code> scheme and <code>scripts/test.sh</code> doesn't run
+it. Pass xcodebuild arguments through to narrow it, e.g.
+<code>scripts/integration-test.sh -only-testing:IntegrationTests/HarnessTests</code>.</p>
+
+<h2 id="ui-tests">UI tests, test launches and performance tests</h2>
+<p><code>LogosUITests/</code> holds XCUITest tests that launch the real app:</p>
+<ul>
+<li><strong>The smoke test</strong> (<code>SmokeTests</code>, scheme <code>LogosUITests</code>): sign in, browse,
+download, play, against the Docker Server. Run it with <code>scripts/integration-test.sh --ui</code>.
+<code>KEEP_RESULTS=&lt;dir&gt;</code> keeps the <code>.xcresult</code> bundle so you can look at screenshots and
+logs.</li>
+<li><strong>Performance tests</strong> (<code>*PerformanceTests</code>, scheme <code>LogosPerformance</code>, the
+<em>Performance</em> configuration). They measure the budgets on a physical iPhone 15 Pro. Simulator numbers don't
+count. The procedure is in <code>docs/performance-budgets.md</code>, and <code>scripts/perf-results.sh</code> prints
+the medians from a result bundle.</li>
+</ul>
+<p>Both rely on <strong>test launches</strong>. Builds compiled with the <code>LOGOS_TEST_LAUNCH</code> condition
+(Debug and Performance, <em>never</em> Release) read the <code>LOGOS_TEST_LAUNCH</code> environment variable at
+launch:</p>
+<ul>
+<li><code>signedOut</code>: fresh empty data on every launch, and plain HTTP allowed to a loopback Server.</li>
+<li><code>library940</code> / <code>library3000</code>: already signed in to an offline <code>FakeServer</code> holding
+a generated <code>FixtureLibrary</code> of that many Books, with covers, progress and a few downloaded Books with real
+(silent) audio.</li>
+</ul>
+<p>UI tests find elements by what the listener sees, such as button labels and tab titles, not by internal
+identifiers. That way the tests keep passing when the layout changes.</p>
+
+<h2 id="prs">Pull requests</h2>
+<p>Work is tracked in GitHub Issues on <code>kracobsen/logos</code>. Larger features usually start as a spec issue
+(look for <code>spec-NN</code> branch names). Before you open a PR, check the following:</p>
+<ul>
+<li>The three CI checks pass locally.</li>
+<li>New behaviour has tests in the right module's test target.</li>
+<li>If the PR <strong>touches ServerAPI or Sync</strong>, attach the result of <code>scripts/integration-test.sh</code>.</li>
+<li>If the PR <strong>touches a budgeted path</strong> (launch, scrolling, search, sort, play, seek, sync…), record
+iPhone measurements next to the budget in the description. A breach blocks the merge unless the PR also changes
+<code>docs/performance-budgets.md</code> with a written reason.</li>
+<li>If the PR <strong>touches device-only behaviour</strong>, the description must include a manual checklist that the
+human signs off before merge. Device-only behaviour means interruptions and audio routes, the lock screen and
+Control Center, background Downloads and surviving a reboot, listening at 1×, 2× and 3×, battery, and
+smoothness.</li>
+<li>If the PR <strong>adds a dependency</strong>, it also adds an ADR in <code>docs/adr/</code>. Only GRDB and Apple
+frameworks are allowed today.</li>
+<li>If the PR <strong>changes the module graph</strong>, it changes <code>Package.swift</code>,
+<code>scripts/check-module-graph.sh</code> and the table in <code>CLAUDE.md</code> together.</li>
+<li>If the PR introduces <strong>new domain words</strong>, it updates <code>GLOSSARY.md</code>. If it makes an
+architectural decision worth remembering, it adds an ADR.</li>
+</ul>
+
+<h2 id="house-rules">House rules, collected</h2>
+<p>These are spread across <code>CLAUDE.md</code>, the ADR and the budgets document. Here they are in one place:</p>
+<table>
+<tr><th>Rule</th><th>Why</th></tr>
+<tr><td>Build settings live only in <code>Config/*.xcconfig</code>. Structural changes (targets, dependencies) happen
+only in <code>LogosKit/Package.swift</code>. Never edit either through the project file.</td><td>Project files are
+hard to review and merge. Text configs and a Swift manifest are easy to read in a diff.</td></tr>
+<tr><td>Respect the module graph. In particular, Playback never imports ServerAPI, only Store imports GRDB, and
+nothing depends on UI.</td><td>See <a class="xref" href="architecture.html#module-graph">The module graph</a>.</td></tr>
+<tr><td>Sync, Downloads and Playback write to the database and never call into the UI. The UI observes the
+database.</td><td>ADR 0001, see <a class="xref" href="architecture.html#single-source-of-truth">The database is the single source of truth</a>.</td></tr>
+<tr><td>Never call <code>Date()</code> or <code>Task.sleep</code> in Sync, Downloads or Playback. Use the injected
+<code>Clock</code>.</td><td>Makes time-based behaviour testable with <code>TestClock</code>.</td></tr>
+<tr><td>Log through <code>Diagnostics.logger(_:)</code>, with each module's own <code>log</code> and
+<code>LogCategory</code>.</td><td>One consistent place to filter logs in Console.app.</td></tr>
+<tr><td>Mark budgeted paths with <code>Signposts</code>. A new budget gets a new <code>BudgetedPath</code>
+case.</td><td>Performance tests and Instruments measure exactly those intervals.</td></tr>
+<tr><td>Nothing on the launch path touches the network or runs the file check.</td><td>The cold-launch budget is
+400 ms.</td></tr>
+<tr><td>Persistence wins over performance when the two conflict.</td><td>Losing a listener's place is worse than being
+slow.</td></tr>
+<tr><td>The database is never deleted automatically, even if it fails to open.</td><td>The app shows an error screen
+and keeps the file (<a class="xref" href="app.html#f-logos-logosapp-swift"><code>LogosApp.swift</code></a>).</td></tr>
+<tr><td>Use the glossary's words in code, comments, tests and UI text.</td><td>One name per idea.</td></tr>
+</table>
+</div>
+
+<footer>Generated by <code>docs/onboarding/build.py</code> from the repository as it is. Edit the chapters and notes in
+<code>docs/onboarding/</code>, never the generated pages.</footer>
+</main>
+</body>
+</html>

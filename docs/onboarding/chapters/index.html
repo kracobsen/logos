@@ -1,0 +1,91 @@
+<!-- 10 | Start here -->
+<header class="page-head">
+<h1>Welcome to Logos</h1>
+<p class="subtitle">An onboarding guide to the code: what the app does, how it is built, and why it is built that way.</p>
+</header>
+<div class="chapter">
+
+<h2 id="what-is-logos">What Logos is</h2>
+<p>Logos is a personal iPhone app for listening to audiobooks from an
+<a href="https://www.audiobookshelf.org">audiobookshelf</a> server. audiobookshelf is open-source software you run
+yourself (at home or on a small cloud machine). It holds your audiobook files and remembers how far you have got in
+each one. Logos is a <em>client</em> for it: it signs in to the server, shows its book list, downloads whole books to
+the phone, and plays them.</p>
+<p>A few product decisions shape almost all of the code, so keep them in mind as you read:</p>
+<ul>
+<li><strong>It plays only from downloads.</strong> Logos never streams audio over the network. A
+[[term:Book]] must be fully downloaded and checked before it can be played. That is why the playback code
+(the <code>Playback</code> module) is not even <em>allowed</em> to talk to the network.</li>
+<li><strong>One server, one library, one user.</strong> At sign-in you choose a single [[term:Library]] and the app
+works with that. There is no account switching.</li>
+<li><strong>Nothing is lost if the app is killed.</strong> Everything the screen shows is already saved on disk, in a
+local SQLite database. Listening progress made offline is kept in an [[term:Outbox]] and sent to the server
+later.</li>
+<li><strong>It must be fast on a big library.</strong> There are written performance budgets (for example, a cold
+launch with 3000 books must show the library in under 400 ms). See [[#performance]].</li>
+<li><strong>iOS 27, iPhone only, Swift 6.</strong> The code uses the newest language and frameworks without
+compatibility layers for older iOS versions.</li>
+</ul>
+
+<h2 id="reading-guide">How to read this guide</h2>
+<p>The guide has three parts. Read the first two from start to finish. Use the third as a reference.</p>
+<ol>
+<li><strong>Background.</strong> The <a href="primer.html">iOS &amp; Swift primer</a> explains the platform ideas the
+code depends on (SwiftUI, <code>@Observable</code>, async/await, actors, Swift packages, background downloads,
+AVFoundation, GRDB). If you have built an iOS app before, skim it.</li>
+<li><strong>The big picture.</strong> <a href="architecture.html">Architecture</a> explains the modules, the rules
+between them, where state lives, and follows the main user journeys (sign in, sync, download, play, sign out)
+through the code. <a href="workflow.html">Working in the repo</a> covers setup, checks, tests, pull requests and the
+house rules.</li>
+<li><strong>Annotated source.</strong> One page per module. Each page shows <em>every</em> source file with notes in
+the left column next to the code. The code is read straight from the repository each time the guide is built, so it
+is always the current code. Blue boxes explain an iOS or Swift idea the first time it shows up. Orange boxes explain
+<em>why</em> something is done the way it is. Red boxes are house rules.</li>
+</ol>
+<p>A suggested order for the annotated pages follows the dependency graph from the bottom up:</p>
+<div class="card-grid">
+<div class="card"><h4><a href="app.html">App target &amp; tooling</a></h4><p>Where everything is created and wired
+together, plus the build settings and scripts.</p></div>
+<div class="card"><h4><a href="domain.html">Domain</a></h4><p>Plain data types and rules (what a Book, Chapter or
+Finished rule is). No dependencies.</p></div>
+<div class="card"><h4><a href="serverapi.html">ServerAPI</a></h4><p>Talking HTTP to audiobookshelf: requests,
+sign-in tokens, file transfers, and a fake server for tests.</p></div>
+<div class="card"><h4><a href="store.html">Store</a></h4><p>The SQLite database (via GRDB): schema, migrations,
+reads and writes. The single source of truth.</p></div>
+<div class="card"><h4><a href="sync.html">Sync</a></h4><p>Sign-in and keeping the local database in step with the
+server, both ways.</p></div>
+<div class="card"><h4><a href="downloads.html">Downloads</a></h4><p>Getting whole Books onto the phone, in the
+background, and checking them.</p></div>
+<div class="card"><h4><a href="playback.html">Playback</a></h4><p>The audio player, lock screen controls, Sleep
+Timer, listening sessions.</p></div>
+<div class="card"><h4><a href="ui-shell.html">UI: shell &amp; browsing</a></h4><p>SwiftUI screens: launch, sign-in,
+tabs, Library, In Progress, Series, Settings.</p></div>
+<div class="card"><h4><a href="ui-player.html">UI: book, player &amp; downloads</a></h4><p>Book detail, the player
+sheet, the Downloads tab.</p></div>
+<div class="card"><h4><a href="tests.html">Tests</a></h4><p>How the code is tested, with annotated examples of
+each kind of test.</p></div>
+</div>
+
+<h2 id="words">Words matter here</h2>
+<p>The project keeps a strict shared vocabulary in <code>GLOSSARY.md</code>, shown in this guide as the
+<a href="glossary.html">Glossary</a>. A capitalised word in a comment or doc, like <em>Book</em>, <em>Download</em>,
+<em>Finished</em> or <em>Series</em>, means exactly what the glossary says. The code avoids synonyms: it says "Book",
+never "item" or "title", even though the audiobookshelf API calls them "library items". When you see a capitalised
+term in the notes, it links to its definition.</p>
+
+<h2 id="map">The repository at a glance</h2>
+<pre>logos/
+├── Logos.xcodeproj/        the Xcode project: a thin app target only (no build settings in here)
+├── Logos/                  the app target's code: @main, the composition root, test launches
+├── LogosKit/               a local Swift package with every module
+│   ├── Package.swift       the module graph is declared here
+│   ├── Sources/Domain …UI  the seven modules
+│   └── Tests/              one unit-test target per module, plus IntegrationTests
+├── LogosUITests/           XCUITest: smoke test and performance tests
+├── Config/                 all build settings (*.xcconfig), Info.plist, entitlements
+├── scripts/                format, module-graph check, tests, integration tests
+├── docs/                   ADRs, performance budgets, this guide
+├── GLOSSARY.md             the domain language
+└── CLAUDE.md               the contributor rules (also read by coding agents)</pre>
+<p>About 14,500 lines of app code and about 13,800 lines of tests.</p>
+</div>

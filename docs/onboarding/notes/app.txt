@@ -1,0 +1,286 @@
+# order: 100
+# title: App target & tooling
+# subtitle: the composition root, the build settings, and the scripts that guard the repo
+Everything in `LogosKit/` is a library: seven modules that know how to talk to a [[term:Server]], keep a database, download and play [[term:Book]]s, and draw screens. None of them can *run* by itself. This page covers the small layer that turns those libraries into an app you can install on an iPhone, plus the configuration and scripts around it.
+
+The app target in `Logos/` holds three Swift files. [[Logos/LogosApp.swift]] is the **composition root**: the one place where concrete objects are created and handed to each other (see [[#composition-root]]). [[Logos/LaunchEnvironment.swift]] decides where data lives and which Server API and token store to use. [[Logos/TestLaunch.swift]] adds fake environments for UI and performance tests, and is compiled only into builds that ask for it.
+
+[[LogosKit/Package.swift]] declares the modules and the edges between them (see [[#module-graph]]). The `Config/` folder holds every build setting in plain-text `.xcconfig` files, plus `Info.plist` and the entitlements. The Xcode project file itself holds no build settings, so a change to how the app builds is a readable diff in `Config/`, not a hunk in `project.pbxproj`.
+
+Last come the scripts in `scripts/` and the CI workflow that runs them on every pull request: formatting, the module-graph check, the unit tests, and (run by hand, with Docker) integration tests against a throwaway audiobookshelf Server.
+
+!ios **Project, target, scheme, configuration.** An Xcode *project* (`Logos.xcodeproj`) is a container. A *target* is one thing it builds: here the `Logos` app and the `LogosUITests` UI-test bundle. A *configuration* is a named set of build settings (Debug, Release, and this repo's Performance). A *scheme* says which targets to build, run and test, and with which configuration for each action: the `Logos` scheme runs the Debug app and runs the LogosKit unit tests, `LogosUITests` runs the smoke test, `LogosPerformance` runs the performance tests in the Performance configuration. See [[#primer-xcode]].
+
+!rule Structural changes (new modules, dependencies, edges) go in `LogosKit/Package.swift`, and build settings go in `Config/*.xcconfig`, never in the project file. The project file and schemes may show local changes when Xcode rewrites them; commit them only when you meant to change them.
+
+=== Logos/LogosApp.swift
+The app's entry point and its composition root. It builds the long-lived objects once (database, sign-in, player, lock-screen integration, Downloads) and passes them into the UI's root view. Nothing else in the codebase creates these objects, which is what "plain initializer injection" means here: every object gets what it needs as initializer arguments, and this file is where those arguments come from. See [[#composition-root]].
+--- 1-10
+The app target is the only code allowed to import every module, because it has to wire them all together. Modules themselves follow the [[#module-graph]].
+
+!ios `import SwiftUI` brings in Apple's declarative UI framework. `Foundation` is the base library (URLs, dates, files). The other imports are this repo's own LogosKit modules.
+--- 11-21
+!ios `@main` marks the type the program starts from. A SwiftUI app is a `struct` conforming to the `App` protocol; the system creates it once at launch. `struct` is a value type in Swift (copied, not shared), and SwiftUI recreates such structs freely, so anything that must live for the whole process is kept in a class (`Services`, below) and only referenced from here.
+
+!ios `@UIApplicationDelegateAdaptor` lets a SwiftUI app keep an old-style UIKit *app delegate*, an object the system calls for app-level events. SwiftUI has no hook for some of those events, such as background download sessions, so the adaptor creates an `AppDelegate` and registers it.
+
+`Result { try Services() }` runs the throwing initializer and keeps either the services or the error. The `init()` can't throw, so failure becomes a value that `body` can show.
+--- 22-42
+!ios `var body: some Scene` describes what the app shows. `WindowGroup` is the app's main window; its content is a view. SwiftUI calls `body` whenever it needs to; you describe the result, you don't build windows by hand. See [[#primer-swiftui]].
+
+On success the root view `AppRootView` (in [[UI/AppRootView.swift]]) gets every service it needs. Note that `makeLibrarySync` and `makeDownloader` are *functions* (factories): those objects depend on who is signed in, so the UI asks for them once it knows the identity.
+
+!why The database is never deleted automatically. If it can't be opened, the app shows `DatabaseErrorView` and keeps the file, because the database is the single source of truth ([[#single-source-of-truth]]) and holds things the Server doesn't have yet (the [[term:Outbox]]).
+--- 44-58
+When Downloads run in the background and finish while Logos isn't running, iOS launches (or wakes) the app and calls this method with the background session's identifier and a `completionHandler` to call once the events have been handled. Logos has exactly one background session, so anything else is acknowledged immediately.
+
+!ios A background `URLSession` lets the system carry on downloading files while the app is suspended or killed. See [[#primer-background]] and [[ServerAPI/BackgroundFileTransfers.swift]].
+
+!ios `nonisolated(unsafe)` tells the Swift 6 concurrency checker "I know this value crosses isolation boundaries; trust me". It is needed here because the system's completion handler isn't marked `Sendable`. Strict concurrency is on everywhere in this repo ([[#primer-concurrency]]), so such escapes are rare and always deliberate.
+--- 60-72
+`Services` holds the long-lived objects. It is `private` to this file: no other code can reach it, so modules only ever see what is passed to them.
+
+!why The background transfer session is a `static let`, built once per process "as early as possible", as the comment says: iOS reconnects a background session by its identifier, and the app must have recreated it before it can hear the events for transfers that finished while it was away. Its identifier derives from the bundle ID, so the app and its UI-test runs don't share one.
+
+`Shared` groups what belongs to one signed-in identity: one `Auth` (which refreshes tokens) and one `Downloader`.
+--- 74-88
+The stored services. Several are optionals (`CoverFiles?`, `Player?`): if a directory can't be created the app still runs, with placeholder covers or without playback, instead of failing to launch.
+
+!ios `any ServerAPI` is a value of *some* type that conforms to the `ServerAPI` protocol, decided at run time. Protocols are how the repo swaps real and fake implementations: the real `AudiobookshelfClient` in the app, `FakeServer` in tests and test launches. See [[#seams]].
+
+`clock` is the shared [[Domain/Clock.swift]]: Sync, Downloads and Playback never call `Date()` or `Task.sleep` themselves, so tests can drive time with a `TestClock`.
+--- 90-101
+The launch sequence starts here. First the environment ([[LaunchEnvironment.swift]]) says where data lives and which API and token store to use. Then the database opens at `Logos.sqlite` in that directory.
+
+!why Before anything can play, any [[term:Listening session]] still open in the database must have been left open when the app was killed, so it is closed now ([[Store/ListeningSessionStore.swift]]). Doing this first means a crash or kill never leaves a session open forever.
+
+`SignIn` ([[Sync/SignIn.swift]]) only needs the API, token store and database; it exists even when nobody is signed in.
+--- 102-114
+Covers and Downloads each get a subdirectory. Both are excluded from iCloud/iTunes backups (they can be fetched again), while the database stays backed up.
+
+!ios `optional.map { ... }` runs the closure only if the optional has a value: no Download directory means no `Player`, and no player means no `NowPlaying`. `[database, clock] in` is a *capture list*: the closure copies those values rather than referring back to `self`, which isn't fully initialised yet.
+
+There is one `Player` ([[Playback/Player.swift]]) for the whole app, playing from Downloads only. `NowPlaying` ([[Playback/NowPlaying.swift]]) mirrors it on the lock screen and in Control Center; `Task { await nowPlaying.follow() }` starts a long-running task that keeps them in step.
+--- 115-119
+!why When iOS launches the app in the background just to deliver finished transfers, there is no UI, so the UI's launch task never runs. Starting the `Downloader` here means it is there to receive those events. If a [[term:Server]] identity is saved, someone is signed in.
+--- 121-136
+The factories the UI calls. Both go through `shared(for:)`, so the sync and Downloads for one identity share one `Auth`, and so one token refresh at a time.
+
+`signedOut()` drops the shared objects: after a sign-out, even signing in again as the same user builds fresh ones. The `signedOutHook` is empty in normal launches; test launches use it to reseed (see [[TestLaunch.swift]]).
+--- 138-150
+Builds `Auth` and `Downloader` lazily the first time an identity asks, and reuses them while the identity stays the same.
+
+`inForeground: false` with the comment "the UI's launch task calls resume()": the downloader starts as if in the background; the UI tells it when the app is actually in the foreground.
+
+=== Logos/LaunchEnvironment.swift
+A small value describing *where* the app keeps its data and *how* it reaches Servers. A normal launch uses Application Support, the real HTTP client and the Keychain, and signs in over HTTPS only. Test builds can swap all of that out without the rest of the app noticing.
+--- 1-17
+!ios `let` declares a constant, `var` a variable. In a `struct`, `let` properties can't change after creation. The `var`s here have defaults, so a normal launch never sets them.
+
+`signedOut` is a closure property: `@MainActor () -> Void` is "a function that takes nothing, returns nothing, and must run on the main actor". See [[#primer-actors]].
+
+`allowsPlainHTTPOnLoopback` is the only way to sign in over plain `http://`, and only to `127.0.0.1`/localhost: the UI smoke test's Docker Server.
+--- 19-25
+!ios `#if LOGOS_TEST_LAUNCH ... #endif` is conditional compilation: the code between is compiled only if the build defines that *compilation condition*. It's set in [[Config/Debug.xcconfig]] and [[Config/Performance.xcconfig]], never in Release, so a shipped build doesn't contain the test launches at all, not even as dead code.
+
+The real environment: `KeychainTokenStore` keeps tokens in the iOS Keychain (encrypted, survives reinstalls); `AudiobookshelfClient` talks HTTP to the real Server. Both are in ServerAPI ([[ServerAPI/TokenStore.swift]], [[ServerAPI/AudiobookshelfClient.swift]]).
+--- 27-36
+!ios Each app has a private sandbox of directories. *Application Support* is for files the app needs but the user doesn't see; unlike Caches, iOS never deletes it to free space, and it is backed up by default.
+
+!rule The database stays backed up, never excluded, as the comment says.
+
+=== Logos/TestLaunch.swift
+Fake launches for the UI smoke test and the performance tests, picked with the `LOGOS_TEST_LAUNCH` environment variable that the test passes when it launches the app. The whole file is inside `#if LOGOS_TEST_LAUNCH`, so it exists only in Debug and Performance builds. See [[#ui-tests]] and [[#performance]].
+
+Note that the doc comment's mention of `scripts/ui-test.sh` is stale: the UI smoke test is now run by `scripts/integration-test.sh --ui`.
+--- 1-26
+The two modes:
+
+- `signedOut`: fresh empty data every launch, tokens in memory only, and plain HTTP allowed to a loopback Server. The smoke test uses it to sign in to the Docker Server and go through sign in, browse, download, play.
+- `library940`, `library3000` (any `library<count>`): already signed in to an offline fake Server with a generated Library of that many Books, with covers, progress and three downloaded Books of real silent audio. The performance tests use it.
+
+!ios An `enum` with no cases, like `TestLaunch`, is a common Swift idiom for a namespace: it can hold `static` members but can never be instantiated.
+
+`seedVersion` is part of the data folder's name; bump it when the seeded data changes shape and old seeds are rebuilt.
+--- 28-51
+Reads the process environment. No variable means a normal launch (`nil`); an unknown value is an error rather than a silent fallback to real data.
+
+Test data lives under `Application Support/TestLaunch/`, apart from the app's real data, so running UI tests on your own device doesn't touch your real Library.
+--- 53-82
+The `library<count>` mode. The seeded database is made once (marked by an empty `seeded` file) and reused, so cold-launch measurements time the app, not the seeding. `LOGOS_TEST_LAUNCH_RESET=1` forces a reseed.
+
+`FakeServer` ([[ServerAPI/FakeServer.swift]]) is an in-process stand-in for audiobookshelf. Its own copy of the Library is generated in a `Task.detached` at low priority, *after* launch, and requests wait for it (`beforeHandling`). Syncs therefore see a Server with exactly the same Library: a "sync with no changes".
+
+!ios `Task.detached(priority: .utility)` starts work that inherits nothing from its caller (in particular not the main actor), at a lower priority. It keeps the main thread free for the launch being measured.
+
+`.invalid` is a reserved top-level domain, so `fixture.logos.invalid` can never resolve to a real host.
+--- 84-136
+Writes a [[Domain/FixtureLibrary.swift]] into a fresh database, using the same Store calls a real sync and download would (`applyLibraryList`, `applyBookData`, `queueDownload`, `finishDownload`, `applyFetchedProgress`). Downloaded Books get real audio files, and their track sizes are taken from those files.
+
+!why The Server identity is saved *last*, as the doc comment says: having an identity is what makes launch show the Library rather than sign-in, so it must only exist once everything else is in place.
+--- 138-159
+Generates silent mono AAC audio with AVFoundation, one second at a time, so the [[term:Download]]ed fixture Books can really play.
+
+!ios `AVAudioFile` and `AVAudioPCMBuffer` come from AVFoundation, Apple's media framework ([[#primer-avfoundation]]). A new PCM buffer is zero-filled, which is silence. The `do { }` block scopes the file so it is closed (and finished writing) when the block ends.
+--- 161-180
+Draws a few coloured 600 × 600 JPEG covers with `UIGraphicsImageRenderer` (UIKit), reused in a cycle across the Books.
+
+=== LogosKit/Package.swift
+The Swift package manifest for LogosKit: every module, its dependencies, the shared compiler settings and the test targets. This file *is* the module graph; see [[#module-graph]] and [[#primer-spm]].
+--- 1-17
+!ios A Swift package is described by a `Package.swift` written in Swift itself. The first line, `// swift-tools-version: 6.4`, isn't an ordinary comment: it picks the manifest API and the default language mode (Swift 6).
+
+!rule The header comment, [[scripts/check-module-graph.sh]] and the table in `CLAUDE.md` list the same edges. Change all three together, and a new third-party dependency needs an ADR in `docs/adr/`.
+--- 19-28
+Shared settings. Swift 6 mode already means complete strict concurrency checking; `strict` adds "every warning is an error".
+
+`mainActorByDefault` makes everything in UI and Playback run on the main actor unless it says otherwise, which suits code that drives views and the audio player. The other modules are nonisolated by default and do their work off the main thread. See [[#primer-actors]].
+--- 30-41
+One library *product*, `LogosKit`, bundles all seven modules for the app target to link. The only external dependency is GRDB, the SQLite library behind Store ([[#primer-grdb]]).
+
+!ios `from: "7.11.1"` allows any 7.x version at or above it, but builds never resolve on their own: the exact version is pinned in the checked-in `LogosKit/Package.resolved`, and the scripts pass `-disableAutomaticPackageResolution`.
+--- 42-57
+The seven modules and their edges, the same as the table in [[#module-graph]]. Note that Playback lists only Domain and Store: it can't reach the network, by construction. Only Store gets GRDB.
+
+!ios A *target* in a package is a module: a folder `Sources/<Name>/` compiled together. Code in one module sees another only if it is listed in `dependencies` and imported, and only its `public` declarations.
+--- 59-92
+One test target per module (`<Module>Tests`, using Swift Testing; see [[#primer-testing]]). Test targets may depend on more than their module: `UITests` reaches into Sync, Downloads and ServerAPI to build fakes. ServerAPITests bundles a `Payloads` folder of recorded Server JSON as resources.
+
+`IntegrationTests` runs against a real audiobookshelf in Docker, through [[scripts/integration-test.sh]] only. It isn't in the `Logos` scheme, so `scripts/test.sh` doesn't run it. See [[#integration-tests]].
+
+=== Config/Base.xcconfig
+Build settings shared by every configuration of the app target. Debug, Release and Performance each include this file and add their own.
+
+!ios An `.xcconfig` is a plain-text list of `SETTING = value` lines that Xcode reads instead of (or on top of) the settings in the project file. Comments start with `//`. `$(NAME)` refers to another setting, and `#include` pulls in another file. Keeping settings here makes them reviewable in a pull request.
+--- 1-11
+iOS 27 only, iPhone only (`TARGETED_DEVICE_FAMILY = 1` is iPhone; 2 would be iPad), no Mac or Vision Pro variants.
+--- 13-22
+The same strictness as the package: Swift 6, complete concurrency checking, warnings as errors, and the main actor as the default isolation for the app target's code.
+--- 24-31
+`PRODUCT_BUNDLE_IDENTIFIER` is the app's unique ID on the device and in the App Store. It is built from `BUNDLE_ID_PREFIX`, so each developer can use their own.
+--- 33-40
+!ios `Info.plist` is the app's metadata file that iOS reads before running any code: display name, supported orientations, background modes and so on. Here most keys are *generated* from `INFOPLIST_KEY_…` settings, and [[Config/Info.plist]] adds the rest. Portrait only; the App Store category is Books.
+--- 42-49
+!ios Every app on a device must be *code-signed* with a certificate belonging to a *development team*. `CODE_SIGN_STYLE = Automatic` lets Xcode create the provisioning profile. The simulator doesn't need a team.
+
+`#include?` (with the question mark) includes [[Config/Local.xcconfig.template]]'s copy, `Config/Local.xcconfig`, *if it exists*. That file is git-ignored and holds your own team ID and bundle prefix, so personal signing never lands in the repository. See [[#setup]].
+
+=== Config/Debug.xcconfig
+The configuration you run from Xcode day to day (the `Logos` scheme's Run and Test). No optimisation, full testability.
+--- 1-9
+!ios `SWIFT_ACTIVE_COMPILATION_CONDITIONS` defines the names that `#if` checks in Swift code. Debug defines `DEBUG` and `LOGOS_TEST_LAUNCH`, so Debug builds include [[Logos/TestLaunch.swift]]. `$(inherited)` keeps whatever an earlier level set.
+
+!why Debug builds are slow and the debugger changes timing, so they don't count for battery, smoothness or performance; the README says to judge those on a Release build without the debugger attached.
+
+=== Config/Release.xcconfig
+The configuration for builds that go to a device for real use or TestFlight: whole-module optimisation, debug symbols in a separate dSYM, product validation. It has no `LOGOS_TEST_LAUNCH`, so a Release build signs in over HTTPS only and always uses its real data.
+--- 1-6
+!ios `-O` turns on the optimiser; `wholemodule` compiles each module as one unit so the optimiser can see across files. `dwarf-with-dsym` writes debug symbols to a separate file, used to symbolicate crash reports.
+
+=== Config/Performance.xcconfig
+Release, plus test launches. The performance tests need optimised code (to measure something real) *and* the fixture Libraries of [[Logos/TestLaunch.swift]]. Used by the `LogosPerformance` scheme only; see [[#performance]].
+--- 1-5
+!rule Never archive or ship the Performance configuration: it contains the test launches.
+
+=== Config/LogosUITests.xcconfig
+Settings for the XCUITest target, the separate test app that drives Logos from the outside like a user would. It inherits the project-level configuration and overrides the app's product name, bundle ID, icon and so on.
+--- 1-15
+`TEST_TARGET_NAME = Logos` names the app the UI tests launch and drive.
+
+!ios `XCTestCase`, the base class of UI tests, isn't main-actor isolated, so this target turns the app's main-actor default off (`nonisolated`) and the test classes mark themselves `@MainActor`.
+
+=== Config/Local.xcconfig.template
+The template for your personal, git-ignored `Config/Local.xcconfig`. Copy it, fill in your 10-character team ID and a bundle prefix unique to you, and you can build for a real iPhone. Simulator builds work without it. See [[#setup]].
+--- 1-5
+The placeholders `YOUR_TEAM_ID` and `com.example` are meant to be replaced in your copy, not here.
+
+=== Config/Info.plist
+The hand-written part of the app's Info.plist; [[Config/Base.xcconfig]] generates the rest.
+--- 1-12
+!ios A *property list* is Apple's XML format for settings. Two keys here:
+
+- `ITSAppUsesNonExemptEncryption = false` answers App Store Connect's export-compliance question up front (the app uses only standard HTTPS).
+- `UIBackgroundModes` with `audio` is a *background mode*: permission to keep running while the screen is locked or another app is in front, as long as audio is playing. Without it, iOS would suspend the app and the audiobook would stop. Background downloads don't need a mode; the background `URLSession` handles them. See [[#primer-background]].
+
+=== Config/Logos.entitlements
+The app's entitlements, currently empty.
+--- 1-5
+!ios *Entitlements* are capabilities baked into the signature that need Apple's approval, such as iCloud, push notifications or App Groups. The file exists so the signing setup is in place; Logos needs none so far.
+
+=== .swift-format
+The configuration for `swift-format`, Apple's formatter that ships with Xcode. [[scripts/format.sh]] runs it, and CI fails on any difference.
+--- 1-14
+4-space indent, 120-column lines, at most one blank line. `respectsExistingLineBreaks` keeps line breaks you chose. Of the opt-in rules, `OrderedImports` keeps imports sorted, and `NeverForceUnwrap` is *off*, so `!` is allowed where a value is known to exist.
+
+=== scripts/test.sh
+Builds the app and runs every LogosKit unit test on the simulator through the shared `Logos` scheme. This is what you run before pushing, and the last step of CI. See [[#checks]].
+--- 1-21
+`DEVICE` picks the simulator (default `iPhone 18 Pro`); extra arguments go to `xcodebuild`, so `scripts/test.sh -only-testing:DomainTests` runs one target, and `-only-testing:DomainTests/SleepTimerTests` one suite.
+
+!ios `xcodebuild` is Xcode's command-line build tool. `-disableAutomaticPackageResolution` makes the build use exactly the versions in `Package.resolved` and fail rather than fetch others.
+
+The scripts set `DEVELOPER_DIR` themselves, so they work even if `xcode-select` points at the Command Line Tools instead of Xcode.
+
+=== scripts/format.sh
+Lints all Swift code with swift-format in strict mode (CI's first check), or rewrites it with `--fix`. Run `scripts/format.sh --fix` before committing.
+--- 1-18
+Covers the app target, UI tests, the manifest, and all LogosKit sources and tests.
+
+=== scripts/check-module-graph.sh
+Fails if the module graph drifts from the allowed edges, or a third-party dependency other than GRDB appears. CI's second check. See [[#module-graph]].
+--- 1-13
+!why Two checks, as the header says: Xcode builds every module into one products directory, so an `import` of a module you never declared as a dependency can still compile. The script checks the manifest *and* the `import` lines.
+--- 15-32
+The allowed edges, as a shell `case`. This is the third copy of the table, after [[LogosKit/Package.swift]] and `CLAUDE.md`; keep them identical.
+--- 34-72
+Check 1, the manifest. `swift package dump-package` prints the manifest as JSON; a small Python snippet turns it into `package …` and `target …` lines, and the script compares each module's declared dependencies with the allowed list, the external packages with just `grdb.swift`, and the set of modules with the expected seven (a new module must be added here deliberately).
+--- 74-93
+Check 2, the imports. It greps every `import` line in `Sources/<Module>` (including forms like `@testable import` and `import struct X`), keeps imports of LogosKit modules or GRDB, and reports each one that isn't an allowed edge, with file and line. Apple framework imports are ignored.
+
+=== scripts/integration-test.sh
+Runs the `IntegrationTests` target (or with `--ui`, the app's UI smoke test) against a throwaway audiobookshelf 2.37.1 in Docker. CI doesn't run it; a pull request touching ServerAPI or Sync attaches its result. See [[#integration-tests]].
+--- 1-30
+The image is pinned by version *and* digest, so the Server under test is always byte-for-byte the same. The credentials belong only to this throwaway container.
+
+!rule Never point integration tests at a real Server. The Server here only listens on loopback, and the tests refuse any non-loopback URL.
+--- 32-53
+`--serve` starts and seeds the Server and waits, for poking at it by hand (with the app's `signedOut` test launch, for example). `--ui` runs the smoke test instead of IntegrationTests.
+
+!ios `trap cleanup EXIT` runs `cleanup` however the script ends, so the container and temp directory are always removed. `KEEP_RESULTS=<dir>` copies the test results out first, for a look after a failure.
+--- 55-73
+Generates the fixture [[term:Library]] ([[scripts/integration/make-fixture-library.sh]]), then starts the container with no persistent volume, bound to `127.0.0.1` on a free port (`-p 127.0.0.1::80`), with the fixtures mounted read-only and the sign-in rate limit off. It then waits up to a minute for the health check.
+--- 75-101
+Seeds the Server through its own HTTP API: creates the root user, signs in as root, creates the book Library "Fixtures" over `/audiobooks`, creates the `listener` user, starts a scan and waits for it. If the scan doesn't find exactly 6 Books, the run fails here rather than in a confusing test.
+--- 103-114
+`--serve` prints the address, Library ID and credentials and keeps the Server up until you stop the script.
+--- 116-152
+!ios `xcodebuild` passes any `TEST_RUNNER_<NAME>` environment variable to the test process as `<NAME>`. That is how the tests learn the Server's address and credentials; [[IntegrationTests/IntegrationServer.swift]] reads them.
+
+The smoke test runs through the app's `LogosUITests` scheme. IntegrationTests run from inside `LogosKit/` with the package's own `LogosKit` scheme, since that target isn't in the app's scheme.
+--- 154-162
+!why "A misconfigured run would skip the Server tests and still pass": the Server tests skip themselves when no harness is running, so a run with any skipped test, or none passed, counts as a failure.
+
+=== scripts/integration/make-fixture-library.sh
+Generates the six-Book fixture Library for the integration harness: short silent MP3s and a `metadata.json` per Book. The header comment is the best description of what each Book exercises: [[term:Series]] with whole, fractional and missing sequence numbers, Books spanning several files, a Book with no [[term:Chapter]]s, and one with a cover.
+--- 1-29
+!why Books are at least a minute long "so positions mid-Book stay clear of the 10 s auto-finish threshold" (the Server's own rule for marking a Book [[term:Finished]]).
+
+The audio is made with `ffmpeg` *inside the audiobookshelf image*, so nothing extra has to be installed on your Mac.
+--- 31-42
+`book <author> <title> <metadata> <seconds per file>…` lays out one Book folder the way the audiobookshelf scanner expects: `Author/Title/01.mp3, 02.mp3, …` plus `metadata.json`.
+--- 44-110
+The six Books. The `chapters` arrays give exact Chapter boundaries, and "Between Lights" deliberately has Chapters that cross file boundaries. "Loose Parts" has no Chapters in its metadata, so the Server makes one per file.
+
+=== scripts/perf-results.sh
+Prints the median and worst run of every metric in a performance-test result bundle (`.xcresult`), for recording in a pull request against the table in `docs/performance-budgets.md`. See [[#performance]].
+--- 1-27
+`xcresulttool` dumps the metrics as JSON; a Python snippet prints one row per metric. Times in seconds are shown in milliseconds, and "worst" is the largest value, because every budget prefers smaller.
+
+=== .github/workflows/ci.yml
+The GitHub Actions workflow that runs on every pull request and every push to `main`: format, module graph, then build and unit tests. Integration, UI smoke and performance tests are run by hand. See [[#checks]] and [[#prs]].
+--- 1-18
+`concurrency` with `cancel-in-progress` cancels an older run for the same branch when you push again. The job runs on a macOS runner with a 45-minute limit.
+--- 20-39
+Picks the newest installed Xcode 27 and exports `DEVELOPER_DIR` for the later steps, then runs the same scripts you run locally, in order of speed: [[scripts/format.sh]], [[scripts/check-module-graph.sh]], and [[scripts/test.sh]] on the first available iPhone simulator.
+
+!rule If CI fails, run the same script locally: CI does nothing the scripts don't.

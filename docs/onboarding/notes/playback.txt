@@ -1,0 +1,351 @@
+# order: 160
+# title: Playback
+# subtitle: the engine that plays a downloaded Book, and everything the system does to it
+Playback is the audio engine of Logos. It plays exactly one downloaded [[term:Book]] at a time, from the files of its [[term:Download]] on the phone's disk, and never from the network. It keeps the position, the current [[term:Chapter]], the speed, the [[term:Sleep Timer]] and [[term:Finished]] up to date; it saves the position to the database; and it reacts to what iOS does to the app's audio (a phone call, unplugged headphones, the car disconnecting). It also publishes the loaded Book to the lock screen and Control Center and turns their buttons into player actions.
+
+In the [[#module-graph]] Playback may depend only on Domain and Store. In particular it may **not** import ServerAPI: it physically can't reach the [[term:Server]]. Everything it learns about the outside world comes through the database (Store), and everything it tells the outside world it writes to the database or announces through a stream of "playing stopped" events that the UI module's `ListeningReporter` uses to send [[term:Listening session]]s.
+
+!rule CLAUDE.md: **Playback must never import ServerAPI**, and `scripts/check-module-graph.sh` fails CI if it does. Playback (like UI and the app) is compiled with `@MainActor` as the default isolation, so all its code runs on the main thread unless it says otherwise. It also must not call `Date()` or `Task.sleep` directly: time comes from the injected `Clock` (see [[#seams]]).
+
+The key types:
+
+- `Player` ([[Playback/Player.swift]] plus the `Player+*.swift` extensions): the engine and its rules. One instance for the whole app, made in the composition root ([[Logos/LogosApp.swift]]).
+- `AudioPlayer` ([[Playback/AudioPlayer.swift]]): a small protocol, the *seam* between the rules and Apple's `AVPlayer`. `SystemAudioPlayer` is the real implementation, `FakeAudioPlayer` the scripted one tests use.
+- `AudioSession` ([[Playback/AudioSession.swift]]): the seam for system audio events (interruptions, route changes, media-services resets). `SystemAudioSession` is real, `FakeAudioSession` is for tests.
+- `NowPlaying` ([[Playback/NowPlaying.swift]]): keeps the lock screen and Control Center in step with the `Player`, through the `NowPlayingCenter` seam ([[Playback/NowPlayingCenter.swift]]); `SystemNowPlayingCenter` talks to iOS 27's NowPlaying framework.
+
+!why The pattern "rules in one class, thin protocols around every Apple API" runs through the whole module. Apple's audio classes can't be driven from a unit test (they need real time to pass, real hardware, real calls), so each one sits behind a protocol the engine talks to. Tests swap in a fake where *nothing moves until the test says so*, and can check every rule (finishing within the last 30 s, Sleep Timer stops, resuming after a call) deterministically and in milliseconds. See [[#seams]].
+
+!why The live position is the one exception to "the database is the single source of truth" ([[#single-source-of-truth]], ADR 0001). It changes several times a second, so the `Player` publishes it directly as an observable property, and writes it through to the database every second while playing and immediately on play, pause, seek, skip, Chapter jump, the end of the Book and going to the background.
+
+How others use it: the UI observes `Player`'s properties to draw the mini player and the player sheet, and calls `play(bookID:)`, `pause()`, `skip(by:)` and so on ([[UI/PlayerChrome.swift]], [[UI/PlayerViews.swift]]). The UI also starts three long-running tasks on it at launch: `restoreLastPlayed()`, `observeDownloads()` and `observePickUps()`. Sign-out calls `signOut()` then `reloadSettings()` ([[UI/SignOutModel.swift]]). The `ListeningReporter` ([[UI/ListeningReporter.swift]]) subscribes to `stops()` to send the [[term:Outbox]] when playing stops. For a narrative walk-through of pressing Play, see [[#flow-play]]; for the AVFoundation basics, [[#primer-avfoundation]].
+
+=== LogosKit/Sources/Playback/Player.swift
+The heart of the module: the playback engine. It holds the state the screens show (what's loaded, where it is, whether it plays, what went wrong) and the rules for every control. It's long, so the rules for specific concerns live in extensions in other files (`Player+AudioSession.swift`, `Player+PickUp.swift`, `Player+SleepTimer.swift` and so on); this file has loading, the basic controls, the player's own reports and saving.
+
+A useful mental model: `Player` never trusts `AVPlayer`'s idea of time blindly. It keeps its own `position` (what the listener sees), moves it at once on a seek, and lets the audio catch up. A handful of counters (`pendingSeeks`, `reloadsInFlight`, `loadGeneration`) exist only to know when the audio's reports are stale and must be ignored.
+--- 1-14
+The doc comment states the contract: one downloaded Book at a time, never the network, and "player time is Book time". A Book can be many audio files; the real player glues them into one continuous timeline, so position 3,600 means one hour into the Book no matter which file that falls in.
+
+!ios `@Observable` (from the Observation framework) turns a class into something SwiftUI can watch: any view that reads `player.position` while drawing is redrawn automatically when `position` changes. You don't write any notification code. See [[#primer-observable]].
+
+!ios `final class` versus `struct`: a `struct` is a value (copied when assigned), a `class` is a reference (everyone holding it sees the same object). The player is one shared, long-lived object with identity, so it's a class. `final` means nobody can subclass it. `public` makes it visible outside the Playback module; without an access modifier a declaration is `internal`, visible only inside its own module.
+--- 15-34
+Two nested enums describe what the screens need to know. `State` is the lifecycle: nothing loaded, loading files, paused, playing. `Problem` says why the last attempt to play failed, so the UI can show a helpful message.
+
+!ios `enum` in Swift is a closed list of cases; a `switch` over it must handle every case, so adding one makes the compiler point at every place that needs updating. `Sendable` promises the value is safe to pass between threads (enums of plain cases always are); `Hashable` lets it be compared and put in sets. You'll see `Sendable, Hashable` on almost every small value type in this repo.
+--- 36-58
+The published state. Every `var` here is observed by the UI. Note the access control: `public private(set)` means anyone can read it but only this file can change it; `public internal(set)` means the extensions in other files of the module can change it too.
+
+- `book` is a `BookDetail` from Domain (title, Chapters, tracks, duration).
+- `position` is in Book seconds and jumps to a seek's target immediately, before the audio has moved.
+- `speed` and the two skip intervals are stored in the database so they survive relaunches.
+- `pickedUp`, `damaged` and `sleepTimer` drive notices and controls; each has its own extension file.
+- `mediaServicesResets` is a counter `NowPlaying` watches, so it knows to republish after the system's audio daemon restarted.
+--- 60-67
+Tuning constants. The position is published 4 times a second while playing (smooth enough for a progress bar) and saved once a second. The two decode constants are for an Apple bug (Feedback FB22340742): the xHE-AAC decoder sometimes fails at certain positions, and the workaround is to reload and retry slightly earlier.
+--- 69-91
+The private machinery. `@ObservationIgnored` keeps these out of observation: they're implementation details, and changing them shouldn't redraw any view.
+
+- `database` (Store's `AppDatabase`) and `files` (where Downloads live on disk) are how the engine reads Books and saves progress.
+- `audio` is the `AudioPlayer` seam; the engine never touches `AVPlayer` directly.
+- `loadGeneration` is a classic trick for async races: every load bumps it, and when an older load finishes late it sees the number has moved on and quietly gives up.
+- `pendingSeeks` counts seeks sent to the audio and not finished; while it's above zero the audio's time reports are stale.
+- `saving` is the once-a-second save loop.
+- `stopObservers` holds everyone listening to `stops()` (see [[Playback/Player+Stops.swift]]).
+
+!ios `any AudioPlayer` is an *existential*: "some value of any type that conforms to the `AudioPlayer` protocol", decided at runtime. That's what makes swapping the real player for a fake possible. `(any AudioSession)?` is the same, but optional (`?`): the value may be `nil`, here meaning "no session events".
+--- 93-113
+The initializer takes every dependency as a parameter: this is *initializer injection*, the only dependency-injection style the repo uses ([[#composition-root]]). The app passes the real `SystemAudioPlayer`, `SystemAudioSession` and `SystemClock`; tests pass fakes.
+
+It reads the saved speed and skip settings, then registers two callbacks: a time observer (the audio reports its time every 0.25 s) and event handlers for both the audio player and the session.
+
+!ios `{ [weak self] time in self?.timePassed(time) }` is a closure (an inline function). `[weak self]` stops the closure from keeping the player alive: the audio player holds the closure, and the player holds the audio player, so a strong reference both ways would be a *retain cycle* and neither would ever be freed. With `weak`, `self` becomes optional inside the closure, hence `self?.`.
+--- 115-125
+Computed properties: they have no storage and are recalculated each time they're read. Because they read `book` and `position`, which are observed, a view showing `player.chapter` still redraws when the Chapter changes. `chapters.index(at:)` is a Domain helper that finds the Chapter containing a time.
+--- 127-158
+The two ways the UI starts a Book. If it's already loaded, `play(bookID:)` just resumes. Otherwise it loads the Book at its saved position and starts. The second variant starts from a given position (a Chapter tapped on the Book detail screen).
+
+`Signposts.begin(.playOtherBook)` starts a performance measurement that ends when audio actually comes out. These signposts are how the performance budgets are measured in Instruments and XCTest.
+
+!ios `async` marks a function that can suspend (pause while waiting, without blocking the thread), and `await` marks each point where it might. Loading audio files takes time, so `load` is async, and so is anything calling it. See [[#primer-concurrency]].
+
+!ios `guard condition else { ...; return }` is Swift's early exit: if the condition is false, run the `else` block, which must leave the function. It keeps the happy path unindented.
+
+!rule docs/performance-budgets.md: "Play, another downloaded Book → audio" must be ≤ 500 ms median, and "Play, Book already loaded" ≤ 150 ms. A PR touching this path records iPhone measurements.
+--- 160-173
+At launch the app loads the last Book you played, paused, so the mini player shows it and Play is instant. It never starts playing by itself. The UI calls this once the Library is already on screen ([[UI/PlayerChrome.swift]]), so it doesn't slow down the cold launch.
+
+`defer { interval.end() }` runs when the function exits, however it exits. `reportsDamage: false` because the listener didn't ask for anything: if the Download turns out to be damaged it's quietly marked not downloaded, with no alert.
+
+!ios `do { try ... } catch { ... }` is Swift error handling. Functions that can fail are marked `throws` and must be called with `try`. Here a database error is logged and otherwise ignored; `log` is this module's logger from [[Playback/Log.swift]].
+--- 175-232
+`load` is the most careful function in the engine. In order:
+
+- Pause whatever is playing (reported as a Book switch), cancel any Sleep Timer, bump `loadGeneration` and clear old notices.
+- Read the Book and check its Download is complete (`downloadStatus == .downloaded`). Only a downloaded Book can be played, by definition of [[term:Download]].
+- Check every file is on disk with the right size (`hasIntactDownload`). If not, the Download is *damaged*: it's discarded and the UI offers "Download again".
+- Publish the Book and its saved position at once (state `.loading`), so the UI can show it while the audio loads.
+- Ask the audio to load the files, then seek to the saved position.
+
+After every `await`, `guard generation == loadGeneration` checks whether another load started meanwhile. If the listener tapped two Books quickly, the first load finishes second and must not overwrite the second Book. `min(max(...))` clamps a saved position into the Book's length, in case the data is odd.
+--- 234-253
+`stop(bookID:)` unloads a Book before its Download is removed. `observeDownloads()` is a safety net: it watches the database's Download statuses forever, and if the loaded Book stops being downloaded by any route, it's stopped.
+
+!ios `for try await statuses in database.downloadStatusUpdates()` loops over an *async sequence*: each iteration waits until the database reports a change. The loop runs until the surrounding task is cancelled, which SwiftUI does when the view that started it (with `.task { }`) goes away. This is how the engine reads "live" data from the Store, following ADR 0001 ([[#single-source-of-truth]]).
+--- 255-289
+Handling damage. A damaged Download becomes "not downloaded": its files are deleted, but the position and Finished are kept, and nothing downloads it again on its own. `DamagedDownload` ([[Playback/DamagedDownload.swift]]) carries what the notice needs, including whether the Book is still on the Server.
+
+`unload` resets everything back to idle. `fileURLs(of:)` turns each audio track's relative path into a file URL inside the Downloads directory; track order is Book order.
+--- 291-333
+Play and the save loop. `play()` only works from `.paused`. `start` does the real work:
+
+- A Finished Book starts again from 0 and is no longer Finished (the glossary's definition of [[term:Finished]]).
+- It tells the audio to play, sets `.playing`, saves at once, and starts a loop that saves every second.
+
+The loop sleeps through the injected `clock`, not `Task.sleep`, so tests can advance time by hand with `TestClock`. Each tick checks the Book is still playing (and is the same Book), skips saving while a reload is landing, reads the live time from the audio and saves.
+
+!ios `Task { ... }` starts concurrent work that runs alongside the caller. It inherits the main actor here, so its body runs on the main thread, interleaved with everything else. Cancelling the task (`saving?.cancel()`) makes `clock.sleep` throw, which ends the loop.
+--- 335-377
+Pause and finish. Every pause has a *reason* (`PlaybackStop.Reason`), which decides whether the listening session ends and is reported to observers.
+
+The Finished rule: if the listener stops within the last 30 seconds of the Book, the Book becomes Finished instead (`FinishRule.finishes` in Domain). The system pausing (a call, unplugged headphones) never finishes a Book; that would be surprising.
+
+`pendingSeeks == 0 ? audio.currentTime : position` is the stale-report guard again: if a seek hasn't landed, the audio's time is still the old one, so the engine's own `position` (the seek target) is the truth.
+
+`finish` stops, marks Finished, moves to the end and saves. Nothing plays next; Logos has no queue.
+--- 379-404
+Setting Finished by hand from Book detail. If the Book isn't the one loaded (or is still loading), the change goes straight to the database with the current time (it becomes a [[term:Finished change]] for the Outbox). If it is loaded, finishing stops it at the end, and un-finishing moves it to 0.
+--- 406-454
+Seeking, skipping and Chapter jumps. The position moves *at once* and is saved; the audio seek runs in a background `Task` and decrements `pendingSeeks` when done. That's why the budget "Seek / skip / Chapter jump → UI: same frame" holds: the UI reads `position`, not the audio.
+
+A seek clears Finished (you chose a position, so Play plays from there). Skipping forward into the last 30 s finishes the Book. `sleepTimerSeeked` clears a Sleep Timer whose stop point you've jumped past. `enteredBackground()` saves immediately when the app leaves the screen, because iOS may kill a backgrounded app without warning.
+--- 456-474
+Reports coming back from the audio player. `timePassed` updates the position on each 0.25 s tick, unless a seek is in flight. `handle(_ event:)` reacts to the three `AudioPlayerEvent`s: ending the play-to-audio signpost, finishing at the end of the timeline, and the decode-failure workaround.
+
+!ios `case .decodeFailed(let time):` matches an enum case with an *associated value* and binds that value to a new constant. Enums can carry data per case; it's like a tagged union.
+--- 476-524
+The decode-failure workaround and `reload`. When AVFoundation fails with error -11821 mid-play, the engine reloads the whole timeline and continues one second earlier, up to 10 times. After that it gives up, unloads and treats the Download as damaged.
+
+`reload` is also used after a media-services reset ([[Playback/Player+AudioSession.swift]]). While a reload is in flight the 1 s save is skipped (a fresh timeline sits at 0 and says nothing about where the listener is), time reports are ignored, and pick-ups wait.
+
+!ios `defer { ... }` inside `reload` guarantees the two counters are decremented however the function returns, including from the `catch` branch. It's the Swift way to pair "acquire" and "release".
+--- 526-545
+Small helpers the extensions use. `move(to:isFinished:)` moves without saving, used when picking up a newer position from another device (the database already has it). `catchUpPosition()` copies the audio's live time into `position`, unless a seek is landing.
+--- 547-561
+Saving. One write to the Store records the position, the time it changed and Finished. `listening: state == .playing` also tells the Store to extend the current [[term:Listening session]] (see [[Store/ListeningSessionStore.swift]]), so playback progress and session history can never disagree.
+
+!ios `Date(millisecondsSince1970: clock.now.millisecondsSince1970)` rounds the time to whole milliseconds, the precision the Server uses (a Domain helper). The time comes from the injected clock, never `Date()`.
+
+=== LogosKit/Sources/Playback/Player+AudioSession.swift
+The rules for what iOS does to the app's audio: interruptions, route changes and media-services resets. `SystemAudioSession` only *reports* these events; the decisions all live here, where tests can check them with `FakeAudioSession`.
+
+!ios An `extension` adds methods to an existing type, here `Player`, from another file. The repo uses extensions to split a large type by concern: each `Player+Something.swift` file holds the rules for one topic. Extensions can't add stored properties, which is why the state they use is declared in [[Playback/Player.swift]].
+--- 1-26
+The rules, one per event:
+
+- **Interrupted** (a call, Siri, an alarm): pause, and remember to resume.
+- **Interruption ended**: resume only if we paused for it *and* the system recommends resuming.
+- **Route lost** (headphones unplugged, Bluetooth or the car gone): pause and never resume by itself, even if an interruption ends later. Otherwise audio would suddenly blast from the speaker.
+- **Route added**: save the position; the audio moves to the new device on its own.
+- **Media services reset**: rebuild everything (below).
+
+!rule CLAUDE.md: interruptions and routes are device-only behaviour. A PR touching them carries a manual checklist in its description that the human signs off before merge ([[#prs]]).
+--- 28-53
+A media-services reset is rare: iOS's audio daemon crashed and restarted, and every audio object in the app is dead. The engine asks the audio to rebuild itself, bumps `mediaServicesResets` (so Now Playing republishes), then reloads the Book paused at the last *saved* position. The dead player can't be asked where it was, and the last save is at most a second old.
+
+=== LogosKit/Sources/Playback/Player+PickUp.swift
+*Picking up* from another device: you listened on the web player or another phone, the next sync brings a newer position from the Server, and the loaded, paused Book moves there, with a notice and an Undo. A *playing* Book is never yanked: instead its own position is saved straight back, so it stays the newest. The sync side of this is in [[Sync/ProgressSync.swift]]; how the Store decides which position wins is in [[Store/FetchedProgressUpdates.swift]].
+--- 1-20
+`PickedUp` is the value behind the notice: where the Server had the Book and whether it was Finished.
+
+!ios `nonisolated struct` opts this type out of the module's default `@MainActor` isolation (set in `Package.swift` for Playback and UI). A plain value type has no reason to be tied to the main thread, and being `nonisolated` lets other threads create and compare it.
+--- 22-57
+`observePickUps()` runs for the app's lifetime, listening to the Store's stream of progress that a sync just adopted. If an entry is for the loaded Book, it's picked up. `undoPickUp()` goes back to where the Book was and saves, so the local position is now newer than the Server's and wins next time. `pickUpPending()` applies a fetch that arrived while the Book was loading.
+
+!ios `for await adopted in ...` without `try`: this async sequence can't fail, it just delivers values until the task is cancelled.
+--- 59-85
+The decision, by state. While loading or reloading, hold the fetch for later. While playing, overwrite the Server's position with ours. While paused, move to the Server's position; show the notice only if it really changed (beyond `ProgressMerge.positionTolerance`, a Domain constant) or Finished changed. `beforePickUp ?? ...` keeps the *original* position if a second pick-up arrives before you Undo.
+
+=== LogosKit/Sources/Playback/Player+Sessions.swift
+Which stops end a [[term:Listening session]]. A session carries on across short pauses and ends on a long pause, a switch to another Book, Finished, or a Sleep Timer stop. Here, a listener pause and every system pause keep the session open; the Store closes it if the pause lasts longer than `ListeningSessions.maxPause` (10 minutes, in Domain).
+--- 1-14
+A computed property added to the `Reason` enum. The `switch` lists every case, so adding a new stop reason won't compile until someone decides whether it ends the session.
+
+!ios `case .paused, .interrupted: false` uses Swift's newer `switch` *expression* form: each case yields a value, and the whole `switch` is the property's value. No `return` needed.
+--- 16-27
+Ending the session happens *before* the stop is reported, so whoever sends the [[term:Outbox]] on a stop (the `ListeningReporter`) already finds the ended session in the database.
+
+=== LogosKit/Sources/Playback/Player+Settings.swift
+The global speed and the skip intervals. The engine reads them from the Store at init and writes every change back, so they survive relaunches. The types (`PlaybackSpeed`, `SkipInterval`, `PlaybackSettings`) are in [[Domain/PlaybackSettings.swift]], and the table in [[Store/PlaybackSettingsStore.swift]].
+--- 1-20
+`setSpeed` snaps to the nearest allowed speed, applies it to the audio at once and saves it. Positions stay in Book time at any speed: one minute of Book is one minute of position whether you listen at 1× or 3×.
+--- 22-58
+Skip back and forward use the settings. The setters save to the database and log (rather than crash) if that fails. `readSettings` falls back to defaults if the database can't be read, so a broken settings row never stops playback.
+
+!ios `static func` belongs to the type, not to an instance: it's called as `Self.readSettings(database)` from `init`, before the instance is fully set up, which is why it can't be an ordinary method.
+
+=== LogosKit/Sources/Playback/Player+SignOut.swift
+The player is made once per process and outlives sign-ins, so signing out resets it by hand: stop and unload the Book (which saves it and ends its session), drop any damage notice, and later re-read the settings, which the sign-out wipe has reset to the defaults. Called from [[UI/SignOutModel.swift]]; the overall sequence is in [[#flow-sign-out]].
+--- 1-21
+Two small public methods. `reloadSettings()` is separate from `signOut()` because it has to run *after* the database has been wiped.
+
+=== LogosKit/Sources/Playback/Player+SleepTimer.swift
+The [[term:Sleep Timer]]: "stop at the end of the Xth Chapter from now". It counts Chapters, not minutes, and lives in memory only. The arithmetic (which time to stop at, where to resume) is pure Domain code in [[Domain/SleepTimer.swift]]; this file wires it to the audio player.
+--- 1-21
+`sleepTimerOptions` is what the picker offers ([[UI/SleepTimerMenu.swift]]). `setSleepTimer(chapters:)` builds a `SleepTimer` from the current position and arms it.
+
+!ios `SleepTimer(chapters:from:in:bookDuration:)` is a *failable initializer* (`init?`): it returns `nil` when the request makes no sense, which `guard let` catches.
+--- 23-43
+"+1 Chapter" extends the stop to the end of the next Chapter. `arm` registers a *boundary observer*: `AVPlayer` calls back exactly when playback crosses the stop time, which is more precise than checking the position every tick. A stop at the very end of the Book needs no observer; the end-of-Book handling covers it.
+--- 45-57
+When the boundary is reached, the engine pauses with reason `.sleepTimer` and *lands* at `resumeAt`, the start of the next Chapter. So when you wake up and press Play, you start the Chapter you fell asleep before, not the last second of the previous one. Seeking past the stop point clears the timer, since the boundary can't be reached any more.
+
+=== LogosKit/Sources/Playback/Player+Stops.swift
+`PlaybackStop`: "playing stopped, here's where, and why". Each stop is pushed into an async stream any number of observers can follow. The main consumer is `ListeningReporter` in UI, which sends the listening-sessions [[term:Outbox]] to the Server whenever playing stops ([[Sync/SessionOutbox.swift]] does the sending).
+
+!why Playback can't talk to the Server (it can't import ServerAPI), so it can't send sessions itself. Instead it announces stops, and a module that *is* allowed to reach the network listens. This keeps the module-graph rule ([[#module-graph]]) without Playback knowing who's listening.
+--- 1-36
+The stop value and its reasons. Every reason is documented, and the `endsListeningSession` property in [[Playback/Player+Sessions.swift]] maps each one to "ends the session or not".
+--- 38-56
+`stops()` hands each caller its own `AsyncStream`. The *continuation* is the producer end: the engine keeps it in `stopObservers` and calls `yield` for each stop. When the consumer stops iterating, `onTermination` removes it.
+
+!ios `AsyncStream.makeStream(of:)` returns a pair: a stream to iterate with `for await`, and a continuation to push values into. It's the standard bridge from "callback-style" code (here, "a stop just happened") to async sequences. `Task { @MainActor in ... }` hops back to the main actor, because `onTermination` may be called from another thread.
+
+=== LogosKit/Sources/Playback/AudioPlayer.swift
+The seam between the engine and Apple's audio player. A *protocol* describes what an audio player must offer (load, play, pause, seek, report time) without saying how. `Player` only knows this protocol; the app plugs in `SystemAudioPlayer` and tests plug in `FakeAudioPlayer`.
+
+!ios A `protocol` is like an interface in other languages: a list of requirements a type promises to meet. `AnyObject` restricts it to classes, so implementations have identity and can be shared. The engine holds it as `any AudioPlayer`.
+--- 1-43
+The requirements. Times are always Book seconds. `load` builds one timeline from many files. `observeTime` and `observeBoundaries` register callbacks and return an `AudioPlayerObservation` to cancel them. `rebuild` recreates the audio objects after a media-services reset. `onEvent` is how the player reports things that happen on their own.
+
+!ios `var rate: Float { get set }` in a protocol means implementations need a readable and writable property; they can store it or compute it.
+--- 45-67
+The three events a player reports by itself, and the small cancellation handle. `AudioPlayerObservation` wraps a closure that removes the observer; calling `cancel()` twice is safe because the closure is set to `nil` after the first call.
+
+=== LogosKit/Sources/Playback/AudioSession.swift
+The seam for what the *system* does to Logos's audio on its own: calls, Siri and alarms (interruptions), headphones and cars coming and going (route changes), and the rare reset of the phone's media services. `SystemAudioSession` reports the real events; `FakeAudioSession`, defined here, lets tests send them by hand. The rules for each event live in [[Playback/Player+AudioSession.swift]].
+--- 1-10
+The protocol is tiny: one callback the engine sets. All the knowledge is in the event type.
+--- 12-25
+The five events, each documented with the real-world situations that cause it. `interruptionEnded` carries the system's recommendation as an associated value.
+--- 27-36
+The fake: `send(_:)` delivers an event exactly as the system would, so a test can say "a call came in" and check the player paused and later resumed.
+
+=== LogosKit/Sources/Playback/SystemAudioPlayer.swift
+The real `AudioPlayer`: one `AVPlayer` playing an `AVMutableComposition`, which is the Book's files glued end to end into one timeline. This is the only file in the engine that touches `AVPlayer`.
+
+!ios **AVFoundation** is Apple's media framework. The pieces used here: an `AVURLAsset` is a media file; an `AVMutableComposition` is a timeline you assemble from pieces of assets; an `AVPlayerItem` is something playable (the composition, here); an `AVPlayer` plays one item and reports its time. Times are `CMTime`, a fraction (value / timescale) that avoids floating-point drift. `AVAudioSession` is the app's single connection to the phone's audio hardware and its rules. See [[#primer-avfoundation]].
+
+!why Gluing the files into a composition (rather than queueing them) means there are no gaps at file boundaries and player time equals Book time, so the engine never has to work out which file it's in. The comment credits prototype #12 for proving this.
+--- 1-16
+`import AVFoundation` only appears in the `System*` files: the engine and its tests never need it. `LoadError` lists why building the timeline can fail; the engine turns any of them into "can't open" and treats the Download as damaged.
+--- 18-45
+The `AVPlayer` is made lazily, on first use. Creating one during launch cost 10 to 60 ms of the cold launch, and launch has a tight budget (≤ 400 ms median). `player` is a computed property that makes it on demand and re-adds any time observers registered before it existed. `TimeObserver` remembers how to add each observer, so `rebuild()` can re-add them to a new `AVPlayer`.
+
+!rule docs/performance-budgets.md: cold launch to an interactive Library must be ≤ 400 ms median. Keep work off the launch path.
+--- 47-73
+`rate` is the speed. Setting it updates `defaultRate` (the rate `play()` uses) and, if playing, the current rate. `timePitchAlgorithm = .timeDomain` is Apple's algorithm for speech: it keeps sped-up voices natural instead of tinny (git history: "Switch to the time-domain time-pitch algorithm so sped-up speech sounds natural").
+
+`setUp` configures the player: no automatic waiting to avoid stalls (the files are local), pause at the end of the item, and a key-value observation of `timeControlStatus` so the engine hears when sound actually starts.
+
+!ios `player.observe(\.timeControlStatus) { ... }` is *key-value observing* (KVO), an older Objective-C mechanism many Apple classes use to report property changes. `\.timeControlStatus` is a *key path*, a reference to a property. KVO callbacks may arrive on any thread, so the code hops to the main actor with `Task { @MainActor in ... }`.
+--- 75-93
+`rebuild()` drops the dead `AVPlayer` and its observers; a fresh one is made on next use and the observers re-attach. `currentTime` guards against `NaN` (AVPlayer reports an invalid time when nothing is loaded).
+--- 95-117
+Building the timeline. For each file: open it with precise timing (`AVURLAssetPreferPreciseDurationAndTimingKey`, needed for exact seeks in compressed audio), load its audio track and time range asynchronously, and insert it at the cursor. Then wrap the composition in an item, set the pitch algorithm, swap it in and wait until it's ready to play.
+--- 119-138
+Play activates the audio session first; pause and unload are simple. Seeks use zero tolerance, so they land exactly where asked rather than on the nearest convenient frame. This is fine because the files are local.
+--- 140-177
+The time and boundary observers. `AVPlayer` delivers them on the main queue, and `MainActor.assumeIsolated` tells the compiler "trust me, this is already the main thread", so the handler can touch main-actor state. A boundary callback doesn't say which boundary was crossed, so the closest one to now is reported.
+
+!ios `nonisolated(unsafe) let handler = handler` silences Swift 6's strict concurrency checker for one value it can't prove is safe to send across threads. It's an escape hatch: use it only when you know the value is used on one thread, as here (always the main queue). See [[#primer-actors]].
+--- 179-213
+Swapping the current item, and watching it for the end and for errors with `NotificationCenter` observers. Every mid-play failure is reported as a decode failure, so the engine's reload-and-retry handles all of them.
+
+!ios `NotificationCenter` is iOS's app-wide broadcast system: objects post named notifications, and anyone can register a block to run when one is posted. Observers must be removed when no longer needed, which `replaceItem` does first.
+--- 215-249
+Waiting for readiness turns KVO into an `AsyncStream` and loops until the item is ready or failed: the same callback-to-async bridge as `stops()`. The audio session is set to category `.playback` with mode `.spokenAudio`. That's what lets audio keep playing with the screen locked (together with the `audio` background mode in `Config/Info.plist`), and tells iOS this is speech, so, for example, navigation prompts pause it instead of ducking it.
+
+=== LogosKit/Sources/Playback/SystemAudioSession.swift
+The real `AudioSession`: it listens to the shared `AVAudioSession`'s notifications and translates them into the five `AudioSessionEvent`s. It makes no decisions; [[Playback/Player+AudioSession.swift]] does.
+--- 1-37
+Two styles of observation side by side. iOS 27's typed *messages* (`center.addObserver(of: session, for: .didBecomeInactive)`) report interruptions and the recommendation to resume; the classic string-keyed notifications report route changes and media-services resets, with details in a `userInfo` dictionary that has to be unpacked and cast.
+
+!ios `as? UInt` is a conditional cast: it gives a `UInt` if the value is one, else `nil`. `.flatMap(AVAudioSession.RouteChangeReason.init(rawValue:))` then turns the number into the enum, still optional. Chaining optionals like this avoids nested `if let`s.
+--- 39-43
+`isolated deinit` runs the cleanup on the main actor (the class's isolation), so it can safely read the stored tokens and unregister them.
+--- 45-70
+The translations. A system interruption becomes `.interrupted`; the app deactivating its own session is ignored. `@unknown default` handles cases Apple may add in future iOS versions. Of the route-change reasons, only "the old device went away" and "a new device appeared" matter.
+
+=== LogosKit/Sources/Playback/FakeAudioPlayer.swift
+The test double for `AudioPlayer`. Nothing moves until the test says so: time advances only through `advance(to:)`, seeks and loads can be held open to test races, and failures can be triggered on demand. Engine tests (`LogosKit/Tests/PlaybackTests/`) drive it alongside `TestClock` from Domain. It lives in the main target (not the test target) and is `public` so other modules' tests, such as the UI model tests, can use it too.
+
+!why Every Apple-facing seam in Logos has a fake next to it in the same module (`FakeAudioSession`, `FakeNowPlayingCenter`, and `FakeServer` in ServerAPI). The rules are tested against the fakes; the `System*` adapters are kept thin enough that what's left is checked by the UI smoke test and by hand on a device ([[#tests]]).
+--- 1-41
+Recorded state for assertions (`loadedFiles`, `loadCount`, `seeks`, `isPlaying`) and switches to change behaviour (`holdsSeeks`, `holdsLoads`, `failsToLoad`, `reportsStartedPlaying`).
+--- 43-67
+`load` fails like the real player when a file doesn't exist on disk, so damage tests work with real (deleted) files. With `holdsLoads`, the timeline is swapped in but `load` doesn't return until `finishLoads()`, letting a test start a second load while the first is in flight.
+
+!ios `withCheckedContinuation { heldLoads.append($0) }` suspends the current async function and hands you a continuation; the function resumes only when someone calls `continuation.resume()`. It's how the fake "holds" a load or a seek. `Task.yield()` gives other pending tasks a chance to run, so the effects settle before the test checks them.
+--- 69-109
+Play, pause, rebuild and seek. A held seek keeps reporting the old time until `finishSeeks()`, like the real player, which is exactly the situation `pendingSeeks` in the engine guards against.
+--- 111-155
+Observers and moving time. `advance(to:)` fires every boundary crossed between the old and new time, then the time observers; `playToEnd(at:)` and `failToDecode()` raise the matching events.
+
+=== LogosKit/Sources/Playback/NowPlaying.swift
+Keeps the system's Now Playing (lock screen, Control Center, AirPods, the car, headsets) in step with the `Player`, and plays their commands on it. It shows the current Chapter (Chapter-scoped progress and scrubbing), the cover, both skips with the configured intervals and a speed menu. Made once in [[Logos/LogosApp.swift]], which starts `follow()` and leaves it running.
+
+!ios The *Now Playing* info is what iOS shows outside your app for whatever audio is playing. *Remote commands* are the buttons there (and on headphones or in the car); the system routes them to the app that owns Now Playing. Logos uses iOS 27's NowPlaying framework (never the older MediaPlayer) behind the `NowPlayingCenter` seam.
+--- 1-35
+State: the player, the center seam, the cover files and the clock, plus what was shown last. `jumpTolerance` is the trick for keeping updates rare: while playing, the system extrapolates the position itself from the last snapshot (time × rate), so Logos only sends a new snapshot when something changes or the position jumps by more than one second.
+--- 37-57
+`follow()` observes the player for as long as the app runs. Each change yields a `PlayerReading`; if it differs from what's shown, it's sent. A media-services reset tells the center to start a fresh session.
+
+!ios `Observations { PlayerReading(player) }` turns any code reading `@Observable` properties into an async sequence: it re-runs the closure whenever one of the properties it read changes, and yields the result. It's how non-view code follows observable state.
+--- 59-73
+`isSame` compares what would be shown, allowing the extrapolated position to drift up to the tolerance. The cover URL is looked up once per Book and cached, because checking the file system on every update would be wasteful.
+--- 75-102
+Building the `NowPlayingState` from a reading. The title is the Chapter name and the subtitle is "Book title · Author". Elapsed time and duration are the *Chapter's*, so the lock-screen scrubber spans one Chapter, which is far more usable than a 20-hour scrubber. `PlaybackTimes` is a Domain helper that computes Chapter-relative times.
+--- 104-119
+Commands from the system go straight to the player. The skip interval the system passes is ignored (the user's setting wins), and next/previous track are mapped to skip forward/back. A scrub is relative to the Chapter shown, and is ignored if the Book changed meanwhile.
+--- 121-140
+`PlayerReading` reads every property Now Playing cares about in one go. Reading them all inside the `Observations` closure is what makes each of them tracked.
+
+=== LogosKit/Sources/Playback/NowPlayingCenter.swift
+The plain value types describing what Now Playing should show, the `NowPlayingCommand`s it can send back, the `NowPlayingCenter` protocol (the seam), and `FakeNowPlayingCenter` for tests. None of this imports a system framework, which is the point: [[Playback/NowPlaying.swift]] can be tested entirely with the fake.
+--- 1-52
+`NowPlayingState` bundles the item, the playback snapshot and the controls. `NowPlayingItem` is the current Chapter of the loaded Book.
+
+!ios Each struct spells out a `public init`. Swift generates a *memberwise initializer* for structs automatically, but it's `internal`, so a type used from other modules needs an explicit public one. That's why so many small types in this repo end with a long boilerplate `init`.
+--- 54-84
+`NowPlayingPlayback` is a snapshot: status, speed, elapsed time and *when* it was read. `extrapolated(to:)` works out where the system will think playback is at a later moment.
+
+!ios `guard case .playing(let rate) = status else { return elapsed }` is pattern matching outside a `switch`: it continues only if `status` is `.playing`, binding its rate.
+--- 86-128
+The controls on offer, the commands, and the protocol. `show(nil)` means nothing is loaded.
+--- 130-156
+The fake records every state shown, so tests can assert on what the lock screen would display, and `send(_:)` simulates a button press.
+
+=== LogosKit/Sources/Playback/SystemNowPlayingCenter.swift
+The real `NowPlayingCenter`, on iOS 27's NowPlaying framework: one `MediaSession` describes the loaded Book as `BookContent`, with `MediaCommand`s for the controls.
+--- 1-18
+The framework *observes* this object: it's `@Observable` and conforms to `MediaSessionRepresentable`, so whenever `state` changes the system rereads `content`, `playbackSnapshot` and `commands`. `onCommand` and the session are `@ObservationIgnored` because they aren't what the system displays.
+--- 20-39
+The session is created only once there is something to show, so a launch with nothing loaded doesn't claim Now Playing from another app. `requestToBecomeApplicationPrimary()` asks iOS to make Logos the app the lock screen and headphones control. After a media-services reset, the session is dropped and recreated on the next `show`.
+--- 41-69
+The three things the framework reads. Each command closure forwards to `onCommand`, which `NowPlaying` turns into player calls.
+--- 71-105
+Mapping Logos's values to the framework's. The Chapter goes in the title and "Book · author" in the author field, so the Book is excluded from Siri suggestions (those fields aren't a real Book). The artwork is read from the cover file lazily, off the main actor, only when the system asks for it.
+
+!ios `nonisolated static func` opts this function out of the main actor, because the framework calls the artwork closure from a background thread.
+
+=== LogosKit/Sources/Playback/DamagedDownload.swift
+The value behind "This Download is damaged" notices: which Book, its title, and whether it's [[term:Not on Server]] (then it can't be downloaded again, so only Remove Download is offered). Published by `Player.damaged`, shown by [[UI/DamagedDownloadViews.swift]].
+--- 1-16
+!ios `Identifiable` requires an `id` property. SwiftUI uses it to tell items apart, for example in `.alert(item:)` or `.sheet(item:)`, which show when the value is non-nil. Here the Book ID is the identity.
+
+=== LogosKit/Sources/Playback/Log.swift
+Every module has a `Log.swift` with a `log` under its own `LogCategory`, so you can filter Console.app or Instruments by module. The logger factory is in [[Domain/Diagnostics.swift]].
+--- 1-8
+!ios `nonisolated let` at the top level makes these globals usable from any thread, despite the module's main-actor default. `os` is Apple's unified logging framework; messages include `privacy: .public` where a value is safe to show in logs (log values are redacted by default).

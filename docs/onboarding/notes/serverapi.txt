@@ -1,0 +1,304 @@
+# order: 120
+# title: ServerAPI
+# subtitle: every byte Logos exchanges with the audiobookshelf Server
+ServerAPI is the module that talks HTTP to the [[term:Server]]. It knows audiobookshelf's URLs, headers and JSON shapes, turns them into the plain values Domain defines (`ListedBook`, `BookData`, `FetchedProgress`, …), and turns every failure into one small error type. Nothing else in Logos builds a `URLRequest` or reads a Server response.
+
+In the [[#module-graph]] it sits directly on top of Domain and depends on nothing else. Sync and Downloads use it; Playback is forbidden from importing it, which is how the codebase guarantees playback never reaches the network. The app target ([[Logos/LogosApp.swift]]) creates the real implementations once and hands them down.
+
+The module has three parts:
+
+- **The request/response seam.** The `ServerAPI` protocol ([[ServerAPI/ServerAPI.swift]]) lists every call. `AudiobookshelfClient` is the real implementation over `URLSession`; `FakeServer` is a scripted, in-memory audiobookshelf used by the unit tests and by test launches. The `Requests` and `Responses` namespaces build requests and decode responses, split per topic over several files.
+- **Authentication.** `Auth` (an `actor`) owns the access/refresh token pair, refreshes it ahead of time or after a 401, and turns a rejected refresh into "Needs sign-in". `TokenPair` reads token lifetimes; `TokenStore` keeps the pair in the Keychain.
+- **Background file transfers.** The `FileTransfers` protocol is the seam for downloading audio files with a background `URLSession`, which keeps going while Logos is suspended or not running. `BackgroundFileTransfers` is the real one, `FakeFileTransfers` the scripted one.
+
+!why The protocol methods are *stateless*: each takes the Server URL and an access token as arguments. Only `Auth` holds tokens, and callers wrap their call in `auth.authorized { token in … }`, so no caller ever handles a 401 or a refresh itself (see the comment at the top of [[ServerAPI/ServerAPI.swift]]).
+
+!rule Never point anything at a real Server from tests. Unit tests use `FakeServer`; the integration tests run against a throwaway audiobookshelf in Docker (see [[#integration-tests]]). HTTPS is *not* enforced here, so the Docker Server's plain HTTP works; the HTTPS-only rule lives in sign-in, in Sync.
+
+=== LogosKit/Sources/ServerAPI/ServerAPI.swift
+The heart of the module: the `ServerAPI` protocol (the list of every Server call), the error type every call can throw, and a few small result types. Read this file first; the rest of the module implements or uses it.
+--- 1-12
+!ios A `protocol` is Swift's word for an interface: a list of requirements that a type promises to fulfil. Code that needs the Server takes an `any ServerAPI` value and doesn't know (or care) whether it's the real client or the fake. This is the main way Logos makes things testable: see [[#seams]].
+
+!ios `Sendable` marks a type as safe to share between concurrent tasks and threads. Swift 6's strict concurrency checking (on in this repo, see [[#primer-concurrency]]) refuses to pass non-`Sendable` values across concurrency boundaries, so every type that crosses one says so.
+
+The doc comment states the design: calls are stateless, `Auth` owns tokens, and HTTPS is enforced elsewhere.
+--- 13-24
+The unauthenticated part: `status` (version and allowed sign-in methods), `logIn`, `refresh` and `logOut`. The doc comments quote the exact audiobookshelf endpoint and header for each.
+
+!ios `async throws(ServerAPIError)` means: the function is asynchronous (callers write `try await`, and the calling task is suspended without blocking a thread while the request runs), and it can throw, but only a `ServerAPIError`. That "typed throws" lets callers `switch` over the possible errors exhaustively instead of catching any `Error`.
+--- 25-59
+The authenticated calls, each taking an `accessToken`. Note the documented leniency rules: the Library list (`books`) is all-or-nothing, while the batch Book data and progress calls skip records they can't read. Those rules are implemented in the `Responses` decoders.
+
+`syncSessions` sends [[term:Listening session]]s from the [[term:Outbox]], and `updateFinished` sends a [[term:Finished change]]; both are used by Sync's outbox ([[Sync/SessionOutbox.swift]]).
+--- 61-73
+!ios An `enum` with *associated values*: each `case` can carry its own data (`unreachable` carries a message, `unexpectedStatus` carries the HTTP status). Callers use `switch` or `catch .unauthorized` to react to specific cases. `Hashable` lets tests compare errors with `==`.
+
+Only five outcomes matter to the rest of the app: no response at all, 401, 429, another status, or a body that doesn't decode.
+--- 75-92
+!ios A `struct` is a value type: copying one copies its data, and a `let` struct can never change. Logos uses structs for almost all data. `public` makes the type visible outside the ServerAPI module; Swift's default (`internal`) is visible only inside its own module.
+
+`isSupported` combines with [[ServerAPI/ServerVersion.swift]]: a version that can't be parsed counts as unsupported.
+--- 94-125
+`SignedInUser` is what a login or refresh returns. The user `id` matters because signing in again (after "Needs sign-in") must be the same user. `ServerLibrary` keeps podcast and other Libraries in the list so sign-in can show only book Libraries; `Identifiable` lets SwiftUI lists tell the rows apart by `id`.
+
+=== LogosKit/Sources/ServerAPI/Requests.swift
+How requests are built and responses read, for the sign-in, Library, progress and cover endpoints. The other `*Requests.swift` files add more endpoints to the same two namespaces through extensions.
+--- 1-8
+!ios An `enum` with no cases is a common Swift idiom for a *namespace*: it can't be instantiated, it only groups `static` functions. `Requests` has no `public`, so it's internal to ServerAPI; other modules never see URLs.
+
+Every path is *appended* to the Server URL, so a Server hosted under a sub-path (`https://example.com/abs/`) works.
+--- 10-32
+Sign-in requests. Two audiobookshelf quirks are captured in comments: `x-return-tokens: true` must be exactly `"true"` or the refresh token goes into a cookie, and refresh/logout carry the refresh token in an `x-refresh-token` header.
+--- 34-58
+Authenticated GETs. `limit=0` asks for the whole Library at once. Covers are fetched at 600 px as JPEG: without `format=jpeg` the Server would answer `Accept: */*` with WebP.
+--- 60-65
+The one place a bearer token goes onto a request in this file. `var request = request` makes a mutable copy of the argument: function parameters are constants in Swift.
+--- 67-77
+!ios `switch` in Swift must cover every possible value, and since Swift 5.9 `switch` (and `if`) can be used as an *expression*, as here: each case is just the value to return. `200..<300` is a half-open range.
+
+audiobookshelf's error bodies are mostly plain text, so only the status code decides the error.
+--- 79-105
+!ios `Decodable` (half of `Codable`) lets `JSONDecoder` build a value straight from JSON whose keys match the property names. The pattern used throughout this module: a small private `Body` struct that mirrors exactly the JSON fields needed, declared *inside* the function, then mapped to a public Domain type. The JSON shape never leaks out of the decoder.
+--- 107-125
+Library media types become the `MediaType` enum; unknown ones are kept as `.other(...)` rather than failing.
+--- 127-177
+The Library list decoder is deliberately **strict**: one unreadable Book makes the whole list `unreadableResponse`.
+
+!why A Library list is applied as a whole (Books missing from it become [[term:Not on Server]]), so a partly read list must never be applied, or Books that merely failed to decode would look deleted. The doc comment on line 127 states this rule.
+
+Optional JSON fields (`String?`) get defaults with `??`; timestamps arrive in milliseconds and `addedAt` becomes a `Date`.
+--- 179-209
+Progress is the opposite: **lenient per record**. The `Lossy` wrapper is a reusable trick: its custom `init(from:)` uses `try?`, so a record that fails to decode becomes `nil` instead of failing the whole array, and `compactMap` drops the `nil`s. Podcast episodes and records without a Book id are skipped with a `guard`.
+
+!ios `guard condition else { return … }` is an early exit: if the condition fails, the `else` block must leave the scope. Values bound in `guard let` stay available after it, which keeps the "happy path" unindented.
+--- 211-218
+One generic helper turns any decoding error into `.unreadableResponse`. The original error is dropped on purpose: callers only need to know the body wasn't what audiobookshelf sends.
+
+=== LogosKit/Sources/ServerAPI/AudiobookshelfClient.swift
+The real `ServerAPI`. Each method is one line: build the request with `Requests`, send it, decode with `Responses`. All the networking lives in the private `send(_:)`.
+--- 1-23
+!ios `URLSession` is Apple's HTTP client. Its `URLSessionConfiguration` decides cookies, caching and timeouts. `.ephemeral` keeps nothing on disk.
+
+Cookies are turned off completely so the Server's httpOnly refresh cookie never mixes with the tokens `Auth` keeps. `waitsForConnectivity = false` makes an offline request fail at once (as `.unreachable`) instead of hanging until the network comes back. The second `init(session:)` exists so tests can inject a session.
+--- 25-81
+The protocol conformance. `try Responses.x(await send(...))` reads inside-out: send the request, wait for the data, then decode it, and any error propagates. Calls with no useful body (`logOut`, `updateFinished`) discard the data with `_ =`.
+--- 83-101
+The single network path. Errors are translated into `ServerAPIError`: an exception from `URLSession` means no HTTP response at all (`.unreachable`), and a non-2xx status goes through `Responses.error(forStatusCode:)`.
+
+!rule Logs carry the method and path only, never the host, tokens or bodies. `privacy: .public` is the `os.Logger` way of saying a value may appear unredacted in logs; anything not marked public is hidden in logs collected from a device. Every module logs through its own `log` (see [[ServerAPI/Log.swift]]).
+
+=== LogosKit/Sources/ServerAPI/Auth.swift
+`Auth` owns the token pair for one signed-in identity and makes every authenticated call on behalf of the rest of the app. The doc comment on lines 14–22 is the specification; the code below implements each bullet. The app builds one `Auth` per signed-in identity and shares it between Sync and Downloads, so there is only ever one refresh in flight (see [[Logos/LogosApp.swift]]).
+--- 1-12
+`AuthError` is what callers of `Auth` see: `needsSignIn` (only signing in again helps; the UI shows a "sign in again" prompt), `server(...)` (try again later), or `tokenStoreFailed`.
+--- 14-49
+!ios An `actor` is a type whose mutable state is protected by Swift: only one task at a time runs code inside it, and callers from outside must `await` its methods. That makes `tokens` and `refreshing` safe to read and change from many concurrent sync and download tasks, without locks. See [[#primer-actors]].
+
+!ios `didSet` is a *property observer*: code that runs every time the property changes. Here it pushes the new `needsSignIn` value to everyone watching. `public private(set)` means anyone can read the property but only `Auth` can change it.
+
+`refreshing` holds the refresh currently running, so concurrent callers can wait on the same one. `clock` is the injected [[Domain/Clock.swift]] (never `Date()` directly), which lets tests move time to make tokens expire.
+--- 51-68
+The main entry point. Callers write:
+
+- `try await auth.authorized { token in try await api.books(..., accessToken: token) }`
+
+`authorized` gets a usable token (refreshing ahead of time if needed), runs the call, and if it fails with `.unauthorized`, refreshes once and retries once. Any other failure is wrapped as `.server(error)`.
+
+!ios The argument is a *closure* (an anonymous function). `@Sendable` says it's safe to run from another concurrency context, which it must be because it's passed into an actor. The generic `<T: Sendable>` lets the same method return books, data or nothing.
+--- 70-83
+Two token accessors for background file transfers ([[Downloads/Downloader.swift]]), which can't call back into `Auth` mid-request because the system runs them. `accessToken(validFor:)` hands out a token with enough life left for a long download; `accessToken(replacingRejected:)` is called after a transfer got a 401, and returns either a token another caller already refreshed or the result of one shared refresh, so many files failing at once cause one refresh, not many.
+--- 85-99
+!ios `AsyncStream` is a sequence of values over time that a task can loop over with `for await`. A *continuation* is the sending end. Each caller of `needsSignInUpdates()` gets its own stream; `bufferingNewest(1)` keeps only the latest value for a slow reader. `onTermination` removes the watcher when the stream is dropped; `[weak self]` avoids keeping `Auth` alive just because a stream exists.
+
+Sync's [[Sync/Connection.swift]] watches this to show "Needs sign-in" in the UI.
+--- 101-137
+Leaving and ending a session. `signedInAgain(with:)` saves the new pair before using it and cancels any refresh in flight. `signOut()` flips into Needs sign-in first (so no new call reaches the Server), then makes a best-effort `POST /logout` so the Server revokes the refresh token, then clears the Keychain. A failed logout is only logged: signing out must work offline too.
+--- 139-154
+Refresh ahead of time when less than five minutes (`refreshMargin`) are left on the access token. If that early refresh fails on the network but the current token hasn't actually expired yet, the current token is used anyway.
+
+!ios `catch .server(let error) where expiry > clock.now` combines pattern matching (only this error case, binding its value) with a condition. Errors that don't match fall through and are rethrown.
+--- 156-171
+Tokens are read from the store lazily, on first use, and cached in memory. Finding no tokens at all means Needs sign-in.
+--- 173-216
+The single shared refresh. If another caller already rotated the tokens, those are returned without a request. Otherwise one `Task` is created (or the existing one joined) and every concurrent caller awaits its `value`.
+
+- The rotated pair is saved to the token store *before* anyone uses it, so a crash can't lose the only valid refresh token (audiobookshelf invalidates the old one on refresh).
+- `Task.checkCancellation()` stops a refresh that finishes after a sign-out or new sign-in from overwriting the newer tokens.
+- A 401 from the refresh itself means the Server rejected the refresh token: Needs sign-in. The `guard refreshing == task` ignores a stale task from before a new sign-in.
+
+!ios `Task { ... }` starts a new unit of concurrent work. Its `value` can be awaited by any number of callers, which is what makes the refresh "shared". The capture list `[server, api, tokenStore]` copies those values into the closure so it doesn't need to reach back into the actor.
+--- 218-230
+`finish` clears the in-flight refresh only if it's still the current one. The `Duration` extension converts Swift's `Duration` to `TimeInterval` seconds; `fileprivate` makes it visible in this file only.
+
+=== LogosKit/Sources/ServerAPI/TokenPair.swift
+The access/refresh token pair, plus reading each token's expiry out of the token itself.
+--- 1-19
+!ios `Codable` = `Encodable` + `Decodable`: the pair can be turned into JSON and back, which is how [[ServerAPI/TokenStore.swift]] stores it in the Keychain. *Computed properties* such as `accessTokenExpiry` run code on every read and store nothing.
+
+The doc comment records a decision: Logos uses only the modern expiring pair, never audiobookshelf's legacy non-expiring `user.token`, and lifetimes are read from the tokens, never hard-coded.
+--- 21-39
+audiobookshelf tokens are JWTs: three base64url parts separated by dots, the middle one a JSON payload. This decodes the payload and reads `exp` (seconds since 1970). The signature isn't checked; the Server does that, and the expiry only decides *when* to refresh. Any malformed token yields `nil`, and `Auth` then refreshes only on a 401.
+
+=== LogosKit/Sources/ServerAPI/TokenStore.swift
+Where the token pair is persisted: the Keychain in the app, memory in tests. Only the pair is stored; the password is never stored anywhere.
+--- 1-12
+The `TokenStore` protocol is a small seam with three synchronous operations. The app picks the implementation in [[Logos/LaunchEnvironment.swift]].
+--- 14-35
+!ios The **Keychain** is iOS's encrypted store for small secrets, managed by the system and kept outside the app's files. It's a C API (`Security` framework): you describe the item with a dictionary of `kSec…` keys and call `SecItem…` functions, which return an `OSStatus` code.
+--- 37-65
+Load, save (update, or add if it doesn't exist yet) and clear. `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` means: readable once the phone has been unlocked once since boot (so background downloads and sync can use it while the screen is locked), and never moved to another device by a backup, so a restored backup needs one sign-in.
+--- 67-102
+!ios `final class` is a reference type that can't be subclassed. A class shared between threads needs its mutable state protected: `Mutex` (from Apple's `Synchronization` module) holds the state and only hands it out inside `withLock { … }`. That's what lets `InMemoryTokenStore` be `Sendable`.
+
+`failSaves` lets tests simulate a full or locked Keychain. Test launches ([[Logos/TestLaunch.swift]]) also use this store so they never touch the real Keychain.
+
+=== LogosKit/Sources/ServerAPI/ServerVersion.swift
+Parsing and comparing audiobookshelf version strings. Logos supports 2.36.0 and later only, with no fallbacks for older Servers; the check runs at sign-in and at every sync ([[Sync/SignIn.swift]], [[Sync/LibrarySync.swift]]).
+--- 1-30
+!ios `init?` is a *failable initializer*: it returns `nil` instead of a value when the input is invalid. `CustomStringConvertible` gives the type a `description` used when it's printed or interpolated; here it's the exact text the Server reported, for messages like "Server too old".
+
+Only purely numeric dotted versions parse. Anything else (such as a `-beta` suffix) is `nil` and counts as unsupported.
+--- 32-54
+!ios Conforming to `Comparable` means implementing `<`; Swift then provides `>`, `>=` and friends. Here missing trailing parts count as 0, so `2.36` equals `2.36.0`. Because equality is redefined that way, `==` and `hash(into:)` are written by hand to stay consistent (equal values must hash the same, hence trimming trailing zeros).
+
+=== LogosKit/Sources/ServerAPI/BookDataRequests.swift
+Full Book data: Chapters, audio tracks and Series. Sync uses the batch call after a Library list to fill in Book details, and Downloads uses the single call to get fresh track info right before downloading.
+--- 1-23
+!ios `extension Requests { … }` adds members to a type declared elsewhere (here in [[ServerAPI/Requests.swift]]). The codebase uses extensions to split a type by topic over several files, e.g. `Player+Sessions.swift`.
+
+Two Server quirks documented inline: an empty batch gets a 403 (so callers must never send one), and the single-Book endpoint needs `expanded=1` or it sends an older JSON shape.
+--- 25-59
+The single-Book decoder is strict; the batch decoder uses the same `Lossy` trick as progress so one unreadable Book is left out (and fetched again later) instead of blocking the others. The number skipped is logged.
+--- 61-111
+The private mirror of audiobookshelf's expanded item JSON. `chapters` and `tracks` are non-optional on purpose: if they're missing, decoding fails, rather than storing a Book as "no Chapters" by mistake (see the doc comment). A [[term:Chapter]] has a start and end in seconds; a track is one audio file, identified on the Server by its `ino` and on disk by its `relPath`.
+--- 113-152
+Mapping to Domain's `BookData`. `Domain.Chapter` is written with the module name because the local `Chapter` struct above would otherwise shadow it. A Book can be in several [[term:Series]], each with its own `sequence`.
+
+=== LogosKit/Sources/ServerAPI/SessionRequests.swift
+Sending [[term:Listening session]]s to the Server's history and stats (`POST /api/session/local-all`). The sessions are recorded locally by Playback and sent by Sync's outbox ([[Sync/SessionOutbox.swift]]); this file only knows the wire format.
+--- 1-28
+The doc comment explains why every field is carefully well-formed: the Server's handler doesn't validate input. `.sortedKeys` makes the JSON deterministic, so tests can compare bodies exactly. The `timeZone` parameter has a default, so tests can pin it while the app uses the device's.
+--- 30-60
+!ios `Encodable` alone (not `Decodable`) because this body is only ever sent. Properties with a fixed value (`mediaType = "book"`, `playMethod = 3`, which is audiobookshelf's LOCAL play method) are still part of the JSON.
+--- 62-82
+Building one session from an `OutboxSession` (Domain). Times become milliseconds; `timeListening` is rounded to whole seconds because the Server stores an integer; `date` and `dayOfWeek`, which feed the Server's listening stats, are computed in the listener's time zone.
+--- 84-110
+!ios Swift skips `nil` optionals when it synthesises `encode(to:)`, but the Server expects `"episodeId": null`. So this struct writes its encoder by hand with a `CodingKeys` enum (the list of JSON keys) and calls `encodeNil` for that one key.
+--- 112-114
+The top-level body: the device description (from Domain's `ClientDevice`) plus the sessions.
+--- 116-142
+One result per session. `success: true` means delivered, so the session leaves the [[term:Outbox]]. A Book the Server doesn't have is a per-session failure inside a 200, never a 404. Ids are lower-cased because the Server echoes UUIDs in its own casing.
+
+=== LogosKit/Sources/ServerAPI/FinishedRequests.swift
+Sending a [[term:Finished change]] (`PATCH /api/me/progress/:id`) when the listener marks a Book [[term:Finished]] or not Finished by hand.
+--- 1-27
+The doc comment captures the Server's rules: a Finished Book must carry a position near its end, or the Server undoes Finished; `lastUpdate` and `finishedAt` are when the listener acted, not when the request happens to be sent (it may sit in the outbox while offline).
+--- 29-36
+The body. Synthesised `Encodable` leaves `nil` fields out, which is what this endpoint wants (compare the hand-written encoder in [[ServerAPI/SessionRequests.swift]]).
+
+=== LogosKit/Sources/ServerAPI/FileRequests.swift
+The audio-file request for a [[term:Download]], and a helper for resuming an interrupted download.
+--- 1-17
+One audio file per request. By default it's Wi-Fi only (`allowsCellularAccess`), and it never uses a constrained network (Low Data Mode). The Server supports HTTP Range requests, which is what makes resuming possible.
+--- 19-53
+When a `URLSession` download stops part-way, it produces opaque *resume data*: a property list that contains the archived original request. Resuming re-sends that request with `Range` and `If-Range`, so the Server sends only the rest if the file hasn't changed.
+
+The catch: the archived request has the old URL (the file's `ino` may have changed) and the old, maybe expired, token. `retargeting` unpacks the plist, swaps in the new URL, `Authorization` and network policy, and packs it back. If anything can't be read it returns `nil` and the file is downloaded from the start.
+
+!why The keys `NSURLSessionResumeCurrentRequest`/`OriginalRequest` are an undocumented format, so every step is guarded and failure falls back to a full download rather than an error.
+
+=== LogosKit/Sources/ServerAPI/FileTransfers.swift
+The background file-transfer seam: the types Downloads uses to start, track and cancel audio-file downloads that the system runs on the app's behalf.
+--- 1-12
+A transfer is identified by Book and `relPath`, not by URL, because the `ino` in the URL can change between tries. `Codable` because transfers are recorded in a task's description and must survive a relaunch.
+--- 14-42
+What to fetch and where to put it. The access token travels *inside* the request: a background transfer runs in a system process and can't ask `Auth` for a token, so Downloads asks `Auth` for one with enough life left ([[ServerAPI/Auth.swift:72]]) before enqueuing.
+--- 44-55
+The three events Downloads reacts to. `finished` carries the token the request used, so when several files get a 401, Downloads can refresh once and retry them all.
+--- 57-79
+!ios `AnyObject` restricts the protocol to classes (reference types): there's exactly one transfers object and everyone must share it, not copies.
+
+!ios A **background `URLSession`** hands its transfers to a system daemon. They keep running while the app is suspended or even killed; when they finish, iOS relaunches or wakes the app in the background and delivers the events. That's why the session has a fixed identifier: a new launch reconnects to the same session. See [[#primer-background]].
+
+The contract notes that events arriving before a handler is set are kept, which matters for background launches where the system delivers events very early.
+
+=== LogosKit/Sources/ServerAPI/BackgroundFileTransfers.swift
+The real `FileTransfers`: a background `URLSession` delegate. This is the lowest-level code behind [[term:Download]]s, and the place most coupled to iOS's background-launch machinery. It's created once per process, as early as possible, in [[Logos/LogosApp.swift]].
+--- 1-45
+!ios `NSObject` is the root class of Objective-C. `URLSession` reports progress through a *delegate* (an object implementing callback methods), and delegates must be `NSObject` subclasses. Combining that with Swift 6 `Sendable` is why all mutable state lives in a `Mutex`.
+
+`Description` is JSON stored in each task's `taskDescription`, so after a relaunch the session's tasks can be matched back to Book, file and destination. The destination is stored relative to the home directory because the app container's absolute path can change between launches.
+
+`items` is an `AsyncStream` that serialises everything delivered to the event handler: delegate callbacks just append to it.
+--- 47-59
+The background configuration. `sessionSendsLaunchEvents` lets iOS launch the app to deliver finished transfers; `isDiscretionary = false` means "start now", not "whenever the system feels like it". Cellular is allowed at the session level and decided per request, because a background session's own settings can't change after it's created.
+--- 61-83
+The delegate callbacks run on a serial `OperationQueue`, one at a time. `handleEventsForBackgroundSession` is called from the app delegate when iOS launches Logos for transfer events; it keeps the system's completion handler to call once the events are handled. iOS expects that call to know when it can suspend the app again.
+--- 85-106
+The handler is set by Downloads ([[Downloads/Downloader.swift]]). One consumer task is started the first time and lives as long as the process, so events reach the handler one at a time and in order. A `flush` item calls the system completion only after every earlier event has been handled.
+--- 108-127
+Enqueue: cancel any existing transfer of the same file (and silence it so its cancellation isn't reported), build the file request, resume from resume data if possible, label the task with its `Description` and start it.
+--- 129-144
+`running()` lists transfers still alive, including ones started before this launch, which is how Downloads picks up where it left off. `cancel(bookID:)` stops every file of a Book.
+--- 146-168
+Changing the cellular setting can't modify a running task's request, so each one is cancelled with resume data and replaced with a new task that has the new setting, keeping the bytes already received.
+--- 170-212
+Helpers. *Silencing* a task (by `taskIdentifier`) means "no more events for it": after it's cancelled on purpose, or after its outcome has been reported once. `bearer(of:)` recovers the token the request carried for the `finished` event.
+--- 214-242
+The most delicate callback. URLSession has downloaded the file to a temporary `location` and **deletes it when this method returns**, so for a 200/206 the file is moved to its destination right here, synchronously, before the event is even queued. Other statuses (401, 404, …) write nothing; Downloads decides what to do.
+--- 244-253
+Called when any task ends. For one that already reported `finished` it's silenced and ignored; otherwise it's a failure, with resume data when URLSession provides some.
+--- 255-273
+Progress events are throttled to at most one every half second per task (using the injected clock), so a fast download doesn't flood the database with updates.
+--- 275-284
+iOS says all events for a background launch have been delivered. The saved completion is queued behind every pending event, so it's only called after Downloads has processed them all, and then on the main thread as UIKit requires.
+
+=== LogosKit/Sources/ServerAPI/FakeFileTransfers.swift
+The scripted `FileTransfers` for tests. Nothing happens on its own: a test enqueues through Downloads, then decides when each transfer completes, fails or reports progress. It's always reached through `FakeServer.transfers` so that file requests go through the same fake Server (reachability, hooks, token checks).
+--- 1-32
+`unowned let server` is a back-reference to the owning `FakeServer` that doesn't keep it alive (the server owns this object, so a strong reference both ways would leak). Like the real session, transfers outlive whoever enqueued them, so a test can simulate a relaunch by making a new Downloads instance.
+--- 34-90
+The scripting API: serve file bytes, look at what was enqueued, complete one or all pending transfers, interrupt one part-way, or report progress. Fake resume data is just the text `partial:<bytes>`. Each call returns only once the event handler has finished, so tests can assert straight after.
+--- 92-121
+The protocol side, mirroring the real one: events before a handler is set are held and delivered when it's set, enqueue replaces an existing transfer of the same file, and cancel drops pending ones silently.
+--- 123-173
+`answer` behaves like the Server would: it goes through `FakeServer` (so `isReachable` and hooks apply), returns 401 for a bad token and 404 for an unknown file, writes the bytes to the destination, and answers 206 when resuming and 200 otherwise.
+
+=== LogosKit/Sources/ServerAPI/FakeServer.swift
+A scripted, in-memory audiobookshelf 2.37.1: the fake side of the `ServerAPI` seam. It's used by almost every Sync, Downloads and UI unit test, and also by the `library940`/`library3000` test launches ([[Logos/TestLaunch.swift]]) to give the app an offline Server for performance tests. It's `public` in the shipping module so those can reach it; because it lives in ServerAPI, Playback can't use it, which is fine since Playback never talks to a Server.
+--- 1-27
+The doc comment lists the scripting knobs. It really checks passwords, issues JWT-shaped tokens whose expiry follows the injected clock, rejects expired or revoked tokens and rotates refresh tokens, so `Auth` is tested against realistic behaviour. `Account.listener` matches the account the Docker integration Server is seeded with.
+--- 29-53
+!ios `typealias` gives a type a short name. `Hook` is an async closure run before each request; a test can make it wait (to hold a request "in flight") or throw (to fail it).
+
+`Request` records every call with its arguments, so tests can assert things like "no request reached the Server" or "the outbox sent these sessions".
+--- 55-107
+All mutable state sits in one `State` struct behind a `Mutex`. Token lifetimes default to one hour (access) and 30 days (refresh), and can be shortened by tests. `transfers` is created lazily on first access.
+--- 109-198
+Getters and setters that read or write the locked state, plus three helpers that simulate Server events: revoke all access tokens (a Server restart with a new secret), revoke all refresh tokens (signed out elsewhere), and `issueTokens` to seed an already-signed-in app without a login request.
+--- 200-244
+The sign-in calls. A refresh token can be used once (`removeValue` both checks and consumes it), as with the real Server's rotation. Logout revokes only the refresh token; access tokens already issued stay valid until they expire, matching 2.37.1.
+
+!ios `state.withLock { (state) throws(ServerAPIError) -> SignedInUser in … }` spells out the closure's parameter, error type and return type, because typed throws can't always be inferred.
+--- 246-302
+The read calls. Each first records the request (`receive`) and then authenticates the token. Small Server details are kept: `books` 404s for a non-book Library, the empty batch is a 403, and a listed Book without scripted `bookData` gets its list data with no Chapters or tracks.
+--- 304-345
+A small model of how the real Server applies listening sessions: unknown Book → per-session failure; newer progress on the Server wins; within 10 s of the end finishes the Book; moving a Finished Book's position clears Finished. `stampsFirstProgressWithServerTime` reproduces a 2.37.1 quirk only some tests need.
+--- 347-365
+The Server side of a Finished change, again following 2.37.1: clearing Finished puts the Book at 0, and a brand-new progress record gets the Server's time instead of the sent `lastUpdate`.
+--- 367-385
+Internal (not public) entry points used only by [[ServerAPI/FakeFileTransfers.swift]], so file transfers go through the same reachability, hooks and token checks.
+--- 387-451
+Internals. `receive` records the request, then fails it if `isReachable` says no or the URL isn't this Server's address, then runs the hook. Tokens are real JWT-shaped strings (with a fake signature) so `TokenPair.expiry` can read them.
+
+!ios `#"…"#` is a *raw string*: backslashes and quotes inside don't need escaping, and interpolation becomes `\#(…)`. Handy for writing JSON by hand.
+--- 453-480
+A convenience for tests: `FakeServer.book("Dune")` makes a plausible `ListedBook` with an id derived from the title.
+
+=== LogosKit/Sources/ServerAPI/Log.swift
+Every module has this tiny file. It defines the module's own `log`, so `log.info(…)` anywhere in ServerAPI writes under the ServerAPI category in Console.app and Instruments.
+--- 1-8
+`Diagnostics.logger(_:)` and `LogCategory` come from [[Domain/Diagnostics.swift]], the shared seam for logging.
+
+!ios `nonisolated` marks a declaration as not belonging to any actor, so it can be used from any thread or task. It's needed for module-level constants once a module may default to `@MainActor` (ServerAPI doesn't, but the file is the same in every module).

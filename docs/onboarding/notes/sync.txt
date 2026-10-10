@@ -1,0 +1,228 @@
+# order: 140
+# title: Sync
+# subtitle: keeping the device and the Server in step: sign-in, the catalogue, progress and the Outbox
+Sync is the module that talks to the [[term:Server]] on the app's behalf for everything except file Downloads. It signs in, keeps the local copy of the [[term:Library]] up to date, picks up listening progress made on other devices, and sends what this device has recorded (its [[term:Outbox]]) back to the Server.
+
+In the [[#module-graph]] Sync sits in the middle: it may use **Domain** (the shared types), **ServerAPI** (the HTTP calls and `Auth`, the token keeper) and **Store** (the GRDB database). It never imports UI, and UI never gets data *from* Sync directly. Instead Sync writes to the database, and the screens observe the database (see [[#single-source-of-truth]]). Most functions here therefore return a small outcome `enum` that says how a run went, not the data itself.
+
+The key types:
+
+- `LibrarySync`: the catalogue sync, in three stages (the Library list, then full Book data, then covers). It also owns the other three long-lived Sync objects for a signed-in identity, so the app builds one `LibrarySync` and reaches the rest through it.
+- `ProgressSync`: fetches `GET /api/me/progress` and merges it into the Store.
+- `SessionOutbox`: sends [[term:Listening session]]s and [[term:Finished change]]s to the Server and confirms what it accepted.
+- `Connection`: whether the listener needs to sign in again or the Server is too old, as a stream the UI can watch.
+- `SignIn`: the sign-in flow itself (see [[#flow-sign-in]]).
+
+Almost everything here is an `actor`. That keeps the network and database work off the main thread, and lets a trigger that arrives while a run is in progress *join* that run instead of starting a second one. The same pattern (`if let running { return await running.value }`) shows up in `LibrarySync`, `ProgressSync` and `SessionOutbox`.
+
+!rule Sync never throws to the UI and never retries on a timer of its own. Failures are logged and reported as an outcome; the next trigger (launch, return to the foreground, Refresh, a minute of playback, the network coming back) simply tries again. Sync code also never calls `Date()` or `Task.sleep`: it uses the injected `Clock` from Domain so tests can control time ([[#seams]]).
+
+Who calls Sync? The app's composition root ([[Logos/LogosApp.swift]]) builds a `LibrarySync` per signed-in identity. In UI, [[UI/LaunchModel.swift]] and [[UI/RootView.swift]] trigger syncs, [[UI/ListeningReporter.swift]] drives the Outbox while a Book plays, [[UI/BookDetailModel.swift]] asks for one Book's full data straight away, and [[UI/SignOutModel.swift]] sends the Outbox one last time before signing out.
+
+=== LogosKit/Sources/Sync/LibrarySync.swift
+The catalogue sync and the hub of the module. A sync checks the Server's version, applies the full Library list (stage 1), fetches full Book data for Books that changed (stage 2, in [[Sync/LibrarySync+BookData.swift]]) and fetches covers that changed (stage 3, in [[Sync/CoverSync.swift]]). It is the code behind [[#flow-sync]].
+--- 1-4
+!ios Each `import` brings in another module. Here that's Domain, Foundation (Apple's basic library: URLs, dates, data), ServerAPI and Store, exactly the edges the module graph allows for Sync. `scripts/check-module-graph.sh` fails CI if a forbidden import appears.
+--- 5-31
+Two small enums describe a sync from the outside: what started it (`SyncTrigger`) and how it ended (`SyncOutcome`). The UI uses the outcome to decide what to say, for example a "can't reach the Server" message or the needs-sign-in banner.
+
+!ios A Swift `enum` lists a fixed set of cases. A case can carry values ("associated values"), like `serverTooOld(found: String)`, which carries the version the Server reported. `Sendable` promises the value can safely cross between threads/actors; `Hashable` lets it be compared and used in sets. Swift 6 strict concurrency (this repo's setting) refuses to pass non-`Sendable` values between actors, so almost every Domain-ish type here says `Sendable`.
+
+The comment on `SyncOutcome` matters: only `.synced` means something was written. Every failure leaves the Store exactly as it was.
+--- 32-64
+The class doc sums up the whole sync. Note the four `nonisolated let` properties: `clock`, `progress`, `outbox` and `connection`. They are made once in `init` and never change, so they can be read from outside the actor without `await`.
+
+!ios An `actor` is like a `class` whose state can only be touched by one task at a time; calling into it from outside needs `await`, because you may have to wait your turn. `nonisolated` opts a member out of that protection, which is safe only for constants that are themselves `Sendable`.
+
+!why Bundling `ProgressSync`, `SessionOutbox` and `Connection` inside `LibrarySync` means they all share one `Auth` for the identity. That gives one token refresh shared by everything, rather than several parts of the app racing to refresh the same token (the comment in `LogosApp.swift` says the same about `Auth` and Downloads).
+--- 65-76
+The initializer wires the parts together. `covers` is optional: without a covers directory, stage 3 is simply skipped (`covers.map { ... }` gives `nil` if `covers` is `nil`).
+
+!ios `any ServerAPI` means "some value conforming to the `ServerAPI` protocol, decided at run time". That's how tests swap in a fake Server (`FakeServer`) while the app passes the real `AudiobookshelfClient`: plain initializer injection, no dependency-injection framework.
+--- 77-103
+`sync(_:)` is the public entry point. If a sync is already running, the caller just awaits its result. A return to the foreground only does a full sync if the last successful one was more than `foregroundInterval` (15 minutes) ago, but it *always* runs a progress fetch, so progress from another device shows up every time you open the app.
+
+!ios `Task { await run() }` starts concurrent work and gives back a handle; `await task.value` waits for its result. Keeping the handle in `running` is how later callers find and join it.
+--- 104-131
+`run()` is the order of a sync. The `Signposts.begin` / `defer { interval.end() }` pair measures the run for the performance budgets (first sync vs. a sync with no changes; see [[#performance]]).
+
+The progress fetch runs right after stage 1 (so Books that just appeared get their progress) and before the slower stages 2 and 3. Stage 3 failures never change the outcome; covers that failed just stay "behind" for next time.
+
+!ios `defer { ... }` runs its block when the function exits, however it exits. It's the usual way to guarantee clean-up such as ending a measurement.
+--- 132-150
+The version check. A Server below audiobookshelf 2.36 stops the sync, and that verdict is handed to `Connection` so it can be remembered across launches and shown to the listener.
+
+!ios Swift 6 has *typed throws*: `api.status(of:)` throws only `ServerAPIError`, so `catch .unreachable` can match an enum case directly, and the compiler knows the full list of possible errors.
+--- 151-181
+Stage 1. The whole list is fetched through `auth.authorized { token in ... }`, which supplies a fresh access token and retries once after refreshing on a 401. An empty list is treated as a failure and never applied: applying it would delete every Book.
+
+!why `applyLibraryList` writes the whole list in one database transaction and deletes Books the Server no longer lists (downloaded ones become [[term:Not on Server]] in the Store). One transaction means a kill half-way can't leave a half-applied catalogue.
+--- 182-
+A tiny private helper to turn a `Duration` into seconds. `fileprivate` limits it to this file.
+
+!ios An `extension` adds methods to an existing type, even one you didn't write (here Apple's `Duration`). This repo also uses extensions to split one big type over several files, like `LibrarySync+BookData.swift`.
+
+=== LogosKit/Sources/Sync/LibrarySync+BookData.swift
+Stage 2 of the sync: the full data of each Book (description, [[term:Chapter]]s, audio tracks, [[term:Series]] membership). The Library list from stage 1 is cheap and small per Book; this is the expensive part, so it's done only for Books the Store marks as "behind".
+--- 1-44
+Books behind on full data are fetched 50 at a time with audiobookshelf's batch endpoint, and each batch is saved in its own transaction. An interrupted sync therefore loses at most one batch: the next sync asks the Store again which Books are still behind and carries on.
+
+A batch the Server rejects is skipped; an unreachable Server stops the stage but keeps stage 1's outcome; only a rejected sign-in changes the overall outcome.
+
+!ios `stride(from:to:by:)` counts 0, 50, 100, … ; `behind[start..<end]` takes a slice of the array. `catch AuthError.needsSignIn` matches one specific case of the error enum.
+--- 45-
+`fetchFullDataNow(ofBook:)` is for the Book detail screen: if you open a Book before stage 2 has reached it, the screen asks for just that Book straight away. It does nothing for a Book whose data is already current, or one that is Not on Server (its data is frozen).
+
+!ios `guard condition else { return }` is Swift's early exit: it states what must be true to carry on. Several conditions can be chained with commas, and `let` inside a guard unwraps an optional for the rest of the function.
+
+=== LogosKit/Sources/Sync/CoverSync.swift
+Stage 3 of the sync: cover images. Each Book has a cover "version" (its `updatedAt`); the Store knows which covers are behind, and this fetches them a few at a time and saves them to [[Store/CoverFiles.swift]].
+--- 1-23
+`CoverSync` is a plain `struct`, not an actor: it has no state of its own to protect, only references to things that are already thread-safe. It is internal to Sync (no `public`), and only `LibrarySync` uses it.
+
+!ios A `struct` is a value type (copied when passed around), a `class` is a reference type (shared). Swift code prefers structs unless shared mutable identity is needed. Members without `public` are only visible inside their own module.
+--- 24-67
+`run(on:)` first deletes cover files whose Book is gone, then splits the behind list into covers to fetch and Books known to have none. It keeps at most `coverConcurrency` (4) fetches going at once: start four, and each time one finishes, start the next.
+
+!ios `withTaskGroup` runs child tasks concurrently and lets you collect their results with `await group.next()` as each one finishes. It's structured concurrency: the group doesn't return until every child is done (or cancelled with `cancelAll()`).
+
+A `.stop` result (offline, or the sign-in was rejected) empties the pending list and cancels the rest, since they would all fail the same way.
+--- 68-106
+Fetching one cover. A 404 means "this Book has no cover": any old file is deleted and the version recorded, so it isn't asked for again until the Book changes. The file is saved *before* the version is recorded, so an interruption between the two only causes a refetch, never a recorded cover with no file.
+--- 107-
+Orphans: cover files for Books the Store no longer has. `subtracting` is set difference.
+
+=== LogosKit/Sources/Sync/ProgressSync.swift
+Picks up progress made on the listener's other devices (the web app, another phone). It fetches the Server's progress for every Book and merges it into the Store, where the newest action wins (last-writer-wins on when the user acted).
+--- 1-18
+The outcome enum. `fetched` carries the IDs of Books whose progress actually changed, which tests use and callers can log.
+--- 19-40
+The class doc says when this runs: on launch, every return to the foreground, on Refresh, and after each successful Outbox send. `connection` is optional so tests can build a `ProgressSync` without one.
+
+!why The merge rule itself lives in the Store (`applyFetchedProgress`), not here. Sync only fetches. The Store also refuses to overwrite a Book that still has something in the [[term:Outbox]], so a session not yet sent can't be wiped out by older progress from the Server (see the glossary entry for Outbox).
+--- 41-51
+The same join-the-running-task pattern as `LibrarySync.sync`.
+--- 52-
+The fetch. It does nothing if `Connection` remembers the Server as too old, or if no one is signed in. The database write is wrapped in `Signposts.measureSync(.applyFetchedProgress)` because "apply fetched progress" has its own performance budget (≤ 100 ms on 3000 Books, off the main thread).
+
+=== LogosKit/Sources/Sync/SessionOutbox.swift
+Sends the [[term:Outbox]] to the Server. Playback records each [[term:Listening session]] into the Store as you listen; this actor reads the unsent ones and posts them in batches to `POST /api/session/local-all`, then tells the Store which ones the Server accepted.
+--- 1-21
+The outcome enum. `sent` counts sessions and changes delivered and rejected.
+--- 22-63
+The class doc is the best summary of the Outbox rules:
+
+- The Outbox lives in the Store, not in memory, so a kill or reboot loses nothing.
+- This actor deletes nothing itself; the Store confirms each accepted session *at the revision that was sent*. If the session changed again meanwhile (playback went on), it stays unsent and goes out next time.
+- A Book whose session the Server rejected is skipped until the next catalogue sync, so one bad Book can't block the rest.
+
+`rejectedBooks` remembers those Books in memory, together with the catalogue sync time at which they were rejected.
+--- 64-77
+`send()`. If a send is already running, it sets `sendsAgain` and joins it, which makes the running send go round once more. That way the very latest state always goes out, even if it was written while a send was in flight.
+
+!ios `@discardableResult` lets callers ignore the return value without a compiler warning (warnings are errors in this repo).
+--- 78-90
+While a Book plays, the Outbox is sent every 60 seconds. `clock.timer(every:)` comes from the injected `Clock`, so tests can step time instead of waiting a real minute. [[UI/ListeningReporter.swift]] runs this loop.
+
+!ios `for await x in stream` loops over an `AsyncSequence`: each turn waits until the next value arrives. When the surrounding task is cancelled, the loop ends.
+--- 91-100
+`drain()` is the "go round again" loop behind `sendsAgain`.
+--- 101-166
+One send, in order:
+
+- Close listening sessions that have been paused too long (a long pause ends a Listening session).
+- Forget rejections from before the last catalogue sync, and filter out Books still rejected.
+- Read the unsent sessions and pending [[term:Finished change]]s; if there's nothing, stop.
+- If there are Finished changes, run the guard fetch first ([[Sync/SessionOutbox+Finished.swift]]).
+- Send the sessions in batches of 100 and confirm each batch.
+- Send the Finished changes.
+- Run a progress fetch so the Store reflects what the Server now has.
+--- 167-195
+Confirming a batch. Results are matched to sessions by the session's Server ID. Accepted ones are confirmed in the Store at the revision sent; rejected ones put their Book on the skip list.
+
+!ios `\.session.bookID` is a *key path*: a reference to a property, usable like a function. `Dictionary(_:uniquingKeysWith:)` builds a dictionary from pairs and decides what to do with duplicate keys.
+--- 196-
+The device description audiobookshelf wants with each session: a stable device ID kept in the Store, the app version, the hardware model and the iOS version.
+
+!ios `uname` is a C function; `withUnsafeBytes` reads its fixed-size C character array as bytes so it can become a Swift `String`. You won't see much C interop elsewhere in this repo.
+
+=== LogosKit/Sources/Sync/SessionOutbox+Finished.swift
+The [[term:Finished]] part of the Outbox. When the listener marks a Book Finished (or not) by hand, the Store queues a [[term:Finished change]] stamped with the time they did it. This file sends those with `PATCH /api/me/progress/:id`, carefully, so a change never overwrites something newer made on another device.
+--- 1-17
+Read the doc comment slowly: it explains why the order within one send matters. The guard fetch comes before the sessions because audiobookshelf stamps progress that a session creates with its *own* time, which would otherwise look newer than the listener's change. After the sessions go, a change is only sent if the Server doesn't already agree with it.
+--- 18-32
+A loop that watches the Store's pending Finished changes and sends as soon as a new one appears. Marking a Book Finished while nothing is playing wouldn't otherwise trigger a send until the next foreground.
+
+!ios `database.pendingFinishedChangeUpdates()` is a database observation turned into an async stream: GRDB re-runs the query whenever the underlying tables change. That's the same mechanism the screens use to stay up to date ([[#primer-grdb]]).
+--- 33-59
+Step 1, the guard fetch. Changes overruled by newer progress on the Server are dropped, and the Server's state is applied. If the fetch fails with a plain error, the changes are skipped this time but the sessions still go.
+--- 60-118
+Step 3. Only changes whose Book has no unsent sessions left are ready. If this send just delivered sessions for one of them, the Server's progress is fetched again first, because a session that reached the end may already have finished the Book there. `FinishedChanges.isOnServer` (Domain) decides whether a PATCH is still needed; if the Server already agrees, the change is just confirmed locally.
+
+!ios `Result<Success, Failure>` is a standard enum with `.success(value)` and `.failure(error)`. Here it returns either the counts or the outcome to stop with. `case .failure(let stop) where stop.outcome == .failed` adds a condition to a pattern.
+--- 119-
+`FinishedStop` is a tiny error wrapper so an outcome can travel through `Result`, plus the shared progress fetch helper.
+
+=== LogosKit/Sources/Sync/Connection.swift
+The connection state the listener should see: signed in, needs to sign in again, or the Server is too old. It combines what `Auth` knows (a refresh token was rejected) with what the last sync found (the version), and publishes changes as a stream the UI can follow. It also handles signing in again as the same user, and the token half of signing out.
+--- 1-15
+The three states. Note the comment "Unreachable is not a state": being offline is normal for an app that plays from Downloads, so it isn't shown as a connection problem.
+--- 16-45
+One `Connection` per identity, owned by `LibrarySync`. The too-old version is read back from the Store at start, so a relaunch doesn't talk to a too-old Server before the next check.
+
+!ios `private(set) var` means anyone in the module can read it but only this type can change it.
+--- 46-60
+`state` asks `Auth` for the latest needs-sign-in flag, then combines it with the remembered version. Needs sign-in wins over too old.
+
+!ios A computed property with `get async` can be awaited like a function: `await connection.state`.
+--- 61-85
+`updates()` hands out an `AsyncStream` that yields the current state and then every change. Each watcher remembers what it was last told, so it only hears real changes. The first watcher starts one task that follows `Auth`'s own stream.
+
+!ios `AsyncStream.makeStream` gives a stream plus a `continuation` you push values into with `yield`. `bufferingNewest(1)` keeps only the latest value if the reader is slow, which is right for "current state". `[weak self]` stops the closure from keeping the actor alive; `onTermination` cleans up when the reader stops listening.
+--- 86-115
+Signing in again from the needs-sign-in state. `SignIn.logInAgain` checks it's the same Server and the same user, then `Auth` saves and starts using the new tokens. The Library, Downloads and Outbox are untouched; callers resume work.
+
+!why Signing in as a *different* user is refused here: everything on the device (progress, Downloads, the Outbox) belongs to the signed-in user, and sending it to another account would be wrong. To switch users you sign out, which wipes the device ([[#flow-sign-out]]).
+--- 116-
+Internal: `serverVersionChecked` is called by `LibrarySync` after each version check, saves the verdict and publishes a change if there is one.
+
+=== LogosKit/Sources/Sync/SignIn.swift
+The sign-in flow: turn what the listener typed into a Server URL, check the Server, log in, pick a book Library, then save the tokens and the [[term:Server]] identity. The saved identity is what makes the next launch skip the sign-in screen. See [[#flow-sign-in]].
+--- 1-32
+Every way sign-in can stop, each shown in place on the sign-in screen ([[UI/SignInModel.swift]] maps them to messages).
+--- 33-58
+Small value types for the Library choice. `LibraryChoice` keeps the new tokens *in memory only* while the listener picks a Library; nothing is saved until they choose.
+
+!ios `Identifiable` (an `id` property) lets SwiftUI lists tell rows apart. `let server: URL` without `public` means UI can hold a `LibraryChoice` and pass it back, but can't look inside.
+--- 59-87
+`SignIn` is a struct holding its dependencies. `allowsPlainHTTPOnLoopback` exists only for the integration and UI tests against a local Docker Server; the normal app never sets it.
+
+!rule HTTPS only. The password is sent to the Server once and never stored. Only the token pair is kept, in the Keychain (`KeychainTokenStore`).
+--- 88-131
+The main flow:
+
+- `/status`: is it reachable, is it ≥ 2.36, and does it allow username/password sign-in?
+- `POST /login`: get the token pair and the user.
+- The Library list, keeping only book Libraries (podcasts are hidden).
+- None → error; exactly one → picked automatically; several → return `.chooseLibrary` and let the UI ask.
+
+Whenever sign-in gives up after a successful login, it logs that login out again on the Server so no session is left dangling.
+
+!ios `throws(SignInError)` is a typed throw: callers know every error is a `SignInError` and can switch over it exhaustively.
+--- 132-175
+`cancel` revokes a pending sign-in when the listener backs out of picking a Library. `logInAgain` is the same flow for the needs-sign-in case, used by `Connection`: it checks it's the same Server and user, saves nothing, and returns the new token pair.
+--- 176-208
+`isSameServer` compares URLs loosely enough (host case, default port, trailing slash) that a listener retyping their address doesn't get "different Server". `choose` finishes a sign-in: tokens first, then the identity.
+
+!why Order matters: the identity is saved last because its presence is what tells launch "signed in". If saving the tokens failed, there must be no identity pointing at missing tokens.
+--- 209-
+Tidying the address: trim, add `https://` to a bare host, drop trailing slashes, and refuse anything that isn't HTTPS (except loopback HTTP in tests). `signInError` maps low-level API errors to what the listener should be told.
+
+!ios `return switch error { ... }` uses a `switch` as an expression: each case produces the value directly.
+
+=== LogosKit/Sources/Sync/Log.swift
+Every module has this same tiny file: a logger under its own category, so Console.app and Instruments can filter Logos's logs by module.
+--- 1-
+!ios `os` is Apple's unified logging. Log messages with `\(value, privacy: .public)` show the value in release logs; anything not marked public is redacted. That's why the code marks only safe things (error descriptions, counts, IDs) as public.
+
+`nonisolated let` at file level makes these constants usable from any actor or thread.

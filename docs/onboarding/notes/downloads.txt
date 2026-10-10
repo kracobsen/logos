@@ -1,0 +1,120 @@
+# order: 150
+# title: Downloads
+# subtitle: whole Books onto the device, through one background session that survives kills and reboots
+Logos plays from local files only, so a [[term:Book]] must be downloaded before it can be played. This module does that: it fetches every audio file of a Book plus its cover, checks each file, and only then marks the Book downloaded. A [[term:Download]] is all or nothing: a Book with one missing file is not downloaded.
+
+In the [[#module-graph]] Downloads may use **Domain**, **ServerAPI** (for `Auth`, the Book data request and the file transfer seam `FileTransfers`) and **Store**. Like Sync, it never talks to the UI directly: it writes each Download's state into the database, and the Downloads screen observes it ([[#single-source-of-truth]]).
+
+The heart of the module is one actor, `Downloader`. Its queue lives in the database, not in memory, so it survives a force-quit, a crash or a reboot. The actual bytes travel through an iOS *background URL session* (wrapped in ServerAPI as [[ServerAPI/BackgroundFileTransfers.swift]]), which keeps transferring while Logos is suspended or even not running, and relaunches Logos in the background when transfers finish ([[#primer-background]], [[#flow-download]]).
+
+!ios A background `URLSession` hands transfers to a system process. Your app can be suspended or killed and the transfers carry on; when they finish, iOS launches the app in the background and calls `application(_:handleEventsForBackgroundURLSession:completionHandler:)` on the app delegate. That's why [[Logos/LogosApp.swift]] creates the transfers object as early as possible and starts the `Downloader` even without any UI.
+
+The other files are small: management (reorder, the launch file check), sign-out, and two *seams* — protocols with a real implementation and room for a fake in tests — for the network type (`NetworkMonitor`) and free disk space (`StorageCapacity`).
+
+Who calls Downloads? [[Logos/LogosApp.swift]] builds one `Downloader` per signed-in identity, sharing that identity's `Auth`. In UI, [[UI/DownloadsModel.swift]] and [[UI/DownloadsModel+Manage.swift]] call `download`, `cancel`, `reorder`, `resume`, `enteredBackground` and `checkFiles`, and [[UI/RootView.swift]] runs the file check after the first frame.
+
+=== LogosKit/Sources/Downloads/Downloader.swift
+The Downloads engine. Read the long doc comment at the top first: it is the specification of every failure rule, and the code below implements it rule by rule.
+--- 1-29
+The rules, in short:
+
+- One Book at a time, first in first out. Each file is one transfer, enqueued from the foreground when the Book becomes active.
+- A file is *verified* when the Server answered 200 or 206 and the size on disk equals the size the Server reported.
+- Before enqueueing, the token is refreshed if it has less than 10 minutes left (background transfers carry the token in their request and can't refresh it themselves), and the Book's data is re-read, because a file's `ino` (its ID on the Server) can change.
+- 401 → refresh and retry that file, not counted as an attempt. 403 → the Book fails. 404 → re-read the Book and retry once. Wrong size → delete and refetch once. Anything else → retry after a backoff of about 1, 5 then 30 minutes, at most 5 attempts.
+- Not enough free space pauses the queue instead of failing.
+- Wi-Fi only unless the listener allows cellular.
+
+!rule ADR 0001 ("the database is the single source of truth") is why the queue lives in the Store. The Store's `download` and `downloadFile` tables hold each Book's state, each file's received bytes, attempts and *resume data*, so `resume()` can rebuild everything from them.
+--- 30-59
+The tunable constants, then the dependencies and a little in-memory state. Note which state is deliberately *only* in memory: the backoff timers (`backingOff`) and the "already retried after a 404" set. A relaunch just retries at once, which is harmless.
+
+!ios `public static let` is a type-level constant (`Downloader.maxAttempts`). Tests read these to check the rules without repeating the numbers. `Duration` is Swift's type for a length of time, like `.seconds(60)`.
+--- 60-86
+Plain initializer injection: the database, the Server API, the shared `Auth`, the transfers, where files go, the cover cache, the `Clock` and (optionally) a free-space checker. `inForeground: false` is used when iOS launches Logos in the background for finished transfers: events are handled, but no new Book starts until the UI calls `resume()`.
+
+!ios `storage ?? VolumeStorageCapacity(...)` means "use `storage` if it isn't `nil`, otherwise this default". `(any StorageCapacity)? = nil` is an optional parameter with a default value.
+--- 87-108
+`start()` hooks up the transfers' event handler and follows the Store's "Downloads removed from the Library" stream. It is idempotent (calling it twice does nothing the second time) and is called as early as possible so no event is missed.
+
+!ios `{ [weak self] event in await self?.handle(event) }` captures `self` weakly so the transfers object doesn't keep the `Downloader` alive forever; `self?` does nothing if it's gone. `deinit` runs when the object is freed, and cancels the follow-up task.
+--- 109-121
+When stage 1 of a sync deletes a Book the Server no longer lists, its unfinished Download goes too, partial files included. (A *completed* Download is kept as [[term:Not on Server]] by the Store, so it never shows up here.)
+--- 122-144
+The cellular setting is saved in the Store and applied to the running transfers too. `resume()` is the foreground entry point (launch, return to the foreground, a tap); `enteredBackground()` stops new Books from starting while transfers already handed to iOS keep going.
+--- 145-172
+The two actions the listener takes: `download` queues a Book (at the end, or again if it failed) and starts the queue; `cancel` stops or removes a Download and deletes its files at once. Progress and the Book's place in the Library stay, except for a Not on Server Book, which is deleted entirely, cover included (it only existed because of its Download).
+--- 173-196
+`advance()` is the queue loop: while there's room on disk, ask the Store for the next Book to start and enqueue its missing files. It stops as soon as one Book is in flight or waiting; finished, failed or cancelled Books let it move on to the next one.
+
+!ios `while true { ... }` with `guard ... else { return }` inside is a common Swift loop shape: each `guard` is an exit condition.
+--- 197-209
+A private enum naming what can happen when a Book's files are started. Giving each outcome a name makes `advance()` and `continueActive()` read like the rules.
+--- 210-252
+The storage check. The Book about to start (or the active one, if the queue is already paused for storage) must fit, with a 500 MB margin. The pause is recorded in the Store, so the UI can show "Not enough storage", and lifted once there's room.
+
+!ios `try candidate.map { try hasRoom(...) } ?? true` calls `map` on an *optional*: it runs the closure if there's a value and gives `nil` if not, and `?? true` turns "no candidate" into "fits".
+--- 253-305
+`transferMissingFiles(of:)` is the core step. In order:
+
+- Get a token valid for at least 10 more minutes, and re-read the Book's data from the Server. A 404 or 403 here means the Book is gone: fail it.
+- A Book with no audio tracks fails.
+- Fetch the cover if needed (it is part of the Download).
+- Save the fresh Book data and the list of files to the Store.
+- For each file not yet verified and not already running or backing off: if the full file is already on disk (it arrived just before a kill, before it could be recorded), mark it verified; otherwise enqueue a transfer, passing any resume data so it continues where it stopped.
+- If everything is verified, finish the Book.
+
+!why Files are keyed by `relPath` (their path inside the Book) rather than `ino`, because the Server's `ino` can change; that's why the Book data is fetched again before every enqueue.
+--- 306-346
+The cover shares its file with the cover cache ([[Store/CoverFiles.swift]]), so a downloaded Book never stores its cover twice. `finishIfComplete` marks the Book downloaded only when every file is verified, and `fail` records a failed Book (its verified files are kept, so a retry only fetches what's missing).
+--- 347-369
+Events from the background session: progress, finished, or failed. A failed transfer keeps its resume data. If the disk can't hold the rest, that's not a network failure, so the queue pauses for storage instead of using up an attempt.
+
+!ios `switch event { case .progress(let transfer, let received): ... }` pulls the associated values out of an enum case. Swift's `switch` must cover every case, so adding a new event forces you to handle it everywhere.
+--- 370-423
+A transfer finished with an HTTP status. This `switch` is the failure rules from the top of the file, almost word for word: verify the size on 200/206, refresh on 401, fail on 403, retry once on the first 404, fail on the second, and back off on anything else.
+
+A transfer that finishes for a Book that was cancelled meanwhile has its file deleted, so nothing is left behind.
+
+!ios `case 404 where !retriedAfterNotFound.contains(transfer):` is a pattern with a condition. Cases are tried top to bottom, so the plain `case 404:` below only matches the second time.
+--- 424-461
+Backoff. The attempt is counted and saved, then a task sleeps on the injected `Clock` and re-enqueues the file. The due time is computed *before* the task starts, so a slow start doesn't stretch the wait.
+
+!rule Never `Task.sleep` directly in Downloads: sleep on the `Clock`. In tests, `TestClock` advances time instantly, which is how the 1/5/30-minute backoffs are tested without waiting ([[#seams]]).
+--- 462-484
+Small helpers: carry on with the active Book or fail it and move on. Progress writes are throttled to once a second per file so a fast download doesn't hammer the database.
+--- 485-
+Lookups against the Store. `activeFile` returns a file only if its Book is the one downloading and the file isn't verified yet, which is how stale events (for a cancelled Book, or a file already done) are ignored.
+
+=== LogosKit/Sources/Downloads/Downloader+Manage.swift
+Two management actions, in an extension so `Downloader.swift` stays about the queue itself.
+--- 1-14
+Reordering the queue from the Downloads screen. The active Book keeps going; the reordered ones start after it.
+--- 15-
+The launch file check: a downloaded Book whose files are missing or the wrong size becomes not downloaded (and isn't queued again), and folders without a Download are deleted. The work itself is in the Store ([[Store/DownloadFileCheck.swift]]).
+
+!rule The file check never runs on the launch path. [[UI/RootView.swift]] runs it in the background after the first frame, because cold launch to an interactive Library has a 400 ms budget ([[#performance]]).
+
+=== LogosKit/Sources/Downloads/Downloader+SignOut.swift
+The Downloads half of signing out ([[#flow-sign-out]]).
+--- 1-
+Every backoff and transfer stops and every Download file is deleted. `isSignedOut` makes this `Downloader` ignore anything that comes after; a new sign-in builds a fresh one in the composition root. The database rows are wiped separately by the Store's sign-out.
+
+=== LogosKit/Sources/Downloads/NetworkMonitor.swift
+A seam for one question: "is there a network Downloads may use right now?" It exists only to explain to the listener why nothing is moving ("Waiting for Wi-Fi"). The transfers themselves wait for the right network on their own.
+--- 1-11
+!ios A `protocol` lists what a type must provide, like an interface in other languages. Code depends on the protocol (`any NetworkMonitor`), so tests can pass a fake that yields whatever they want. `: Sendable` requires every implementation to be safe to share between actors.
+--- 12-
+The real implementation wraps Apple's `NWPathMonitor` (from the `Network` framework) in an `AsyncStream`. A path counts as Wi-Fi when it's usable, not in Low Data Mode, and over Wi-Fi or wired Ethernet. When the reader stops listening, `onTermination` cancels the monitor.
+
+!ios Many older Apple APIs call you back on a closure (`pathUpdateHandler`). Wrapping them in `AsyncStream { continuation in ... }` turns those callbacks into something you can `for await` over, which is the shape the rest of this codebase uses.
+
+=== LogosKit/Sources/Downloads/StorageCapacity.swift
+The free-space seam the storage check uses. Tests pass a fake with a fixed number of bytes to exercise "Not enough storage".
+--- 1-
+The real one asks the volume for its "available capacity for important usage": what iOS can free up (for example by purging caches) for a task the listener asked for. That's the right number for a user-requested Download, and it's larger than the raw free space.
+
+=== LogosKit/Sources/Downloads/Log.swift
+The module's logger, the same three lines every module has (see [[Sync/Log.swift]]).
+--- 1-
+Downloads logs under its own `LogCategory.downloads`.

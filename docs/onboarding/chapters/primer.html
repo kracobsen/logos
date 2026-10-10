@@ -1,0 +1,215 @@
+<!-- 20 | iOS & Swift primer -->
+<header class="page-head">
+<h1>iOS &amp; Swift primer</h1>
+<p class="subtitle">The platform ideas this codebase depends on, explained from the ground up, with pointers to where
+Logos uses each one.</p>
+</header>
+<div class="chapter">
+<p>This chapter assumes you can program, but not that you have written an iOS app. Each section explains just enough
+to read the code. The annotated pages explain the details when they first come up.</p>
+
+<h2 id="primer-swift">Swift in ten minutes</h2>
+<p>Swift is a compiled, statically typed language. Some features matter in every file:</p>
+<ul>
+<li><strong><code>struct</code> vs <code>class</code>.</strong> A <code>struct</code> is a <em>value</em>: assigning it
+copies it, like an <code>Int</code>. A <code>class</code> is a <em>reference</em>: two variables can point at the same
+object. Logos uses structs for data (a <code>Book</code>, a <code>Chapter</code>, a <code>Progress</code>, all in
+<a href="domain.html">Domain</a>) and classes for long-lived things with identity (the <code>Player</code>, screen
+models). <code>final class</code> just means "nobody may subclass this".</li>
+<li><strong><code>let</code> and <code>var</code>.</strong> <code>let</code> is a constant and <code>var</code> can
+change. On a struct, a <code>mutating func</code> is a method that changes the value.</li>
+<li><strong>Optionals.</strong> <code>String?</code> means "a String, or <code>nil</code>". You must unwrap it before
+use: <code>if let name { … }</code>, <code>guard let name else { return }</code>, <code>name ?? "default"</code>, or
+<code>name!</code> (crash if nil; rare here). <code>guard</code> is an early exit: "make sure this is true, otherwise
+leave now".</li>
+<li><strong><code>enum</code> with associated values.</strong> Swift enums can carry data per case, e.g.
+<code>case failed(reason: String)</code>. A <code>switch</code> over an enum must handle every case, so the compiler
+tells you about every place to update when you add one. Logos uses this a lot for state ("signed out / signing in /
+signed in").</li>
+<li><strong>Protocols.</strong> A <code>protocol</code> is an interface. Code that says <code>any ServerAPI</code>
+works with <em>any</em> type that implements the <code>ServerAPI</code> protocol: the real HTTP client in the app, a
+fake in tests. Most of the "seams" in this codebase are protocols ([[#seams]]). <code>some View</code> is the opposite
+direction: "one specific type that I won't name". SwiftUI uses it a lot.</li>
+<li><strong>Extensions.</strong> <code>extension Player { … }</code> adds methods to a type, often in another file.
+Logos splits big types this way: <code>Player.swift</code> plus <code>Player+SleepTimer.swift</code>,
+<code>Player+Sessions.swift</code> and so on. The <code>Type+Topic.swift</code> file name is the convention.</li>
+<li><strong>Access control.</strong> <code>public</code> means visible to other modules. Without a keyword, a symbol is
+<code>internal</code>: visible only inside its own module. <code>private</code> means visible only in the enclosing
+declaration and file. Because each module is a separate Swift module, <code>public</code> marks a module's interface
+on purpose.</li>
+<li><strong><code>Codable</code>.</strong> A type that conforms to <code>Codable</code> can be turned into JSON and
+back, mostly automatically. ServerAPI decodes the server's JSON this way.</li>
+<li><strong>Doc comments.</strong> <code>///</code> comments are documentation that Xcode shows on hover. The code
+uses them a lot, and they are usually the best explanation of intent.</li>
+</ul>
+
+<h2 id="primer-swiftui">SwiftUI: describing the screen</h2>
+<p>SwiftUI is Apple's declarative UI framework. You never move buttons around by hand. Instead, you write a function of
+state that <em>describes</em> what the screen should look like, and SwiftUI works out what to change when the state
+changes.</p>
+<pre>struct GreetingView: View {
+    let name: String
+    var body: some View {          // "what this view looks like right now"
+        VStack {                   // stack children vertically
+            Text("Hello, \(name)")
+            Button("Play") { … }   // the closure runs on tap
+        }
+        .padding()                 // a "modifier" wraps the view in another view
+    }
+}</pre>
+<ul>
+<li>Views are small, cheap <code>struct</code>s. SwiftUI rebuilds them often, so they should not hold long-lived
+state themselves.</li>
+<li><code>body</code> uses a <em>result builder</em>: the list of views inside the braces is collected
+automatically, and <code>if</code> and <code>switch</code> work inside it.</li>
+<li><code>@State</code> is a property wrapper for small local state that a view owns (is a sheet showing, what is in
+a text field). <code>@Binding</code> passes write access to someone else's state. <code>@Environment</code> reads
+values passed down the view tree.</li>
+<li><code>.task { … }</code> runs async work while a view is on screen and cancels it when the view goes away. Logos
+uses this to start the database observations that feed each screen.</li>
+<li>Navigation uses <code>TabView</code> (the tabs along the bottom), <code>NavigationStack</code> (push and pop), and
+<code>.sheet</code> (cards that slide up, such as the player).</li>
+</ul>
+<p>An app starts at a type marked <code>@main</code> that conforms to <code>App</code>. Its <code>body</code> is a
+<code>Scene</code>, usually a <code>WindowGroup</code> holding the root view. In Logos that is
+[[Logos/LogosApp.swift]].</p>
+
+<h2 id="primer-observable">@Observable models</h2>
+<p>Screens in Logos follow a <strong>model + view</strong> pattern. Each screen has an <code>@Observable</code> class,
+for example <code>LibraryModel</code> or <code>BookDetailModel</code>, that holds the screen's data and its actions.
+The view reads the model's properties in <code>body</code>.</p>
+<p><code>@Observable</code> is a macro (code generated by the compiler). It records which properties each view
+<em>read</em> while drawing, and redraws only those views when one of those properties changes. You don't need
+<code>@Published</code>, Combine or manual "notify" calls: assigning a property is enough.</p>
+<p>Where does the model get its data? Not from other objects telling it. It <em>observes the database</em>. See
+[[#single-source-of-truth]]. This makes the screen models in Logos thin: mostly "observe query X and put the result
+in property Y", plus methods that write to the database or call into Sync, Downloads or Playback.</p>
+
+<h2 id="primer-concurrency">async/await and tasks</h2>
+<p>Anything slow (network, disk, waiting) is written with <code>async</code>/<code>await</code>:</p>
+<pre>func fetchBooks() async throws -> [ListedBook] {
+    let data = try await api.send(request)   // suspends here without blocking the thread
+    return try decode(data)
+}</pre>
+<ul>
+<li><code>async</code> means the function can <em>suspend</em>. <code>await</code> marks each point where it might
+suspend. <code>throws</code>/<code>try</code> is Swift's error handling (errors are values that are thrown, not
+exceptions that unwind through anything).</li>
+<li>A <code>Task { … }</code> starts concurrent work. It can be cancelled, and well-behaved code checks for
+cancellation. In tests, cancellation shows up as a thrown <code>CancellationError</code>.</li>
+<li><code>for await value in stream</code> loops over an <code>AsyncSequence</code>, a series of values that arrive
+over time. Database observations and timers are exposed this way. For example, <code>Clock.timer(every:)</code> in
+[[Domain/Clock.swift]] is an <code>AsyncStream</code> of ticks.</li>
+</ul>
+
+<h2 id="primer-actors">Actors, the main actor and Sendable</h2>
+<p>Swift 6 checks for data races when it compiles. Two rules cover most of what you will see:</p>
+<ul>
+<li><strong>An <code>actor</code></strong> is like a class whose state only one task can touch at a time. Calls from
+outside are <code>await</code>ed. In Logos, the long-running background workers are actors: <code>LibrarySync</code>,
+<code>ProgressSync</code>, <code>SessionOutbox</code>, <code>Connection</code> (in Sync) and <code>Auth</code> (in
+ServerAPI, so two token refreshes never run at once).</li>
+<li><strong><code>@MainActor</code></strong> is the one special actor: the main thread, where all UI work must
+happen. The UI and Playback modules, and the app target, are compiled with <em>main actor by default</em>, so
+everything in them runs on the main thread unless it says otherwise (<code>nonisolated</code>). That keeps UI code
+simple. Heavy work such as database reads runs elsewhere and hands its results back.</li>
+<li><strong><code>Sendable</code></strong> marks a type as safe to pass between concurrent contexts. Immutable structs
+usually are. A mutable class usually is not. When the compiler complains that something "is not Sendable", it has
+found a possible race.</li>
+</ul>
+<aside class="box box-rule"><div class="box-label">House rule</div><p>The project uses Swift 6 language mode with
+<em>complete</em> strict concurrency, and <em>warnings are errors</em>, so a possible data race fails the build. Fix the
+cause rather than silencing it: the code uses the <code>nonisolated(unsafe)</code> escape hatch in only three places,
+each to hand a system-provided completion handler across an isolation boundary (one is the app delegate in
+[[Logos/LogosApp.swift]]).</p></aside>
+
+<h2 id="primer-spm">Swift packages and modules</h2>
+<p>A <strong>Swift package</strong> is a folder with a <code>Package.swift</code> manifest that declares
+<em>targets</em>. Each target is a separate <strong>module</strong>, compiled on its own, with its own namespace and
+its own <code>public</code> interface. A target can use another only if the manifest lists it as a dependency and the
+file says <code>import ThatModule</code>.</p>
+<p>Logos puts almost everything in one local package, <code>LogosKit/</code>, with seven targets (Domain, ServerAPI,
+Store, Sync, Downloads, Playback, UI). Splitting it this way lets the compiler and a check script enforce the
+architecture: if Playback tries to <code>import ServerAPI</code>, the build or CI fails. See [[#module-graph]].
+Dependencies are pinned in <code>Package.resolved</code>, which is checked in.</p>
+
+<h2 id="primer-xcode">Xcode projects, targets, schemes and configurations</h2>
+<ul>
+<li><strong>Project</strong> (<code>Logos.xcodeproj</code>): Xcode's description of what to build. In this repo it
+contains almost nothing: one app target, one UI-test target, and a reference to the local package.</li>
+<li><strong>Target</strong>: one product, such as the app or a test bundle.</li>
+<li><strong>Configuration</strong>: a named set of build settings. Logos has <em>Debug</em> (for development),
+<em>Release</em> (what ships) and <em>Performance</em> (Release optimisation plus test hooks, for measuring).</li>
+<li><strong>xcconfig files</strong> (<code>Config/*.xcconfig</code>): build settings as plain text instead of hidden in
+the project file. Settings are kept in these files so that changes are easy to review.</li>
+<li><strong>Scheme</strong>: "build these targets with this configuration, and run or test with these options". The
+schemes are <code>Logos</code> (app plus all unit tests), <code>LogosUITests</code> and
+<code>LogosPerformance</code>.</li>
+<li><strong>Info.plist</strong> and <strong>entitlements</strong> declare things to iOS: the app's name, that it may
+play audio in the background, and so on.</li>
+<li><strong>Simulator vs device.</strong> The Simulator runs on your Mac and is good for most work. Battery,
+background audio, lock screen and real performance need a physical iPhone. See [[#house-rules]].</li>
+</ul>
+<p><code>xcodebuild</code> is Xcode's command-line build tool. The <code>scripts/</code> wrap it so you rarely type it
+yourself.</p>
+
+<h2 id="primer-background">Apps in the background</h2>
+<p>An iOS app is not a normal long-running process. When the user leaves it, iOS suspends it within seconds, and it
+may kill the app later without warning. Two exceptions matter to Logos:</p>
+<ul>
+<li><strong>Background audio.</strong> Because <code>Info.plist</code> declares the <code>audio</code> background mode,
+the app keeps running while it is playing sound. When playback stops, it can be suspended again.</li>
+<li><strong>Background URL sessions.</strong> A <code>URLSession</code> with a <em>background configuration</em> hands
+downloads to a system process. They continue while the app is suspended, or even after it has been killed. When they
+finish, iOS launches or wakes the app and calls
+<code>application(_:handleEventsForBackgroundURLSession:completionHandler:)</code>. That is why
+[[Logos/LogosApp.swift]] creates the transfers object as early as possible, and why the Downloads code must cope with
+learning about finished files after a relaunch.</li>
+</ul>
+<p>Because the app can be killed at any moment, it saves state as it goes. That is the main reason for the
+database-first design.</p>
+
+<h2 id="primer-avfoundation">Audio: AVFoundation and Now Playing</h2>
+<ul>
+<li><strong><code>AVPlayer</code></strong> plays media. Logos builds a queue of a Book's local audio files and plays
+them at the chosen speed, with the time-domain pitch algorithm so sped-up speech still sounds natural.</li>
+<li><strong><code>AVAudioSession</code></strong> tells iOS what kind of audio the app makes ("spoken audio playback")
+and reports <em>interruptions</em> (a phone call) and <em>route changes</em> (headphones unplugged, which should
+pause).</li>
+<li><strong>Now Playing and remote commands</strong> (<code>MPNowPlayingInfoCenter</code>,
+<code>MPRemoteCommandCenter</code>): what the lock screen, Control Center and headphone buttons show and control.</li>
+</ul>
+<p>Each of these is wrapped behind a small protocol (<code>AudioPlayer</code>, <code>AudioSession</code>,
+<code>NowPlayingCenter</code>) with a <code>System…</code> version for the app and a <code>Fake…</code> version for
+tests. See the <a href="playback.html">Playback</a> page.</p>
+
+<h2 id="primer-grdb">SQLite and GRDB</h2>
+<p>GRDB is the project's only third-party dependency. It is a Swift library for SQLite. The parts used here:</p>
+<ul>
+<li><strong><code>DatabasePool</code></strong>: one database file that allows many readers at once and one writer.
+Reads and writes are closures: <code>try pool.read { db in … }</code>, <code>try pool.write { db in … }</code>. A
+<code>write</code> is a transaction: it all happens or none of it does.</li>
+<li><strong>Records</strong>: structs that conform to GRDB protocols (<code>FetchableRecord</code>,
+<code>PersistableRecord</code>) can be read from and written to tables without hand-written SQL. Raw SQL is still used
+where it is clearer or faster.</li>
+<li><strong>Migrations</strong>: numbered, append-only schema changes. The database on a user's phone is upgraded step
+by step on launch. You never edit a migration that has shipped. You add a new one.</li>
+<li><strong><code>ValueObservation</code></strong>: "run this query now, and again whenever a table it read from
+changes". This is how every screen stays up to date. Logos wraps it in one helper, <code>observe(_:)</code> in
+[[Store/AppDatabase.swift]], which returns an async sequence of results with duplicates removed.</li>
+</ul>
+
+<h2 id="primer-testing">Testing tools</h2>
+<ul>
+<li><strong>Swift Testing</strong> (<code>import Testing</code>) is used for all unit tests. A test is a function
+marked <code>@Test</code>, and checks are written <code>#expect(a == b)</code> or <code>try #require(x)</code>. A
+<code>@Suite</code> groups tests. Tests can be async.</li>
+<li><strong>XCTest / XCUITest</strong> is the older framework. It is still needed for <em>UI tests</em>, which launch the
+real app and tap through it like a user, and for <em>performance tests</em> (<code>measure(metrics:)</code>). Those
+live in <code>LogosUITests/</code>.</li>
+<li><strong>Fakes over mocks.</strong> Instead of a mocking library, the code ships hand-written fakes next to the
+real implementations: <code>FakeServer</code>, <code>FakeFileTransfers</code>, <code>FakeAudioPlayer</code>,
+<code>TestClock</code>. Tests use the real database (a temporary file) rather than faking it.</li>
+</ul>
+<p>More in [[#tests]] and on the <a href="tests.html">Tests</a> page.</p>
+</div>

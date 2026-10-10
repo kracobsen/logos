@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Glossary · Logos onboarding</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<nav class="sidebar">
+<a class="brand" href="index.html"><span class="lambda">λ</span> Logos onboarding</a>
+<ul><li><a href="index.html">Start here</a></li><li><a href="primer.html">iOS &amp; Swift primer</a></li><li><a href="architecture.html">Architecture</a></li><li><a href="workflow.html">Working in the repo</a></li><li><a href="app.html">App target &amp; tooling</a></li><li><a href="domain.html">Domain</a></li><li><a href="serverapi.html">ServerAPI</a></li><li><a href="store.html">Store</a></li><li><a href="sync.html">Sync</a></li><li><a href="downloads.html">Downloads</a></li><li><a href="playback.html">Playback</a></li><li><a href="ui-shell.html">UI: shell &amp; browsing</a></li><li><a href="ui-player.html">UI: book, player &amp; downloads</a></li><li><a href="tests.html">Tests</a></li><li><a href="glossary.html" class="current">Glossary</a></li></ul>
+
+</nav>
+<main>
+<header class="page-head"><h1>Glossary</h1><p class="subtitle">Generated from <code>GLOSSARY.md</code>.</p></header>
+<div class="intro"><p>The domain language of Logos. These words are capitalised in code comments, docs and UI copy
+when they mean exactly this (a <em>Book</em>, a <em>Download</em>), and the "avoid" words are kept out of the code so
+there is only one name per idea. When you name a type or write a comment, pick from this list.</p></div>
+<dl class="glossary"><div class="term-entry" id="term-server"><dt>Server</dt><dd>The single audiobookshelf instance the app is signed in to, with one user account.<p class="avoid">Avoid: Backend, host, instance</p></dd></div>
+<div class="term-entry" id="term-library"><dt>Library</dt><dd>The one audiobookshelf book library the app is pointed at, chosen at sign-in.<p class="avoid">Avoid: Collection, catalogue (when meaning the server-side library)</p></dd></div>
+<div class="term-entry" id="term-book"><dt>Book</dt><dd>A single audiobook in the Library; the unit you browse, download, and play.<p class="avoid">Avoid: Title, item, library item, audiobook</p></dd></div>
+<div class="term-entry" id="term-series"><dt>Series</dt><dd>An ordered group of Books as the Server reports it; a Book can belong to several Series, each with its own place in the reading order.<p class="avoid">Avoid: Saga, collection, cycle</p></dd></div>
+<div class="term-entry" id="term-download"><dt>Download</dt><dd>A whole Book (all of its audio files and its cover) kept on the device; it is downloaded only when every file is present and verified, and only a downloaded Book can be played.<p class="avoid">Avoid: Offline copy, cached book, partial download</p></dd></div>
+<div class="term-entry" id="term-not-on-server"><dt>Not on Server</dt><dd>A downloaded Book that the Server no longer lists; it stays on the device and playable until its Download is removed.<p class="avoid">Avoid: Orphaned, deleted, missing book</p></dd></div>
+<div class="term-entry" id="term-in-progress"><dt>In Progress</dt><dd>A Book that has been started and not finished, whether or not it is downloaded.<p class="avoid">Avoid: Continue listening, currently reading, started</p></dd></div>
+<div class="term-entry" id="term-finished"><dt>Finished</dt><dd>A Book that has been listened to its end (playback reached, or was left within the last 30 seconds of, its last Chapter) or marked as such by hand; playing it again starts from the beginning and makes it no longer Finished.<p class="avoid">Avoid: Completed, done, read</p></dd></div>
+<div class="term-entry" id="term-chapter"><dt>Chapter</dt><dd>A named section of a Book, as the Server reports it; a Book the Server reports no Chapters for is a single Chapter. The unit the Sleep Timer counts.<p class="avoid">Avoid: Track, file, part</p></dd></div>
+<div class="term-entry" id="term-sleep-timer"><dt>Sleep Timer</dt><dd>A request to stop playback at the end of the Xth Chapter from now, counting the Chapter currently playing as the first.<p class="avoid">Avoid: Timer, sleep mode</p></dd></div>
+<div class="term-entry" id="term-listening-session"><dt>Listening session</dt><dd>One stretch of listening to one Book, as reported to the Server for its history and stats; it carries on across short pauses and ends on a long pause, a switch to another Book, Finished or a Sleep Timer stop.<p class="avoid">Avoid: Play session, listen, playback session</p></dd></div>
+<div class="term-entry" id="term-finished-change"><dt>Finished change</dt><dd>A change to a Book&#x27;s Finished, made on this device and stamped with when the listener made it, waiting to reach the Server; a later change to the same Book replaces it.<p class="avoid">Avoid: Finished update, completion event</p></dd></div>
+<div class="term-entry" id="term-outbox"><dt>Outbox</dt><dd>What this device holds for the Server and hasn&#x27;t had acknowledged yet: listening sessions and Finished changes. A Book with anything in the outbox is never overwritten by progress from the Server.<p class="avoid">Avoid: Queue, pending sync, upload queue</p></dd></div></dl>
+<footer>Generated by <code>docs/onboarding/build.py</code> from the repository as it is. Edit the chapters and notes in
+<code>docs/onboarding/</code>, never the generated pages.</footer>
+</main>
+</body>
+</html>

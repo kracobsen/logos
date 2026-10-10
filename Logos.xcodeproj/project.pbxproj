@@ -34,8 +34,16 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		1A0000000000000000000002 /* Logos */ = {isa = PBXFileSystemSynchronizedRootGroup; path = Logos; sourceTree = "<group>"; };
-		1A0000000000000000000502 /* LogosUITests */ = {isa = PBXFileSystemSynchronizedRootGroup; path = LogosUITests; sourceTree = "<group>"; };
+		1A0000000000000000000002 /* Logos */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Logos;
+			sourceTree = "<group>";
+		};
+		1A0000000000000000000502 /* LogosUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = LogosUITests;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -237,6 +245,13 @@
 			};
 			name = Release;
 		};
+		1A0000000000000000000413 /* Performance */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 1A0000000000000000000017 /* Performance.xcconfig */;
+			buildSettings = {
+			};
+			name = Performance;
+		};
 		1A0000000000000000000421 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -248,13 +263,6 @@
 			buildSettings = {
 			};
 			name = Release;
-		};
-		1A0000000000000000000413 /* Performance */ = {
-			isa = XCBuildConfiguration;
-			baseConfigurationReference = 1A0000000000000000000017 /* Performance.xcconfig */;
-			buildSettings = {
-			};
-			name = Performance;
 		};
 		1A0000000000000000000423 /* Performance */ = {
 			isa = XCBuildConfiguration;

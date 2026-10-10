@@ -1,0 +1,343 @@
+# order: 130
+# title: Store
+# subtitle: the GRDB database, the single source of truth, and the files on disk
+**Store** is where everything Logos knows is kept: the Library list, each [[term:Book]]'s Chapters and tracks, progress, the Download queue, the [[term:Outbox]], settings and the signed-in identity. It owns one SQLite database, opened through the third-party library [GRDB](https://github.com/groue/GRDB.swift), plus two small helpers for files on disk (covers and Download audio).
+
+In the module graph Store sits right above Domain: it may import only `Domain` and `GRDB`, and it is the **only** module allowed to import GRDB. Sync, Downloads, Playback and UI all depend on Store, and talk to the database exclusively through the methods on `AppDatabase` — they never see a GRDB type or write SQL themselves. See [[#module-graph]].
+
+!rule [ADR 0001](https://github.com/kracobsen/logos/blob/main/docs/adr/0001-database-is-the-single-source-of-truth.md): *the database is the single source of truth.* Sync, Downloads and Playback write here and never call back into the UI; each screen's model *observes* the database and redraws when the rows it reads change. If you are tempted to add a shared in-memory cache that the UI reads, don't: put it in a table and observe it. See [[#single-source-of-truth]].
+
+**How the module is organised.** There is one public type, `AppDatabase` ([[Store/AppDatabase.swift]]), a small `struct` wrapping a GRDB `DatabasePool`. Every other file is an `extension AppDatabase` that adds the methods for one area (Library, progress, Downloads, sessions…), and usually also registers the migration that creates that area's tables. Reads come in pairs: a plain `foo()` that reads once, and a `fooUpdates()` that returns an `AsyncThrowingStream` yielding the value now and again after every relevant change. Both share one `static func fetchFoo(_ db:)`, so the one-shot read and the live read can never disagree.
+
+!ios **GRDB in five ideas.** (1) A *`DatabasePool`* is a set of SQLite connections: one writer and several readers, in [WAL mode](https://www.sqlite.org/wal.html), so reads never wait for writes. It is `Sendable` (safe to share between threads). (2) `pool.read { db in … }` and `pool.write { db in … }` run a closure on a connection; every `write` is one *transaction*: all of it commits or none of it does. (3) A *record* is a Swift struct that conforms to `FetchableRecord` (can be built from a row) and `PersistableRecord` (can be inserted/updated/upserted); with `Codable` GRDB maps properties to columns by name. (4) A *migration* is a named, numbered step that changes the schema; `DatabaseMigrator` runs the ones not yet applied, in order, and remembers them in a `grdb_migrations` table. (5) A *`ValueObservation`* re-runs a fetch whenever a transaction commits a change to any table that fetch read from, and delivers the new value. See [[#primer-grdb]].
+
+**The schema at a glance.** All tables are created by migrations in this module:
+
+- `serverIdentity` (one row, id 1) — which [[term:Server]], user and [[term:Library]] Logos is signed in to. Its presence *means* signed in.
+- `syncState` (one row) — when the Library list was last applied, and the last "Server too old" version.
+- `book` — one row per Book: the list columns sync stage 1 writes, the `fullDataVersion`/`coverVersion` bookkeeping for stages 2 and 3, and the `notOnServer` flag.
+- `chapter`, `audioTrack`, `bookSeries` — stage 2's per-Book data, deleted with the Book (`ON DELETE CASCADE`).
+- `progress` — one row per Book: position, Finished, and when the listener acted. Deliberately *not* tied to `book`.
+- `download`, `downloadFile` — the Download queue (state and order) and each Download's files with their transfer state.
+- `downloadPolicy`, `playbackSettings` — one-row settings tables; "no row" means defaults.
+- `listeningSession`, `finishedChange` — the [[term:Outbox]]: [[term:Listening session]]s and [[term:Finished change]]s waiting for the Server.
+- `clientDevice` — the id this install reports to the Server as its device.
+
+!why Times are stored as integer milliseconds (`ms since 1970`) wherever they are compared with the Server's timestamps (`updatedAt`, `lastChanged`, `lastUpdate`), because that's what the Server sends, so "is the Server's change newer than mine?" is an exact integer comparison. A few purely local times (`lastLibrarySync`, `completedAt`) are seconds as `Double`.
+
+**Files on disk.** Covers and Download audio don't go in the database; `CoverFiles` and `DownloadFiles` know where they live. The database records *which* version or *whether verified*, and the launch file checks ([[Store/CoverStore.swift]], [[Store/DownloadFileCheck.swift]]) reconcile the two after a restore from backup.
+
+=== LogosKit/Sources/Store/AppDatabase.swift
+The front door of the module: the `AppDatabase` type, how the file is opened, the list of migrations, and the `observe` helper every `…Updates()` method is built on. The app opens it once in the composition root ([[Logos/LogosApp.swift]]) and hands the same value to every module.
+--- 1-16
+`AppDatabase` holds the pool plus two in-memory `Broadcast`s (see [[Store/FetchedProgressUpdates.swift]]) for events a table can't express afterwards.
+
+!ios **`struct` vs `class`.** A `struct` is a *value type*: assigning it copies it. That's fine here because the copy holds the same `DatabasePool` reference, so every copy of `AppDatabase` talks to the same database. **`Sendable`** is Swift's promise that a value can safely cross between threads/tasks; under Swift 6 strict concurrency the compiler refuses to share non-`Sendable` values across concurrency domains. `AppDatabase` is `Sendable` because all its stored properties are.
+
+!ios **`///` doc comments** are Swift's documentation comments; Xcode shows them on Option-click. A name in double backticks inside a doc comment is a symbol link in DocC, Apple's documentation format.
+
+!rule The database file lives in Application Support and must stay in backups — never mark it excluded. Covers and Downloads are excluded; the database is not.
+--- 17-36
+Opening the database. Note what it *doesn't* do: there is no "if it fails, delete and start over". A failure throws, and the app shows `DatabaseErrorView` with the file kept intact, because the file holds unsent listening and local progress.
+
+!ios **`enum` conforming to `Error`.** Swift errors are just values of a type that conforms to the `Error` protocol; an `enum` is the usual choice. `throws` marks a function that can fail, and callers must write `try` in front of the call. **`static func`** belongs to the type rather than an instance: you call `AppDatabase.open(at:)`.
+
+!why `PRAGMA synchronous = FULL` makes SQLite flush the WAL to storage on every commit, so a committed transaction survives a power cut. The comment explains GRDB would otherwise leave it at `NORMAL`. `hasBeenSuperseded` catches a database written by a *newer* Logos (say, after a downgrade) instead of misreading an unknown schema.
+--- 37-91
+The migrator: one registered migration per schema step, in order. The first two are inline; later ones are registered by the file that owns the tables (`registerBookDataMigration` in [[Store/BookDataStore.swift]], and so on), which keeps each table's definition next to the code that reads it.
+
+!rule Migrations are added by hand, in order, and **never edited once shipped**: a phone that already ran `v2-library` will never run it again, so a change must be a new migration (see `v5-manage-downloads`, which *alters* `book` to add a column).
+
+!ios `{ table in … }` is a **trailing closure**: an inline function passed as the last argument. `$0` inside `check { $0 == 1 }` is shorthand for the closure's first parameter. `&migrator` passes the variable **`inout`**, meaning the function may modify the caller's variable.
+
+The `check { $0 == 1 }` on an integer primary key is the house pattern for a *one-row table*: SQLite itself refuses a second row.
+--- 92-112
+`observe` turns a fetch closure into an `AsyncThrowingStream`. `ValueObservation.tracking(fetch)` records which tables and rows the fetch reads; after any committed write touching them it runs the fetch again. `removeDuplicates()` drops results equal to the last one (hence `Equatable`), so a write to an unrelated column of the same table doesn't make the UI redraw.
+
+!ios **`async`/`await` and `AsyncSequence`.** `for try await value in values` loops over values that arrive *over time*; the loop suspends between them without blocking a thread. An `AsyncThrowingStream` is a hand-made async sequence: the `continuation` is how you push values into it. A **`Task { … }`** starts concurrent work; `onTermination` cancels that task when the consumer stops listening (e.g. a screen goes away), so observations don't leak. See [[#primer-concurrency]].
+
+!ios **Generics.** `observe<Value: Sendable & Equatable>` works for any `Value` type that is both `Sendable` and `Equatable`. `@escaping @Sendable` says the closure is stored for later and may run on another thread.
+
+Wrapping GRDB's own `values(in:)` sequence in a standard Swift stream means callers outside Store never see a GRDB type.
+
+=== LogosKit/Sources/Store/LibraryStore.swift
+The `book` table's list columns and the Library tab's rows: what sync stage 1 writes (see [[#flow-sync]]) and what the Library screen reads at launch. Stage 1 is the cheap pass over the whole [[term:Library]] list; stages 2 and 3 (full Book data, covers) fill in the rest later.
+--- 1-45
+`ListedBookRecord` maps a Domain `ListedBook` to the `book` table's list columns.
+
+!ios **Protocol conformance.** `Codable, FetchableRecord, PersistableRecord` after the colon are *protocols* this struct adopts. A protocol is a contract (like an interface); `Codable` is synthesised by the compiler from the stored properties, and GRDB uses it to read and write columns of the same names. `static let databaseTableName` tells GRDB which table.
+
+!why Because the record only lists the stage 1 columns, `upsert` (insert, or update on conflict) touches only those columns and leaves `fullDataVersion`, `coverVersion` and `notOnServer` alone. The record types are internal (no `public`): the rest of the app sees only the Domain types they convert to.
+--- 46-80
+`LibraryRowRecord` is a narrower, read-only record for the same table: `databaseSelection` makes GRDB `SELECT` only these nine columns.
+
+!rule Performance budget: cold launch to an interactive Library is ≤ 400 ms on 940 and 3000 Books, and the Library tab loads *every* row at launch. Selecting only what a row needs is part of meeting that. See [[#performance]].
+
+!ios **Computed property.** `var row: LibraryRow { … }` has no storage; it runs its body each time it's read. Here it converts the record to the Domain type the UI uses.
+--- 81-120
+`applyLibraryList` is the heart of stage 1: in **one transaction** it deletes Books the Server stopped listing (unless they must be kept as [[term:Not on Server]], see [[Store/ManageDownloadsStore.swift]]), upserts every listed Book, and stamps `lastLibrarySync`. Called from [[Sync/LibrarySync.swift]].
+
+Deleting a `book` row cascades to its `chapter`, `audioTrack`, `bookSeries` and `download` rows. Downloads removed this way are announced on the `downloadsRemovedFromLibrary` broadcast *after* the transaction, so the Downloader can cancel transfers and delete files — a deleted row leaves nothing for an observation to see.
+
+!ios `@discardableResult` lets callers ignore the return value without a warning. `let (applied, removedDownloads) = try pool.write { … }` destructures a **tuple** returned from the closure. `for … where …` filters inside a `for` loop.
+
+!rule "Never apply an empty or failed list" is the caller's decision (Sync); this method trusts what it's given.
+--- 121-150
+The read pairs described in the page intro: `libraryRows()` / `libraryRowUpdates()` and `lastLibrarySync()` / `lastLibrarySyncUpdates()`, each sharing one `fetch…` function. [[UI/LibraryModel.swift]] consumes `libraryRowUpdates()`.
+
+!ios `@Sendable static func` marks the function as safe to call from any thread, which `observe` requires. `.map(Date.init(timeIntervalSince1970:))` passes an initializer as a function to an `Optional`'s `map`: if the value is `nil`, the result stays `nil`.
+
+=== LogosKit/Sources/Store/BookDataStore.swift
+Sync stage 2: each Book's full data (Chapters, audio tracks, Series membership), and the Book detail screen's read.
+--- 1-51
+The `v3-book-data` migration creates three child tables keyed by `(bookID, position)` — `position` preserves the Server's order — each with a foreign key to `book` and `onDelete: .cascade`, so removing a Book removes its data.
+
+!why The trigger handles a quirk the comment spells out: renaming a [[term:Series]] on the Server changes the list's `seriesName` but not the Book's `updatedAt`. Setting `fullDataVersion = NULL` marks stage 2 as behind for that Book, so its stored Series names get refetched.
+
+!ios `"""…"""` is a **multi-line string literal**; its indentation is stripped relative to the closing quotes.
+--- 52-61
+The "version" idea that stages 2 and 3 share: a stage is *behind* for a Book when the version it last fetched at differs from the Book's current `updatedAt`. `IS NOT` is SQL's null-safe `!=`, so a never-fetched (`NULL`) Book counts as behind. Not on Server Books are skipped — the Server can't send them.
+--- 62-113
+`applyBookData` writes a batch of fetched Books in one transaction: refresh the list columns, replace the child rows, then mark `fullDataVersion`. Called by [[Sync/LibrarySync+BookData.swift]] in batches, and by [[Downloads/Downloader.swift]] when a Download needs fresh track data.
+
+!ios **`guard … else { continue }`** is an early exit: if the conditions don't hold, skip to the next Book. `guard let x = …` also unwraps an **optional** (a value that may be `nil`) and binds it for the rest of the scope. `enumerated()` yields `(index, element)` pairs.
+
+!why Data is dropped if the Book is gone or older than what's stored: a slow fetch that finishes after a newer list must not roll a Book back. Setting `fullDataVersion` last means the rename trigger (fired by the list-column update) can't undo it.
+--- 114-178
+The Book detail read, one-shot and observed. It assembles a Domain `BookDetail` from the `book` row and its three child tables, and reports `hasCurrentFullData` so the UI can tell when Chapters may still be missing. Used by [[UI/BookDetailModel.swift]].
+
+!ios `row["title"]` reads a column; the Swift type you assign it to (`let title: String = row["title"]`) decides how GRDB decodes it. `#"…"#` is a **raw string**: here it lets the SQL use `"end"` (a reserved word, so quoted) without escaping.
+
+=== LogosKit/Sources/Store/CoverStore.swift
+Sync stage 3, covers: which Books' covers are behind, recording a fetched cover's version, the launch check that reconciles cover files with the database, and the cover versions the UI watches so it can drop stale decoded images.
+--- 1-18
+`CoverToFetch` is a small public value describing one unit of stage 3 work.
+
+!ios **`public`** makes a type or member visible to other modules (Swift's default, `internal`, is visible only inside the module). A `public struct` also needs an explicit `public init`, because the synthesised initializer is internal. `Hashable` lets it go in a `Set` or be a dictionary key.
+--- 19-42
+`coversBehind()` is the cover equivalent of `booksBehindOnFullData()`: `coverVersion IS NOT updatedAt`. After [[Sync/CoverSync.swift]] saves a file (or confirms there is none), it calls `setCoverVersion`.
+--- 43-61
+The cover launch file check. It reads the directory, then in one write marks Books whose file vanished as behind again and works out which files have no Book; those are deleted after the transaction.
+
+!rule Nothing on the launch path runs a file check: this one runs in the background after the first frame (called from [[UI/CoverImages.swift]]). See [[#performance]].
+--- 62-79
+Observed cover versions. A changed number means the file was replaced, so [[UI/CoverImages.swift]] throws away any image it decoded from the old file.
+
+=== LogosKit/Sources/Store/CoverFiles.swift
+Where cover JPEGs live: one file per Book in a directory excluded from backups. No database access here; the database says which version a file is.
+--- 1-19
+Opening the directory also marks it excluded from iCloud/iTunes backups.
+
+!why Covers can always be fetched from the Server again, so there's no reason to spend the listener's backup space on them. The database, by contrast, *is* backed up.
+
+!ios `var url = directory` makes a mutable copy because `setResourceValues` is a *mutating* method on the `URL` value type.
+--- 20-47
+Small file operations. `.atomic` writes to a temporary file and renames it into place, so a reader sees the whole old cover or the whole new one. Deletes use `try?`, which turns a thrown error into `nil` — a missing file is fine.
+--- 48-68
+File names are the Book id, percent-encoded to a safe character set so a strange id can never produce a path like `../x` that escapes the directory.
+
+=== LogosKit/Sources/Store/DownloadFiles.swift
+The audio-file counterpart of `CoverFiles`: one folder per Book, each file at the Server's `relPath`. Downloads writes here, Playback reads from here, and the launch check compares it with the database.
+--- 1-20
+!why The comments record two decisions: the directory is in **Application Support, not Caches**, because iOS may purge Caches when storage runs low and a [[term:Download]] must never silently vanish; and files get the default data protection so background transfers can finish while the phone is locked (after its first unlock). See [[#persistence]].
+--- 21-36
+`url(forBook:relPath:)` drops `..`, `.` and empty path components, so a Server-supplied `relPath` can't point outside the Book's folder.
+
+!ios `directoryHint:` tells `URL` whether the last component is a folder, which affects how later components are appended.
+--- 37-78
+Sizes, deletes and listing. `size(ofBook:relPath:)` is what "verified" checks are built on: a file is intact when its size on disk matches the size recorded for it.
+
+=== LogosKit/Sources/Store/DownloadStore.swift
+The Download queue — the source of truth for Downloads — and each Download's files. [[Downloads/Downloader.swift]] drives the state machine by calling these methods; the UI observes the statuses and the Downloaded tab's list. See [[#flow-download]].
+--- 1-24
+`DownloadFileRecord` is a full GRDB record for a `downloadFile` row, including the transfer bookkeeping: bytes received, `resumeData` (the blob `URLSession` hands back so an interrupted transfer can resume), retry `attempts`, and `sizeMismatches`.
+--- 25-52
+The `v4-downloads` migration. `download` has one row per Book with a Download; `state` is the text of Domain's `DownloadState` (`queued`, `downloading`, `downloaded`, `failed`), and `queuePosition` orders the queue first-in, first-out. The `download_queue` index makes "the first queued Book" cheap.
+
+!why `downloadFile` is keyed by `relPath`, not by the Server's `ino`, because the comment notes the `ino` can change. Its foreign key points at `download`, so removing a Download removes its file rows.
+--- 53-71
+Queueing. Already queued/downloading/downloaded Books are left alone; a failed one is re-queued at the end (that's Retry) with its verified files and partial data kept, but its counters reset.
+
+!ios `INSERT … ON CONFLICT(bookID) DO UPDATE` is SQLite's *upsert*; `excluded.x` means "the value I tried to insert".
+--- 72-129
+The queue's state transitions. `startNextDownload()` is the only place a Book becomes `downloading`, and because it runs in one write transaction there can never be two active Downloads. `finishDownload` clears `resumeData` (no longer needed); `failDownload` keeps the files for a later Retry; `removeDownload` deletes rows only — deleting files is the caller's job.
+--- 130-158
+`setDownloadFiles` reconciles the Download's file list with the Book's current tracks. Known files keep their progress, unless the size changed (then they start over); files no longer listed are dropped.
+
+!ios `known[track.relPath] ?? DownloadFileRecord(…)` uses the **nil-coalescing operator**: use the left side if it isn't `nil`, else the right. `var record` because the code mutates it afterwards.
+--- 159-207
+Reads for the Downloader and the UI: file lists in play order, saving one file's state, and per-Book `DownloadStatus` (one-shot or observed) plus the Downloaded tab's list.
+
+!ios `.map(\.file)` uses a **key path** (`\.file`) as a function: "take each record's `file` property".
+--- 208-261
+The SQL behind the statuses and the tab. Received bytes count a verified file as complete and a partial one as `MIN(receivedBytes, size)`. Downloaded Books are sorted most recently listened first, using the joined `progress.lastChanged`; never-listened ones go last in queue order.
+
+=== LogosKit/Sources/Store/DownloadFileCheck.swift
+The Downloads launch file check: after, say, restoring a phone from backup, the database (backed up) says Books are downloaded but the audio (not backed up) is gone. This reconciles them. Called from [[Downloads/Downloader+Manage.swift]].
+--- 1-14
+The result: which downloaded Books lost files and are now not downloaded.
+--- 15-26
+The doc comment is the spec. Note the key promise: **local progress is never lost because files are**; a Book whose Download is lost keeps its progress and its Not on Server flag.
+
+!rule Like the cover check, this reads every file's size, so it runs in the background after the first frame, never on the launch path.
+--- 27-62
+The work is split so the slow part (reading sizes from disk) happens *outside* the write transaction, and only the decisions are written inside it. A lost downloaded Book's `download` row is deleted (cascading its file rows); a damaged file of an unfinished Download is reset so it's fetched again. Files are deleted afterwards, and folders with no Download are cleaned up.
+
+!ios `lost.insert(x).inserted` inserts into a `Set` and reports whether it was new — a compact "first time I see this Book" test. `log.notice("… \(bookID, privacy: .public)")` is Apple's unified logging; interpolated values are redacted in logs unless marked `.public`.
+
+=== LogosKit/Sources/Store/DownloadPolicyStore.swift
+The Downloads setting (allow cellular) and the queue's "paused for storage" flag, in a one-row table, plus a few queue reads the Downloader uses to decide what to do next.
+--- 1-16
+The one-row table pattern again, with SQL defaults so "no row" and "a fresh row" mean the same thing.
+--- 17-36
+Read once, observe, and two setters. [[Downloads/Downloader.swift]] observes the policy so a settings change takes effect immediately.
+--- 37-73
+`nextDownloadToStart()` peeks at what *would* start without changing anything (unlike `startNextDownload()`), and `bytesStillNeeded` sums what remains to write — used to check free space before starting (see [[Downloads/StorageCapacity.swift]]). Before a Download knows its files, the Book's whole `size` is the estimate.
+--- 74-91
+`setPolicyColumn` interpolates the column name into the SQL. That's safe only because callers pass fixed literals (`"allowsCellular"`), never user input; the value itself goes through `?` arguments.
+
+=== LogosKit/Sources/Store/ManageDownloadsStore.swift
+Managing Downloads, and the [[term:Not on Server]] rules: when the Server stops listing a downloaded Book, Logos keeps it (and its progress) playable on the device until the listener removes the Download.
+--- 1-15
+`v5-manage-downloads` *alters* the existing `book` table to add `notOnServer`, the right way to change a shipped schema.
+--- 16-35
+Drag-to-reorder in the Downloads tab. Only queued Books move, and only into the slots queued Books already occupy, so the active and failed Downloads keep their places.
+
+!ios `zip(moving, slots)` pairs two sequences element by element.
+--- 36-56
+Removing a Download. For a normal Book only the `download` rows go. For a Not on Server Book the Book itself goes too — with its progress and any held [[term:Outbox]] entries — because without the Download nothing of it is left to show; the caller then deletes its cover.
+--- 57-77
+The two stage 1 helpers called from `applyLibraryList` in [[Store/LibraryStore.swift]]. `keepAsNotOnServer` answers "should this unlisted Book survive?": yes if it's downloaded (and it's flagged), or if it's already Not on Server with a damaged, discarded Download. `clearNotOnServer` un-flags a Book that's listed again.
+
+=== LogosKit/Sources/Store/ProgressStore.swift
+Per-Book progress: position, [[term:Finished]], and when the listener acted. The `progress` table is written by the Player (several times a minute while playing) and by progress fetched from the Server, and read by In Progress, the Library and the Series pages.
+--- 1-43
+!why The record is **deliberately not a foreign key to `book`**. If the Server stops listing a Book, its local progress stays; if the same Book comes back, so does the position. Local listening is never thrown away because the Server lacks it.
+
+`createTable` is the `v3-progress` migration (registered by [[Store/AppDatabase.swift]]). The index on `lastChanged` serves "most recently listened first" queries.
+--- 44-65
+Plain save and reads. Most progress writes actually go through `saveProgress(_:listening:)` in [[Store/ListeningSessionStore.swift]], which also records the listening session in the same transaction.
+--- 66-93
+Applying progress fetched from the Server ([[Sync/ProgressSync.swift]]). Domain's `ProgressMerge` decides each Book: **last writer wins**, on when the listener acted. Two guards protect local work: Books not in the Library are ignored, and Books with anything still in the [[term:Outbox]] keep their local progress until the outbox is confirmed. Adopted changes are broadcast so the Player can pick them up for the Book it has loaded ([[Playback/Player+PickUp.swift]]).
+
+!rule Performance budget: *Apply fetched progress* ≤ 100 ms on 3000 Books, off the main thread. It reads all progress once and writes only real changes.
+--- 94-131
+The In Progress tab: started (`position > 0`), not Finished, most recently changed first. The join to `book` means a progress row for a Book no longer in the Store is kept but not shown.
+
+=== LogosKit/Sources/Store/ListeningSessionStore.swift
+The listening-sessions half of the [[term:Outbox]]: each stretch of listening, kept until the Server confirms it, plus this install's device id. The rules of what a session is live in Domain (`ListeningSessions`, [[Domain/ListeningSession.swift]]); this file stores them and tracks what's been sent. [[Sync/SessionOutbox.swift]] sends them.
+--- 1-57
+`ListeningSessionRecord` adds two counters to the Domain session: `revision` is bumped on every change the Server would see, `sentRevision` is the last revision the Server confirmed. A session is *unsent* while `sentRevision < revision`.
+
+!why Revisions make sending safe while listening continues: if a send of revision 3 is in flight and the Player writes revision 4, the confirmation of 3 doesn't mark the session sent. Like progress, sessions aren't a foreign key to `book`, so unsent listening survives the Book leaving the Library.
+--- 58-83
+The `v6-listening-sessions` migration: the session table and the one-row `clientDevice` table.
+--- 84-126
+Writes from playback. `saveProgress(_:listening:)` is what the Player calls on its write cadence ([[Playback/Player.swift]]): it saves progress, then lets `ListeningSessions.recording` decide how the open sessions change (continue, start a new one), all in one transaction. The `end…`/`close…` methods end sessions on a [[term:Sleep Timer]] stop, a Book switch, a long pause, or — at launch — a session a kill left open.
+
+!why `closeListeningSessionsLeftOpen()` is called in [[Logos/LogosApp.swift]] *before anything can play*: a session that's still open at launch can only have been left open by the app being killed.
+--- 127-165
+Reads for the sender. `unsentListeningSessions()` holds back sessions of Not on Server Books, and orders the rest **latest first** — the doc comment explains why: the Server stamps the progress a session creates with its own clock, so the first one sent must be the listener's latest position.
+--- 166-188
+Confirmation and the device id. Confirming raises `sentRevision` (never lowers it, `MAX`), then deletes sessions that are closed and fully delivered. The device id is created lazily, once per install.
+--- 189-227
+Helpers. `bookIDsWithUnsentEntries` is what `applyFetchedProgress` uses to protect Books with local, unconfirmed listening. `writeSessions` bumps the revision only when something the Server sees changed, so a no-op write doesn't cause a re-send.
+
+=== LogosKit/Sources/Store/FinishedChangeStore.swift
+The other half of the [[term:Outbox]]: [[term:Finished change]]s. When a Book becomes Finished or un-Finished on this device, a change is queued for the Server, stamped with when the listener acted; a later change to the same Book replaces it.
+--- 1-40
+One row per Book at most (the primary key is `bookID`), and again not a foreign key to `book`: a Not on Server Book's change is held, not lost.
+--- 41-55
+`writeLocalProgress` is the single funnel for *local* progress writes (the Player's and Finished-by-hand). It compares the new Finished state with the stored one and queues a Finished change only when it flips. Fetched progress never comes through here: it's already the Server's.
+--- 56-87
+Reading what to send (held changes excluded), observing the whole outbox for the UI, and confirming. The confirm deletes only a row that still matches — if the listener changed the Book again meanwhile, the newer change stays.
+--- 88-113
+`dropFinishedChanges(overruledBy:)` discards local changes that a newer change made elsewhere supersedes (the rule is Domain's `FinishedChanges.isOverruled`). Called by [[Sync/SessionOutbox+Finished.swift]] before applying fetched progress.
+
+=== LogosKit/Sources/Store/FinishedAndDamageStore.swift
+Two small operations the Book detail and Player need: marking Finished by hand, and the play-time check that a Download is intact.
+--- 1-20
+Finished by hand: position to the end (or back to 0 when cleared), written through `writeLocalProgress` so a Finished change is queued, and the Book's listening session ends — all in one transaction.
+
+!why Clearing Finished resets the position to 0 so the Book doesn't immediately count as Finished again (being within the last 30 seconds counts as Finished — see [[term:Finished]]).
+--- 21-33
+`hasIntactDownload` runs before playing: downloaded, every file verified, every file's size on disk matches. It reads sizes outside the transaction.
+--- 34-45
+Discarding a damaged Download (a file missing, the wrong size, or failing to decode): the Book becomes not downloaded and its files go, but the Book and its progress stay. See [[Playback/DamagedDownload.swift]].
+
+=== LogosKit/Sources/Store/LibrarySearchStore.swift
+The extra data the Library tab's sort, filter and search need beyond the rows themselves: every progress and every Series. Filtering and sorting happen in memory in Domain ([[Domain/LibraryCatalog.swift]]) and UI, not in SQL.
+--- 1-34
+Progress for every Book as a dictionary.
+
+!ios `[String: BookProgress]` is a **dictionary** type; `var byBook: [String: BookProgress] = [:]` creates an empty one.
+--- 35-70
+Every Series with its Books in reading order: by sequence compared *numerically* (`"2" < "2.5" < "10"`), Books without a sequence last, then by title.
+
+!ios **`switch` on a tuple with pattern matching.** `case (let x?, let y?) where x != y` matches when both optionals have values (the `?` pattern unwraps) and they differ; `(.some, nil)` matches "left has a value, right doesn't". `Row.fetchCursor` iterates rows lazily instead of loading them all into an array first.
+
+=== LogosKit/Sources/Store/SeriesStore.swift
+The Series tab and Series pages. There is no separate Series table and no Series API call: a [[term:Series]] exists while at least one stored Book belongs to it via `bookSeries`.
+--- 1-27
+Read and observe pairs for the list and one page.
+--- 28-42
+The list groups memberships by Series. The comment documents a SQLite feature worth knowing: with `MAX(book.updatedAt)` in the select, the bare `name` column comes from the row with the maximum, so a rename that has reached only some Books shows the newest name.
+--- 43-75
+One Series page, with each Book's progress and whether it's downloaded, via `LEFT JOIN`s (a Book with no progress or no Download still appears). The final order (reading order) is applied by Domain, not here.
+
+=== LogosKit/Sources/Store/PlaybackSettingsStore.swift
+The global speed and skip-back/forward intervals, in a one-row table whose SQL defaults come straight from Domain's `PlaybackSettings.default`.
+--- 1-18
+!why Defaults are written into the schema from the Swift constants, so "no row yet" and "a fresh row" both mean Domain's defaults.
+--- 19-65
+Reads, observation and setters. The speed is normalised to the nearest supported step before storing.
+
+!ios **`some DatabaseValueConvertible & Sendable`** in a parameter is an *opaque* type: "any one concrete type that conforms to these", decided by each caller. It's shorthand for a generic parameter. (`any P`, by contrast, is a box that can hold different conforming types at runtime.)
+
+=== LogosKit/Sources/Store/PlaybackStore.swift
+One query: which Book to restore into the player at launch.
+--- 1-20
+The most recently changed *downloaded* Book (Logos plays only Downloads). The Player calls it when it starts ([[Playback/Player.swift]]).
+
+!rule Performance budget: *last-played Book ready* ≤ 300 ms after the Library is interactive. One indexed query keeps it cheap.
+
+=== LogosKit/Sources/Store/ServerIdentityStore.swift
+The signed-in identity: which Server, user and Library. The row's presence *is* "signed in" — there is no separate flag — so observing it tells the UI whether to show sign-in or the Library ([[UI/AppRootView.swift]]).
+--- 1-34
+The record stores the URL as a string; converting back returns `nil` if it somehow isn't a valid URL. `var id = 1` gives every record the one-row key.
+--- 35-51
+Read, save (an upsert, replacing any previous identity) and observe. Saving happens last in sign-in ([[Sync/SignIn.swift]]); the sign-out wipe deletes it.
+
+=== LogosKit/Sources/Store/ServerVersionStore.swift
+Remembers that the Server was found too old, so the warning survives a relaunch.
+--- 1-13
+!why The migration's comment explains it: without persisting this, the launch-time send and fetch would talk to an unsupported Server before the next version check ran. This is also an example of adding a column to an existing one-row table (`syncState`) with `alter`.
+--- 14-33
+Read and record; `nil` means supported or not checked yet. Written by the version check in [[Sync/LibrarySync.swift]].
+
+=== LogosKit/Sources/Store/SignOutStore.swift
+Signing out: what would be lost, and the wipe. See [[#flow-sign-out]].
+--- 1-24
+`signOutSummary()` counts what signing out would remove — downloaded Books and their bytes, and outbox entries the Server hasn't confirmed — so the UI can warn before the listener confirms ([[UI/SignOutModel.swift]]).
+--- 25-47
+The wipe empties every table in one transaction, keeping the schema and the migration history.
+
+!rule This is the **only** deliberate exception to "the database is never deleted automatically".
+
+!why Tables are listed from `sqlite_master` instead of hard-coded, so a table added by a future migration is wiped too without anyone remembering to update this. `defer_foreign_keys` postpones foreign-key checks to commit, when every table is empty, so delete order doesn't matter. Deleting `serverIdentity` makes every observer of it see "signed out" at once.
+
+=== LogosKit/Sources/Store/FetchedProgressUpdates.swift
+In-memory event streams for the two things a table can't tell you afterwards: *which* progress rows came from a fetch (a fetched row and a local save look identical), and *which* Downloads stage 1 just deleted (a deleted row leaves nothing).
+--- 1-25
+`Broadcast` fans one value out to every current listener. Each `stream()` call registers a continuation; when that listener goes away its continuation is removed.
+
+!ios **`final class` + `Mutex`.** A `class` is a reference type: every holder shares one instance, which is what you want for a fan-out point. Shared *mutable* state must be protected to be `Sendable`; `Mutex` (from the `Synchronization` module) guards the dictionary, and `withLock { … }` is the only way to touch it. `[weak self]` in a closure avoids a reference cycle that would keep the object alive forever.
+--- 26-40
+The public faces: `fetchedProgressUpdates()` (consumed by [[Playback/Player+PickUp.swift]]) and `downloadsRemovedFromLibraryUpdates()` (consumed by [[Downloads/Downloader.swift]]). Because the broadcasts are stored on `AppDatabase` and it's a struct holding a reference, every copy of the database value shares them.
+
+=== LogosKit/Sources/Store/Log.swift
+The module's logger.
+--- 1-8
+Every module has a file like this: a `log` under its own `LogCategory` from Domain's `Diagnostics` (see [[Domain/Diagnostics.swift]]), so Console.app can filter messages by module.
+
+!ios `nonisolated let` at file scope declares a global constant usable from any thread or actor; it's needed because some modules default to the main actor.

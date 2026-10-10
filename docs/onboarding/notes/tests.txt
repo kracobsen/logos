@@ -1,0 +1,308 @@
+# order: 190
+# title: Tests
+# subtitle: how Logos proves itself: unit tests per module, integration tests against a real Server in Docker, and XCUITest on the app
+Logos has three kinds of tests, each with its own tool and its own way to run. Almost all of them are **unit tests**, one test target per module. A smaller set of **integration tests** talks to a real audiobookshelf [[term:Server]] running in Docker on your Mac. On top of those, a handful of **UI tests** launch the real app and tap through it the way a person would.
+
+!ios **Swift Testing vs XCTest.** Apple ships two test frameworks. *XCTest* is the old one: a test is a method whose name starts with `test` on a subclass of `XCTestCase`, and you check things with `XCTAssertEqual(a, b)` and friends. *Swift Testing* (`import Testing`) is the new one: any function marked `@Test("a sentence")` is a test, a type marked `@Suite` groups them, and one macro, `#expect(a == b)`, covers every check. When it fails, it prints both sides of the expression. `try #require(x)` unwraps an optional or stops the test. `@Test(arguments: [...])` runs one test once per input (a *parameterized* test). Swift Testing creates a **fresh instance of the suite struct for every test**, so properties set in `init()` act as per-test setup, with nothing shared between tests. Logos writes every unit and integration test in Swift Testing. It uses XCTest only where it has to: *XCUITest*, the part of XCTest that drives a running app from outside, and the performance metrics (`measure(metrics:)`), which only XCTest has.
+
+**How the unit tests are organised.** Each module `X` in `LogosKit/Sources/X` has a target `XTests` in `LogosKit/Tests/XTests`, declared in `LogosKit/Package.swift`. One file covers one behaviour or one type, and the `@Test` names are full sentences that read like a spec ("An empty list is never applied"). The targets:
+
+- **DomainTests**: pure logic with no I/O, such as title sorting, Series order, the [[term:Finished]] rule, the [[term:Sleep Timer]], [[term:Listening session]] splitting, playback times, the fixture Library generator and `TestClock` itself. These tests barely need helpers because the code under test is just values and functions.
+- **ServerAPITests**: building HTTP requests, and decoding responses from JSON payloads recorded from a real audiobookshelf 2.37.1 (`Tests/ServerAPITests/Payloads/*.json`, bundled as test resources). Also `Auth` (token refresh, sign-in state) and `TokenStore`. Helpers: `TestJWT`, `FakeServer`, `TestClock`.
+- **StoreTests**: the GRDB database, one file per store (Library, Progress, Downloads, Series, Outbox, sign-out…), plus migrations and observation. Every test opens a real SQLite file in a fresh temporary directory. Shared builders: `listedBook(_:)` (in `StoreTests/LibraryStoreTests.swift`) and `bookData(_:)` (in `StoreTests/BookDataStoreTests.swift`).
+- **SyncTests**: sign-in, the Library sync, Book data, covers, progress, the [[term:Outbox]], [[term:Finished change]]s and "needs sign-in". Built on `SignedInFixture` (in `SyncTests/LibrarySyncTests.swift`): a `FakeServer`, a `TestClock`, an `InMemoryTokenStore` and a real database, already signed in. Other files add to it through `extension SignedInFixture`.
+- **DownloadsTests**: the download queue, retries and backoff, failures, storage and network rules, managing [[term:Download]]s, and sign-out. Built on `DownloadsFixture` (in `DownloaderTests.swift`), which adds `FakeFileTransfers`, a `FakeStorageCapacity`, and real `Downloads/` and `Covers/` folders.
+- **PlaybackTests**: the `Player` engine (play, seek, Chapters, settings, Finished, damaged Downloads, pick-up, sessions, the Sleep Timer) and Now Playing (lock screen). Built on `PlayerFixture`, which uses `FakeAudioPlayer` and `FakeAudioSession` so no sound is ever made. `SystemAudioPlayerTests` covers the real AVPlayer wrapper.
+- **UITests**: the `@MainActor` screen models in the `UI` module (Library, search, Book detail, Series, Downloads, In Progress, sign-in and sign-out, the listening reporter, notices). It doesn't test SwiftUI views. The models are built on the real Store and Sync over a `FakeServer`; `FakeConnectivity`, `FakeBackgroundTasks` and `FakeNetwork` are local test doubles. **Don't confuse this target with `LogosUITests`**: `UITests` tests the *UI module* in Swift Testing, while `LogosUITests` drives the *app* with XCUITest.
+- **IntegrationTests**: ServerAPI, Sync and Downloads against the Docker Server ([[#integration-tests]]).
+- Each module also has a tiny `LogTests.swift` that checks the module's log category.
+
+**The testing philosophy.** Every boundary the code can't control in a test is a *seam*: a protocol in the production code with a real implementation and a fake one ([[#seams]]). The fakes live in the **production modules**, not in the test targets: [[ServerAPI/FakeServer.swift]] (the fake `ServerAPI`), [[FakeFileTransfers.swift]] (background downloads), [[FakeAudioPlayer.swift]] (AVPlayer), `InMemoryTokenStore` (the Keychain) and [[Domain/TestClock.swift]] (time). That way every test target can use them, and so can the app's own test launches in [[Logos/TestLaunch.swift]]. Everything else stays real: the database is a real SQLite file and Downloads go into a real temporary folder. Tests mock as little as possible and assert on what ends up in the database or on disk, because the database is the single source of truth ([[#single-source-of-truth]]).
+
+!rule Never call `Date()` or `Task.sleep` in Sync, Downloads or Playback: inject a `Clock`. In tests this is `TestClock`, so "15 minutes later" is `await clock.advance(by: .seconds(15 * 60))`, which runs instantly and gives the same result every time.
+
+**Running them.**
+
+- `scripts/test.sh` builds the app and runs every unit-test target on the simulator through the `Logos` scheme (`DEVICE` picks the simulator, default iPhone 18 Pro). Narrow it with xcodebuild's `-only-testing:`: `scripts/test.sh -only-testing:SyncTests`, `-only-testing:SyncTests/LibrarySyncTests`, or one test with `-only-testing:SyncTests/LibrarySyncTests/applies()`. CI runs this on every PR.
+- `scripts/integration-test.sh` starts audiobookshelf in Docker, seeds it, runs `IntegrationTests` and tears it all down. Append `-only-testing:IntegrationTests/HarnessTests` to narrow it. It needs Docker and isn't run in CI. A PR touching ServerAPI or Sync attaches its result.
+- `scripts/integration-test.sh --ui` runs the app's smoke test (`LogosUITests/SmokeTests`) against the same Docker Server instead. `--serve` only starts and seeds the Server, so you can sign in to it by hand from the simulator.
+- Performance tests: the `LogosPerformance` scheme, on a real iPhone, by hand ([[#performance]] and `docs/performance-budgets.md`). `scripts/perf-results.sh <result>.xcresult` prints medians and worst runs.
+- In Xcode, ⌘U runs the selected scheme's tests, and the diamond next to a `@Test` runs just that one.
+
+!why The integration tests sit outside the `Logos` scheme because they need Docker and a running Server. When the harness isn't configured, they *skip* (`.enabled(if: IntegrationServer.isConfigured, …)`), so `scripts/test.sh` and CI stay green without Docker. `scripts/integration-test.sh` fails if anything was skipped, so a real run can't pass silently.
+
+=== LogosKit/Tests/DomainTests/TestClockTests.swift
+Tests for the test clock itself. `TestClock` ([[Domain/TestClock.swift]]) is the fake side of the `Clock` seam. Time stands still until a test calls `advance(by:)`, and then every sleeper and timer whose deadline has passed wakes up. Nearly every Sync, Downloads, Playback and UI test depends on it, so it gets its own tests. This file is also a compact introduction to Swift Testing.
+--- 1-8
+!ios `import Testing` brings in Swift Testing. `@Suite("TestClock")` names a group of tests, and a plain `struct` is enough: there's no base class to inherit from. `Synchronization` provides `Mutex`, used by `Flag` at the bottom.
+
+Tests use a fixed start date (`1_800_000_000` seconds after 1970, in early 2027) rather than "now", so results never depend on when the tests run. The same constant appears in almost every fixture.
+--- 10-18
+!ios `@Test("…")` marks a test, and the string is what Xcode and the logs show. `#expect(condition)` checks a condition and lets the test continue if it fails. `async` tests can `await`, here because `advance(by:)` is async: it gives the woken tasks a chance to run before it returns.
+--- 20-35
+The core promise: a sleeper wakes exactly at its deadline. The test starts a `Task` that sleeps 60 s, advances 59 s and checks the task hasn't woken, then advances 1 s more. `try await sleeper.value` waits for the task to finish (and rethrows its error, if any).
+
+!ios A `Task { … }` starts concurrent work. Two tasks can't safely share a plain `var`, because Swift 6's strict concurrency checking refuses to compile that. Hence `Flag`, a `Sendable` (safe to share between tasks) box around a `Mutex`.
+--- 37-47
+!ios `#expect(throws: CancellationError.self) { … }` passes only if the closure throws that error. With `await` in front, it works for async closures too.
+
+`advance(by: .zero)` is a common trick in this codebase: it moves no time but lets pending tasks reach their first `await`, so the sleeper is actually sleeping before it is cancelled.
+--- 49-67
+`timer(every:)` returns an `AsyncStream`, consumed with `for await`. Advancing 3 s gives exactly three ticks, each carrying its own timestamp. The player and the listening reporter use this for their regular "save the position" ticks.
+--- 70-75
+A tiny helper type. `final class … : Sendable` with a `Mutex` inside is the standard Swift 6 way to have a thread-safe flag.
+
+=== LogosKit/Tests/ServerAPITests/DecodingTests.swift
+Checks that Logos reads the Server's JSON correctly, using **payloads recorded from a real audiobookshelf 2.37.1** and stored in `Tests/ServerAPITests/Payloads/`. Testing against recorded responses catches mismatches with the real Server without needing one. The parsing functions under test live in `Responses`, in [[ServerAPI/Requests.swift]].
+--- 1-14
+!ios `@testable import ServerAPI` gives the tests access to `internal` declarations (not just `public` ones), here the `Responses` decoder, which the rest of the app never sees. Only test targets may use `@testable`.
+
+`Bundle.module` is the bundle of resources Swift Package Manager builds for this test target (`resources: [.copy("Payloads")]` in `Package.swift`). `#require` turns a missing file into a clear failure instead of a crash.
+--- 16-48
+Decoding the Library list, compared field by field against a full `ListedBook`. Comparing whole values with `==` (Domain types are `Equatable`) gives a complete diff when something drifts. The second half checks how a sparse Book decodes: missing series and narrator become `""`, and a missing description becomes `nil`.
+--- 50-55
+!why A Library list with a broken entry must fail as a whole (`unreadableResponse`). If it decoded as a shorter list instead, the sync would delete the missing [[term:Book]]s. The sync tests check the other side of this: a failed list is never applied.
+
+!ios `#"…"#` is a raw string: quotes inside it need no escaping, which is handy for inline JSON.
+--- 57-77
+The status endpoint is how sign-in recognises an audiobookshelf Server, checks its version and finds out whether username/password sign-in is allowed. An HTML page (a wrong address, a captive portal) must be rejected.
+--- 79-106
+Sign-in and refresh. The app only uses the modern access/refresh token pair, never audiobookshelf's legacy long-lived token, and a login response without a refresh token is treated as unreadable. Token expiry times come from the JWT itself, which the next suite checks.
+--- 108-119
+--- 121-149
+`TokenPair` reads each token's expiry from inside the JWT (the `exp` claim). `TestJWT.make` builds an unsigned JWT-shaped string with chosen claims, picked so the base64url encoding contains `-`, `_` and missing padding: the cases a naive decoder gets wrong. `TestJWT` sits at file level so other ServerAPI tests can use it.
+
+=== LogosKit/Tests/StoreTests/ProgressStoreTests.swift
+Tests for listening progress in the database: saving it, the In Progress list, keeping it when a Book leaves the Library, live updates, a migration, and applying progress fetched from the Server. It shows the Store testing pattern: **a real SQLite file in a fresh temporary directory per test**, with no mocks. The code under test is in [[Store/ProgressStore.swift]] and [[Store/AppDatabase.swift]].
+--- 1-16
+`import GRDB` is allowed here because the Store tests need it to set up an old database. Outside Store and its tests, nothing imports GRDB ([[#module-graph]]).
+
+!ios Because Swift Testing makes a new `ProgressStoreTests` value for every test, `directory` (a new UUID folder) is different in each test, so tests never share a database and can run in parallel. `init() throws` is the per-test setup. Each test then cleans up with `defer { try? FileManager.default.removeItem(at: directory) }`, where `defer` runs when the function returns, whether it passed or failed.
+--- 18-27
+A small builder that keeps the tests short: progress for a Book at a position, changed N minutes before the fixed `now`.
+--- 29-41
+**Persistence first**: what is saved must survive closing and reopening the database, down to the millisecond. Opening the file twice (`AppDatabase.open(at: url)`) simulates the app being killed and relaunched.
+--- 43-64
+The [[term:In Progress]] tab's rows: started, not Finished, still in the Library, most recent first. The inputs deliberately include every kind of Book that must be left out (Finished, at position 0, not in the Library). `listedBook(_:)` comes from `StoreTests/LibraryStoreTests.swift`.
+--- 66-97
+Two rules about Books the Server stops listing. A downloaded one stays and is flagged [[term:Not on Server]]. A Book that isn't downloaded disappears from the list, but its progress row is kept, so it comes back intact if the Server lists the Book again.
+--- 99-122
+!ios These test *observation*. `inProgressRowUpdates()` returns an async sequence (built on GRDB's `ValueObservation`) that emits the current rows and then new rows after every relevant write. `makeAsyncIterator()` plus `await updates.next()` lets a test step through the emissions one at a time. This is the mechanism every screen uses to stay up to date ([[#single-source-of-truth]]).
+
+`??.position`: `next()` returns an optional (the sequence might end), wrapping an optional progress (the Book might have none), hence two `?`.
+--- 124-138
+A migration test. It builds a database as an older version of the app would have left it, by migrating only `upTo: "v2-library"`, inserts a Book, and then opens it normally so the remaining migrations run. Existing data must survive every schema change.
+
+!rule Every schema change is a new, named migration in `AppDatabase.migrator`; existing migrations are never edited. Tests like this one prove that real users' databases upgrade cleanly.
+--- 140-155
+Progress fetched from the Server for Books this Library doesn't know is dropped, and the function reports which Books actually changed, so the caller can do follow-up work for just those.
+
+=== LogosKit/Tests/SyncTests/LibrarySyncTests.swift
+The tests for stage 1 of the Library sync: fetching the Server's list of Books and applying it to the database. The file also defines **`SignedInFixture`**, the starting point of every Sync test. Code under test: [[Sync/LibrarySync.swift]].
+--- 1-25
+`SignedInFixture` puts together a signed-in Logos against a scripted Server: a `TestClock`, a `FakeServer` (the fake `ServerAPI`), an `InMemoryTokenStore` instead of the Keychain, and a real database in a temp folder. It signs in through the real `SignIn` code, with the `FakeServer` checking the password, so tests start from the exact state a real sign-in leaves.
+
+!ios `init(books:) async throws`: an initializer can be `async` (here because signing in awaits the Server) and can throw. Callers write `try await SignedInFixture(…)`.
+--- 27-42
+Helpers. `server.requests` is the `FakeServer`'s record of every request it received, in order, as an enum. Counting `.books` or `.status` requests lets a test check *whether the network was used*, not just the outcome.
+
+!ios `if case .books = $0 { true } else { false }` checks which enum case a value is while ignoring its associated values (`.books` carries a URL, a library id and a token).
+--- 44-57
+The basic case: a sync applies the list and stamps the time from the clock, so `lastLibrarySync()` equals `fixture.clock.now` exactly. With `Date()`, that check couldn't be exact.
+--- 59-71
+Checks *how* the Server was asked. `guard case .books(let url, let libraryID, let token) = list` pulls the request's values out. `Issue.record(…)` fails the test with a message without throwing, and `return` ends it.
+--- 73-118
+**Protecting the local data.** An empty list or a failed request must never wipe the Library. `beforeHandling { … }` is the `FakeServer`'s hook that runs before each request; here it throws a chosen error for list requests only. The test is parameterized over three errors, so it runs three times.
+
+!ios `throws(ServerAPIError)` is Swift's *typed throws*: the closure can throw only that error type. The `ServerAPI` seam uses typed errors, so callers can `switch` over every failure exhaustively.
+--- 120-157
+Failures the sync must report precisely: the Server can't be reached (`isReachable = { _ in false }` makes the fake act offline), and the Server is too old (`version = "2.35.0"`). The version check runs before every sync, before the list is asked for.
+--- 159-200
+When a sync runs: on launch, on Refresh, and on returning to the foreground only if the last *successful* sync was over 15 minutes ago. `clock.advance(by: .seconds(14 * 60))` jumps 14 minutes instantly, which is what makes such rules testable at all.
+--- 202-218
+Concurrency: two triggers at once must share one sync, not run two. `AsyncGate` (defined at the bottom) holds the list request open; `async let` starts both syncs in parallel; `advance(by: .zero)` lets both reach the Server; then the gate opens. Exactly one list request means they shared.
+
+!ios `async let first = …` starts an async call without waiting, and `await first` collects the result later: structured concurrency for "do these at the same time".
+--- 220-245
+Edge cases: signed out means nothing happens (no requests at all), and revoked tokens produce `.needsSignIn` while keeping the local data. `revokeAccessTokens()` and `revokeRefreshTokens()` make the `FakeServer` answer 401, as a real Server does after a password change.
+--- 248-263
+!ios An `actor` is a type whose state only one task can touch at a time, so `isOpen` and `waiters` need no locks. `withCheckedContinuation` suspends the caller until someone calls `resume()`: the standard bridge from "wait until told" into async/await.
+
+=== LogosKit/Tests/DownloadsTests/DownloaderTests.swift
+Tests for downloading whole Books. A [[term:Download]] only counts once every file is present and verified. The file defines **`DownloadsFixture`**, the starting point of every Downloads test. Code under test: [[Downloads/Downloader.swift]]. The key fake is [[FakeFileTransfers.swift]]: background transfers that never finish on their own, so a test says exactly when each file completes, fails or stops part-way.
+--- 1-39
+The fixture: a signed-in Logos with a Library, a `FakeServer`, and real `Downloads/` and `Covers/` folders. For each audio track, the Server is told which bytes to serve (`server.transfers.serve`). `FakeStorageCapacity` controls how much free space the "device" reports.
+
+Instead of signing in through `SignIn`, it logs in directly and saves the identity, because these tests are about Downloads, not sign-in.
+--- 41-49
+!why `downloader()` makes a *new* `Downloader` over the same database and transfers. Calling it twice simulates a relaunch: on iOS, background transfers outlive the app process ([[#primer-background]]), and the fake keeps them across "launches" in the same way. `inForeground: false` simulates iOS launching the app in the background just to deliver transfer events.
+--- 51-73
+Helpers: each file's bytes match its expected size (size is part of verification), plus quick access to the state, the pending transfers, the bytes on disk, and the requests the Server saw.
+--- 75-92
+Builders for test Books. `book("a", files: [("01.mp3", 300)])` describes a Book by its files and sizes. Note the `"CD 2/02.mp3"` path in the first test: Books can have files in subfolders.
+--- 94-118
+The main rule in one test. Every file and the cover are fetched. While files are still arriving the Book is `.downloading`, and it becomes `.downloaded` only after the last file completes and is verified. `transfers.complete(…)` answers one pending transfer the way the Server would.
+--- 120-140
+One Book at a time, first in, first out: three Books queued, one transfer pending.
+--- 142-167
+Files are fetched by their `ino` (the Server's file id), which can change when the Server rescans. So Downloads re-reads the Book's data just before enqueueing, rather than trusting the stored copy.
+--- 169-236
+Retries and tokens. A transfer stopped part-way resumes from its partial data after a backoff (`Downloader.backoff`), which the test skips past with `clock.advance`. A token that's about to expire is refreshed before enqueueing, because a background transfer can't refresh it mid-flight. A 401 refreshes and retries only the affected file, without counting toward its attempt limit.
+
+`fixture.eventually { … }` (in `DownloadFailureTests.swift`) polls for up to 2 s, for work that a clock tick started in another task.
+--- 238-276
+Verification: a file of the wrong size is deleted and fetched once more from scratch (no resume data). A second mismatch fails the Book, and the queue moves on to the next one.
+--- 278-323
+**Surviving a kill.** On launch, Downloads rebuilds its picture from the database: it re-enqueues files whose transfers the system dropped, leaves running ones alone, and verifies a file that arrived just before the kill without fetching it again. These are the cases that matter most on a real phone, and they can only be tested this precisely with a fake.
+--- 325-358
+Cancelling removes files and transfers and starts the next Book. A Book that finishes while the app is in the background doesn't start the next one until the app is back in the foreground.
+--- 360-404
+Background launch, progress events (`fractionDone` is bytes over the whole Book: 50 of 200 bytes = 0.25), and offline: a Book started offline waits, and the next `resume()` (on returning to the foreground) picks it up.
+
+=== LogosKit/Tests/PlaybackTests/PlayerFixture.swift
+The shared fixture for every Playback test: a real database and Downloads folder with downloaded Books, a **`FakeAudioPlayer`** and a `TestClock`. The player engine ([[Playback/Player.swift]]) depends on the `AudioPlayer` protocol rather than on AVPlayer directly, so tests drive "audio" by hand: nothing plays, and time moves only when the test says so ([[FakeAudioPlayer.swift]]).
+--- 1-24
+!ios `@MainActor final class`: Playback defaults to the main actor ([[#primer-actors]]), so its fixture does too. A class rather than a struct, because `books` (further down) changes as Books are added.
+
+`FakeAudioSession` stands in for `AVAudioSession`, the system object for audio routes and interruptions.
+--- 26-31
+Even Chapters (10 minutes by default), from a simple `stride`.
+--- 33-75
+`addBook` creates a Book the way the app would have stored it after syncing and downloading: listed, with Book data, files written to disk (1000 bytes of zeros; the fake player only checks they exist) and a finished Download with every file verified. `downloaded: false` leaves out the Download, for tests of "can't play what isn't downloaded".
+--- 77-94
+Helpers for the [[term:Not on Server]] case and for progress.
+--- 96-113
+!why The comment explains a real pitfall. The engine starts its own main-actor tasks, and when other tests keep the main actor busy, a single clock tick isn't enough for them to run. So `advance` moves in quarter-second steps and calls `settle()` (100 `Task.yield()`s) at each step. If you write a test that waits on engine work and it's flaky, this is the first thing to reach for.
+
+=== LogosKit/Tests/PlaybackTests/SleepTimerPlayerTests.swift
+The [[term:Sleep Timer]] as the player runs it: stop at the end of the Xth [[term:Chapter]] from now, counting the current Chapter as the first. A good example of a behaviour test written straight from the glossary definition. The engine code is in [[Player+SleepTimer.swift]] and the pure rule in [[Domain/SleepTimer.swift]].
+--- 1-22
+!ios `@MainActor` on a `@Suite` struct runs every test on the main actor, which is needed because `Player` is main-actor isolated. The `init()` builds a fresh `PlayerFixture` for each test.
+
+`playing(at:)` is the shared "given": a one-hour Book with 10-minute Chapters, playing from a saved position.
+--- 24-41
+The main case. At 900 s (in the second Chapter, which ends at 1200), "end of this Chapter" stops at 1200. `fixture.audio.advance(to:)` moves the fake player's time, which fires the engine's time observers just as AVPlayer would. Just before 1200 it is still playing; just after, it is paused, rewound to exactly 1200, and that position is saved, so the next play starts at the top of the next Chapter.
+--- 43-53
+`player.stops()` is an async stream of why playback stopped. Here the reason must be `.sleepTimer`, and it must arrive *after* the position is saved. The listening-session reporting ([[term:Listening session]]) relies on this ordering.
+--- 55-107
+How the timer behaves while you use the player. It survives pause and resume, is cleared on switching Books (the test also checks the engine removed its time observer, so nothing leaks), and can be extended by a Chapter, replaced or cancelled.
+--- 109-133
+Boundaries: in the last Chapter, the stop is the end of the Book (reported as `.endOfBook`). A Book with no Chapters counts as one Chapter, exactly as the glossary says.
+--- 135-148
+Seeking past the stop point cancels the timer, while seeking back before it keeps it. `settle()` lets the seek's main-actor work finish before checking.
+
+=== LogosKit/Tests/UITests/BookDetailModelTests.swift
+Tests for the Book detail screen's model. The `UI` module's tests target the `@Observable` *models* behind each screen, not the SwiftUI views: the model decides what the screen shows, and the view only lays it out. The model is built on the real Store and Sync over a `FakeServer`. Code under test: [[UI/BookDetailModel.swift]].
+--- 1-24
+The same building blocks as Sync's `SignedInFixture`, written inline, signed in through the real `SignIn`. `@MainActor` on the suite because UI models live on the main actor.
+--- 26-36
+`library()` builds a `LibraryModel` with its sync, which is how the app reaches a detail model (`library.detail(for:)`). `eventually` polls up to 2 s for work that finishes in a background task.
+--- 38-55
+Builders for a Book and three Chapters.
+--- 57-76
+!why "Shows the stored Book straight away": the detail reads what is already in the database, synchronously, with no network on the way. That is how the Tap Book → detail budget of ≤100 ms is met ([[#performance]]).
+--- 78-95
+A parameterized test: each tuple in `arguments:` becomes its own run, reported separately in Xcode. It covers the display string "duration · Chapters · size": rounding, plurals ("1 Chapter") and units.
+--- 97-115
+A Book with no Chapters is shown as one Chapter named after the Book, and the Server's HTML description is turned into plain text with its paragraphs kept.
+--- 117-133
+Opening a detail before its Book data has synced: the model fetches it at once and fills in. The test starts `model.observe()` in a `Task` (the observation loop the view would run) and cancels it on exit with `defer`.
+--- 135-148
+Progress shown as a fraction and time remaining (30 of 120 s = 25 %, 90 s left), and a missing Book gives no detail rather than a crash.
+
+=== LogosKit/Tests/IntegrationTests/IntegrationServer.swift
+How integration tests find the Docker Server. `scripts/integration-test.sh` starts audiobookshelf, seeds it and passes its address and fixture accounts in as environment variables. This type reads them, and **refuses any address that isn't loopback**, so an integration test can never touch a real Server.
+--- 1-21
+!ios xcodebuild passes any `TEST_RUNNER_FOO` variable in its own environment to the test process as `FOO`. That's how a shell script hands values to tests running inside the simulator.
+--- 23-41
+The fixture user (`listener`) is the account the app signs in as. `admin` (root) is for setting up state that user can't. An *ephemeral* `URLSession` keeps no cookies or cache, so tests can't leak state into each other or into the Server's refresh-cookie handling. `isConfigured` is what the suites check to decide whether to skip.
+--- 43-59
+`current()` throws a readable error naming the missing variable, which points you at running the script.
+--- 61-72
+!rule Never point integration tests at a real Server. The loopback check is the code half of that rule, and `HarnessTests` proves it rejects lookalikes such as `127.0.0.1.example.com`. The credentials in `scripts/integration-test.sh` belong to the throwaway container only.
+
+=== LogosKit/Tests/IntegrationTests/HarnessTests.swift
+Checks that the harness itself works: the Server is the pinned version, and the loopback guard accepts and rejects the right addresses. Run it alone with `scripts/integration-test.sh -only-testing:IntegrationTests/HarnessTests`, for example after changing the script.
+--- 1-20
+!ios `.enabled(if: condition, "reason")` is a Swift Testing *trait*: when the condition is false the test is skipped with that reason, rather than failed. `try #require(response as? HTTPURLResponse)` checks the cast succeeded and unwraps it in one step.
+--- 22-38
+A parameterized test over `(url, accepted)` pairs. This one runs everywhere, including in `scripts/test.sh`, because it doesn't need the Server.
+--- 40-45
+
+=== LogosKit/Tests/IntegrationTests/ProgressIntegrationTests.swift
+A typical integration test. Everything is real: the `AudiobookshelfClient`, `SignIn`, `Auth`, `LibrarySync` and the database, against the Docker Server. It checks that progress made "on another device" (sent straight to the Server's API) is picked up by a sync, and that newer local progress wins. This is the kind of thing the `FakeServer` can't prove: that the real Server behaves the way the fake assumes.
+--- 1-13
+`.serialized` runs this suite's tests one after another rather than in parallel. They share one Server, so parallel tests could step on each other's progress records.
+--- 14-32
+Signing in to a plain-HTTP loopback address needs `allowsPlainHTTPOnLoopback: true`; normal builds only sign in over HTTPS. The clock is `SystemClock()` here, because a real Server stamps real times.
+--- 34-48
+"Another device" listens: `patchProgress` (at the bottom) calls the Server's API directly. The comment records a real audiobookshelf behaviour found the hard way: a record's first write gets the Server's time, and later writes keep the `lastUpdate` they send.
+--- 50-63
+The [[term:Outbox]] rule's cousin: progress changed on this device more recently than the Server's copy is never overwritten by a fetch. The comments show a recurring integration-test concern: other suites change the same Server, so the test only checks its own Book.
+--- 66-77
+!ios An `extension` adds methods to an existing type, here a test-only helper on `IntegrationServer`, kept next to the test that needs it.
+
+=== LogosUITests/Logos.swift
+Shared helpers for the XCUITest target: launching the app in a test mode, and finding things the way a listener would. XCUITest runs in a *separate process* from the app and controls it from outside through the accessibility system, so it can only see what's on screen (labels, buttons, tab titles) and can't call the app's code.
+--- 1-14
+!ios `XCUIApplication()` is a handle to the app under test. `launchEnvironment` sets environment variables for the app process. `LOGOS_TEST_LAUNCH` picks a mode in [[Logos/TestLaunch.swift]]: `signedOut` (empty data, sign-in allowed over plain HTTP to loopback) or `library940` / `library3000` (signed in to an offline fake Server with a generated Library of that many Books). That code is compiled only into Debug and Performance builds, never Release.
+--- 16-27
+Making 3000 Books of data takes a while, so a run seeds each mode once (a launch with `LOGOS_TEST_LAUNCH_RESET=1`, then quit) and later launches reuse it. Measured launches then time the app, not the seeding.
+--- 29-33
+The performance tests read the app's own signposts ([[Domain/Signposts.swift]]): subsystem `Logos`, category `Budgets`, one name per budgeted path.
+--- 35-58
+!rule Find UI elements by what the listener sees (labels, tab titles), so tests survive layout changes. That is why `openTab("Library")` looks for the tab by its title. `miniPlayer` is the one identifier-based lookup.
+
+The retry loop in `openTab` is a deliberate workaround: a tap made while the tab bar is still appearing (right after sign-in) can be lost.
+--- 60-71
+`require` waits for an element and, if it never appears, attaches the whole on-screen accessibility tree to the result. That makes a failed UI run diagnosable after the fact.
+--- 73-89
+Two measuring styles. `.fiveRuns` times the whole block. `.manual` lets the test call `startMeasuring()` / `stopMeasuring()` around just the step being measured (the tap, not the navigation back). Budgets are judged on the median and worst of the five runs.
+
+=== LogosUITests/SmokeTests.swift
+The one end-to-end test that the whole app works: sign in to the Docker Server, browse, open a Book, download it, play it, and sign out. Run it with `scripts/integration-test.sh --ui`. (The comment's `scripts/ui-test.sh` is an older name: no such script exists.)
+--- 1-10
+!ios XCTest style: a `final class` subclassing `XCTestCase`, test methods named `test…`. `continueAfterFailure = false` stops at the first failure, because every later step depends on the earlier ones.
+
+The class is `@MainActor` by hand because this target's settings turn off the main-actor default (`Config/LogosUITests.xcconfig`).
+--- 12-23
+The same loopback guard as the integration tests. `throw XCTSkip(…)` skips when the Server isn't there, and the script fails the run if anything skipped.
+--- 25-37
+Typing into the sign-in form. `secureTextFields` finds the password field.
+--- 39-55
+Browse and download, waiting with generous timeouts (`waitForExistence(timeout:)`) because a Download of real files takes real time. The Play button only appears once the Book is fully downloaded: only downloaded Books play.
+--- 56-67
+Playing is confirmed two ways: the button turns into Pause, and the position slider's value actually moves (an `expectation` on a predicate, waited on for up to 15 s).
+--- 69-86
+Sign out: close the player sheet with a drag, open Settings, confirm, and check the app is back at an empty sign-in screen. Signing out removes all local data ([[#flow-sign-out]]).
+--- 88-94
+!ios The system's "save password?" prompt doesn't belong to the app, so it's found through the springboard (the home screen process, `com.apple.springboard`).
+
+=== LogosUITests/LaunchPerformanceTests.swift
+Launch budgets: cold launch, last-played Book ready, return from background, and the launch sync. These run on a real iPhone with the `LogosPerformance` scheme (a Release-optimised build that still has test launches), not in CI, and not meaningfully on the simulator. See [[#performance]] and `docs/performance-budgets.md` for the numbers.
+--- 1-28
+!ios `XCTApplicationLaunchMetric(waitUntilResponsive: true)` is the system's own launch timing, from tap to the first frame and then to responsive. `Logos.budget("ColdLaunchToInteractiveLibrary")` additionally reads the app's own signpost for "Library rows visible and tappable".
+--- 30-59
+The `.manual` style: start the clock right before `app.launch()` or `app.activate()`, and stop it once the observable end state is on screen (the mini-player, the Library tab).
+--- 61-85
+The sync starts after the first frame and has no visible end, so the test waits a fixed 4 s and reads the signposts. It only measures the *local* part of a sync, because the fixture's fake Server is offline. The Wi-Fi part is measured by hand with Instruments.
+
+=== LogosUITests/LibraryPerformanceTests.swift
+Browsing budgets on the 3000-Book fixture: scroll hitches and memory, tap Book → detail, search keystrokes, sort changes and letter-index jumps.
+--- 1-14
+!ios Old-style XCTest setup: `setUp()` runs before every test. `XCUIApplication!` is an implicitly unwrapped optional, set in `setUp` and used as if non-optional, which is common in XCTest code.
+--- 16-55
+`scrollingAndDecelerationMetric` reports the hitch ratio (milliseconds of stutter per second of scrolling; the budget is under 5 ms/s), and `XCTMemoryMetric` the memory peak. Hitch ratios are only reported on a device.
+--- 57-110
+Each run measures a single interaction. The test cycles through rows, letters or sort orders so every run does real work, rather than repeating a no-op or hitting a cache.
+--- 112-136
+The A–Z section index is one accessibility element, so the test computes where a letter sits on the strip and taps that coordinate. The fixture Library has Books under every letter, which makes the strip's letters evenly spaced.
+
+=== LogosUITests/PlayerPerformanceTests.swift
+Player budgets on the 940-Book fixture's downloaded Books (real, silent audio files written by `TestLaunch`). The signposts end when AVPlayer reports playing or a seek lands; when sound actually comes out of the speaker is checked by hand.
+--- 1-17
+--- 19-48
+Play the loaded Book versus another downloaded Book. The In Progress tab lists downloaded Books most recent first, so its second Resume button is always a Book that isn't loaded.
+--- 50-65
+--- 67-79
+!ios `XCTHitchMetric` measures dropped or late frames while the player sheet opens, the scrubber is dragged (`adjust(toNormalizedSliderPosition:)`) and the sheet is swiped away.

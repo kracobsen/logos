@@ -1,0 +1,391 @@
+<!-- 30 | Architecture -->
+<header class="page-head">
+<h1>Architecture</h1>
+<p class="subtitle">The modules and the rules between them, where state lives, and the main journeys through the code.</p>
+</header>
+<div class="chapter">
+
+<h2 id="modules">The seven modules</h2>
+<p>All the code except the app shell lives in the local Swift package <code>LogosKit/</code>, which has seven modules.
+Each module is a separate compilation unit with its own <code>public</code> interface:</p>
+<table>
+<tr><th>Module</th><th>What it owns</th><th>Main types</th></tr>
+<tr><td><a href="domain.html">Domain</a></td><td>The glossary as types, plus pure rules. No I/O. Also the shared
+seams: <code>Clock</code>, <code>Diagnostics</code>, <code>Signposts</code>.</td><td><code>ListedBook</code>,
+<code>BookData</code>, <code>BookProgress</code>, <code>ProgressMerge</code>, <code>FinishRule</code>,
+<code>SleepTimer</code>, <code>ListeningSessions</code>, <code>LibraryCatalog</code>, <code>TestClock</code>,
+<code>FixtureLibrary</code></td></tr>
+<tr><td><a href="serverapi.html">ServerAPI</a></td><td>All HTTP to audiobookshelf: decoding JSON into Domain values,
+tokens, and background file transfers.</td><td><code>ServerAPI</code> (protocol), <code>AudiobookshelfClient</code>,
+<code>FakeServer</code>, <code>Auth</code> (actor), <code>TokenStore</code>, <code>FileTransfers</code>,
+<code>BackgroundFileTransfers</code></td></tr>
+<tr><td><a href="store.html">Store</a></td><td>The SQLite database (via GRDB): schema, migrations, every read and
+write, and the cover and Download files on disk.</td><td><code>AppDatabase</code>, <code>CoverFiles</code>,
+<code>DownloadFiles</code></td></tr>
+<tr><td><a href="sync.html">Sync</a></td><td>Sign-in, and keeping the database in step with the Server: the Library
+list, Book data, covers, progress in, and the Outbox out.</td><td><code>SignIn</code>, <code>LibrarySync</code>,
+<code>ProgressSync</code>, <code>SessionOutbox</code>, <code>Connection</code> (all actors except
+<code>SignIn</code>)</td></tr>
+<tr><td><a href="downloads.html">Downloads</a></td><td>Getting whole Books onto the device: the queue, retries,
+storage and Wi-Fi rules, and checking files.</td><td><code>Downloader</code> (actor), <code>NetworkMonitor</code>,
+<code>StorageCapacity</code></td></tr>
+<tr><td><a href="playback.html">Playback</a></td><td>Playing a downloaded Book: position, Chapters, speed, Sleep Timer,
+Finished, listening sessions, interruptions, and the lock screen.</td><td><code>Player</code>,
+<code>NowPlaying</code>, <code>AudioPlayer</code>/<code>AudioSession</code>/<code>NowPlayingCenter</code>
+(protocols) with <code>System…</code> and <code>Fake…</code> versions</td></tr>
+<tr><td>UI (<a href="ui-shell.html">shell</a>, <a href="ui-player.html">player</a>)</td><td>SwiftUI screens and
+their <code>@Observable</code> models.</td><td><code>AppRootView</code>, <code>LaunchModel</code>,
+<code>RootView</code>, <code>LibraryModel</code>, <code>BookDetailModel</code>, <code>DownloadsModel</code>,
+<code>SignOutModel</code>, <code>ListeningReporter</code>, <code>PlayerChrome</code></td></tr>
+</table>
+<p>Above them is the thin <a href="app.html">app target</a> (<code>Logos/</code>), which creates the long-lived objects
+and hands them to <code>AppRootView</code>.</p>
+
+<h2 id="module-graph">The module graph</h2>
+<pre class="diagram">                        ┌──────────────┐
+                        │   Logos app  │  composition root (LogosApp.swift)
+                        └──────┬───────┘
+                               │ uses everything
+                        ┌──────▼───────┐
+           ┌────────────┤      UI      ├─────────────┐
+           │            └──┬────────┬──┘             │
+           │               │        │                │
+     ┌─────▼────┐   ┌──────▼───┐ ┌──▼────────┐       │
+     │   Sync   │   │Downloads │ │ Playback  │       │
+     └──┬────┬──┘   └──┬────┬──┘ └─────┬─────┘       │
+        │    │         │    │          │  (no ServerAPI!)
+        │  ┌─▼─────────▼┐   │          │             │
+        │  │ ServerAPI  │   │          │             │
+        │  └─────┬──────┘   │          │             │
+     ┌──▼────────┼──────────▼──────────▼─┐           │
+     │           │     Store ── GRDB     │◄──────────┘
+     └───────────┼───────────┬───────────┘
+              ┌──▼───────────▼──┐
+              │     Domain      │  every module may use Domain
+              └─────────────────┘</pre>
+<table>
+<tr><th>Module</th><th>May depend on</th></tr>
+<tr><td>Domain</td><td>nothing (Apple frameworks only)</td></tr>
+<tr><td>ServerAPI</td><td>Domain</td></tr>
+<tr><td>Store</td><td>Domain, GRDB</td></tr>
+<tr><td>Sync</td><td>Domain, ServerAPI, Store</td></tr>
+<tr><td>Downloads</td><td>Domain, ServerAPI, Store</td></tr>
+<tr><td>Playback</td><td>Domain, Store</td></tr>
+<tr><td>UI</td><td>Domain, Store, Sync, Downloads, Playback</td></tr>
+</table>
+<p>Three rules matter most:</p>
+<ul>
+<li><strong>Playback never imports ServerAPI.</strong> The player physically can't reach the network, which is how the
+product rule "play only from Downloads" is enforced by the build. So how do listening sessions reach the Server?
+Playback writes them to the database, and <code>ListeningReporter</code> in UI asks Sync's
+<code>SessionOutbox</code> to send them. The data travels through the database, not through a call.</li>
+<li><strong>Only Store imports GRDB.</strong> Every other module sees <code>AppDatabase</code> methods that take and
+return Domain types. The record structs and SQL stay inside Store.</li>
+<li><strong>Nothing depends on UI.</strong> Sync, Downloads and Playback never call back into a screen. See the next
+section.</li>
+</ul>
+<aside class="box box-rule"><div class="box-label">House rule</div><p>The graph is written down in three places that
+must change together: <code>LogosKit/Package.swift</code> (what the compiler enforces),
+<code>scripts/check-module-graph.sh</code> (what CI enforces), and the table in <code>CLAUDE.md</code>. Xcode builds
+every module into one directory, so a forbidden <code>import</code> can still <em>compile</em>. That is why the
+script also greps the imports ([[scripts/check-module-graph.sh]]).</p></aside>
+
+<h2 id="single-source-of-truth">The database is the single source of truth</h2>
+<p>This is the most important design decision in the codebase. It is recorded as
+<code>docs/adr/0001-database-is-the-single-source-of-truth.md</code>.</p>
+<pre class="diagram">  Sync ─────┐                                      ┌──► LibraryModel ──► LibraryView
+            │ write                       observe  │
+  Downloads ┼──────►  SQLite (AppDatabase)  ───────┼──► BookDetailModel ──► BookDetailView
+            │          ValueObservation            │
+  Player ───┘                                      └──► DownloadsModel ──► DownloadsView
+     │
+     └── live position (4×/s) ─────────────────────────► player views read the Player directly</pre>
+<ul>
+<li>Background work (Sync, Downloads, Playback) <strong>only writes to the database</strong>. It returns simple
+outcome values and never holds a reference to a screen.</li>
+<li>Each screen's <code>@MainActor @Observable</code> model <strong>reads synchronously in its
+<code>init</code></strong>, so the very first frame shows real rows, not a spinner. It then <strong>observes</strong>
+the same query (<code>fooUpdates()</code>, a <code>ValueObservation</code> under the hood) in a loop that the view
+starts with <code>.task</code>. Store pairs every read this way: <code>foo()</code> and <code>fooUpdates()</code>
+share one fetch function.</li>
+<li>Why: persistence was a primary goal. What the UI shows is already on disk, so killing the app loses nothing, and
+there is no second, in-memory copy of the state that could drift from the saved one. The rejected alternative was
+shared in-memory models at the app root with the database behind them, which would have meant two sources of truth
+and explicit wiring for background work to reach the UI.</li>
+<li><strong>The exception</strong> is the live playback position, which changes several times a second. The
+<code>Player</code> is itself <code>@Observable</code> and exposes it directly. It writes the position to the database
+every second while playing, and straight away on play, pause, seek, skip, the end of a Book and going to the
+background.</li>
+<li><strong>A second, smaller exception</strong>: <code>Broadcast</code> in Store is an in-memory fan-out for two
+<em>events</em> that a table can't show after the fact: "progress was adopted from the Server" (so the Player can
+offer a pick-up notice) and "Downloads were deleted by sync" (so the Downloader can cancel their transfers).</li>
+</ul>
+<p>When you add a feature, the default shape is: <em>the worker writes a row, the screen model observes it</em>. If
+you find yourself passing a callback from a worker to a view, stop and re-read the ADR.</p>
+
+<h2 id="composition-root">The composition root and launch</h2>
+<p>There is no dependency-injection framework and no singletons inside the modules. Everything is created in one
+place, <code>Services.init</code> in [[Logos/LogosApp.swift]], and passed down through initializers. This is called
+<em>plain initializer injection</em>. In order:</p>
+<ol>
+<li><strong>Choose the launch environment</strong> ([[Logos/LaunchEnvironment.swift]]). Normally that is Application
+Support, the real <code>AudiobookshelfClient</code> and the Keychain. In Debug and Performance builds a
+<code>LOGOS_TEST_LAUNCH</code> variable can swap in test data and a <code>FakeServer</code>
+([[Logos/TestLaunch.swift]]).</li>
+<li><strong>Open the database</strong> at <code>Logos.sqlite</code>. If that fails, the app shows
+<code>DatabaseErrorView</code> and <em>keeps the file</em>. It never deletes data automatically. Then it closes any
+listening session that a previous kill left open.</li>
+<li>Create <code>SignIn</code>, the <code>Covers/</code> and <code>Downloads/</code> directories, one
+<code>Player</code> (with the system audio player and audio session) and one <code>NowPlaying</code> for the lock
+screen. These live for the whole process and survive sign-ins.</li>
+<li>If a Server identity is saved (that is what "signed in" means), create that identity's <code>Downloader</code>
+and start it. A background launch to handle finished transfers has no UI, so this has to happen here.</li>
+<li>Per-identity objects (one <code>Auth</code> and one <code>Downloader</code>) are created lazily by
+<code>shared(for:)</code> and shared by everything that needs them, so there is only ever one token refresh in
+flight. Signing out drops them.</li>
+</ol>
+<p>The background <code>URLSession</code> for Downloads is a <code>static let</code> created as early as possible.
+When iOS wakes the app for finished transfers, the session has to exist to receive the events
+([[#primer-background]]).</p>
+<p><strong>In the UI</strong>, <code>AppRootView</code> creates a <code>LaunchModel</code>. It reads the identity
+synchronously and either shows sign-in or builds every per-identity screen model at once (Library, In Progress, Series,
+Downloads, Settings, the listening reporter, sign-in-again, sign-out). <code>RootView</code> then waits until
+<em>the first frame is on screen</em> (<code>FrameShown</code>, a short <code>CADisplayLink</code>) before it starts
+anything slow: the cover file check, the Downloads check and resume, and a sync. The player restores the last-played
+Book, paused, after that frame too.</p>
+<aside class="box box-rule"><div class="box-label">House rule</div><p>Nothing on the launch path touches the network or
+runs the file check. The cold-launch budget is 400 ms with 3000 Books. Even creating an <code>AVPlayer</code> eagerly
+was measured at 10–60 ms, so it is created lazily.</p></aside>
+
+<h2 id="seams">Seams: how the code is made testable</h2>
+<p>A <em>seam</em> is a place where you can swap the real thing for a test double without changing the code that uses
+it. In Logos each seam is a protocol, and the fake lives <em>in the module's own sources</em> (not in the test target).
+That way other modules' tests and the app's test launches can use the fake too.</p>
+<table>
+<tr><th>Seam</th><th>Real</th><th>Fake</th><th>Why it exists</th></tr>
+<tr><td><code>Clock</code> (Domain)</td><td><code>SystemClock</code></td><td><code>TestClock</code></td><td>The 60-second
+sends, the 10-minute session gap, backoff, token refresh ahead of expiry and the Sleep Timer, all testable without
+waiting. Never call <code>Date()</code> or <code>Task.sleep</code> in Sync, Downloads or Playback.</td></tr>
+<tr><td><code>ServerAPI</code></td><td><code>AudiobookshelfClient</code></td><td><code>FakeServer</code></td><td>An
+in-memory audiobookshelf 2.37.1 with JWT-shaped tokens that expire on the injected clock.</td></tr>
+<tr><td><code>TokenStore</code></td><td><code>KeychainTokenStore</code></td><td><code>InMemoryTokenStore</code></td>
+<td>Tokens in the Keychain on device and in memory in tests.</td></tr>
+<tr><td><code>FileTransfers</code></td><td><code>BackgroundFileTransfers</code></td><td><code>FakeFileTransfers</code></td>
+<td>Background URLSession behaviour (progress, completion, resume data) scripted in tests.</td></tr>
+<tr><td><code>AudioPlayer</code></td><td><code>SystemAudioPlayer</code></td><td><code>FakeAudioPlayer</code></td>
+<td>AVPlayer, which doesn't run usefully in unit tests.</td></tr>
+<tr><td><code>AudioSession</code></td><td><code>SystemAudioSession</code></td><td><code>FakeAudioSession</code></td>
+<td>Interruptions and route changes.</td></tr>
+<tr><td><code>NowPlayingCenter</code></td><td><code>SystemNowPlayingCenter</code></td>
+<td><code>FakeNowPlayingCenter</code></td><td>The lock screen and remote commands.</td></tr>
+<tr><td><code>StorageCapacity</code>, <code>ConnectivityMonitor</code>, <code>BackgroundTasks</code></td>
+<td>system</td><td>in tests</td><td>Free space, network reachability and background-task time.</td></tr>
+</table>
+<p>Two more shared tools in Domain: <code>Diagnostics.logger(_:)</code> (each module has a <code>log</code> with its
+own <code>LogCategory</code>; logs never include hosts, tokens or bodies) and <code>Signposts</code>, which marks each
+budgeted path for the performance tests ([[#performance]]).</p>
+
+<h2 id="concurrency-model">Who runs where</h2>
+<ul>
+<li><strong>Main actor</strong>: the whole UI module, the whole Playback module and the app target (configured as
+<em>main actor by default</em>). The <code>Player</code> is main-actor because SwiftUI reads its position directly.
+Pure value types in those modules opt out with <code>nonisolated</code>.</li>
+<li><strong>Actors</strong> for background workers: <code>LibrarySync</code>, <code>ProgressSync</code>,
+<code>SessionOutbox</code>, <code>Connection</code>, <code>Downloader</code> and <code>Auth</code>. A common pattern:
+when a request arrives while a run is in progress, it joins that run instead of starting a second one (and the
+Outbox sets <code>sendsAgain</code> so the latest state always goes out).</li>
+<li><strong>The database</strong> is a <code>DatabasePool</code> (WAL mode): many concurrent readers and one
+writer. Writes are transactions. A related group of changes, such as "save position, extend the listening session,
+queue a Finished change", happens in one transaction.</li>
+<li>Expensive UI work, such as rebuilding the Library's sort and search index, runs in a detached task. A generation
+counter throws away results that a newer rebuild has replaced.</li>
+</ul>
+
+<h2 id="flow-sign-in">Journey: signing in</h2>
+<ol>
+<li><code>SignInView</code> → <code>SignInModel.submit</code> → <code>SignIn</code> in Sync
+([[Sync/SignIn.swift]]).</li>
+<li><code>GET /status</code>: the Server must be 2.36.0 or newer and allow local sign-in. Only HTTPS is accepted.
+Test launches may allow plain HTTP to loopback.</li>
+<li><code>POST /login</code>, then fetch the Libraries, ignoring podcast Libraries. With none it is an error, with one
+it is picked automatically, and with several the user chooses.</li>
+<li><code>choose</code> saves the tokens to the Keychain first and then the <code>ServerIdentity</code> row. If the
+app is killed in between, the user is simply not signed in yet. A login the app decides not to keep is logged out on
+the Server again.</li>
+<li>Nobody "navigates" to the Library. <code>LaunchModel</code> is observing the identity, sees the new row and swaps
+the sign-in screen for the tab shell. This is the single-source-of-truth pattern again.</li>
+</ol>
+<p>Later, if a token refresh is rejected, <code>Auth</code> reports <em>needs sign-in</em>. <code>Connection</code>
+publishes it, and a banner offers "Sign In Again", which must be the same Server and the same user.</p>
+
+<h2 id="flow-sync">Journey: a sync</h2>
+<p>Sync runs on launch (after the first frame), on returning to the foreground (a full sync only if the last one was
+more than 15 minutes ago, though progress is fetched every time) and when the user pulls to refresh.
+<code>LibrarySync</code> ([[Sync/LibrarySync.swift]]) goes through these steps in order:</p>
+<ol>
+<li><strong>Version check</strong>, every time. If the Server is too old, sync stops and the UI says so.</li>
+<li><strong>Stage 1, the Library list</strong>: the whole list of [[term:Book]]s, applied in <em>one</em>
+transaction. Books the Server no longer lists are deleted, unless they are downloaded, in which case they become
+[[term:Not on Server]] and stay playable. An empty list is never applied, and the list's decoding is strict: a list
+read only partly would wrongly mark Books as gone.</li>
+<li><strong>Progress fetch</strong> ([[Sync/ProgressSync.swift]]): the Server's progress is merged
+<em>last-writer-wins on when the listener acted</em> (<code>ProgressMerge</code> in Domain). A Book with anything in
+the [[term:Outbox]] is never overwritten.</li>
+<li><strong>Stage 2, full Book data</strong> (Chapters, audio files, Series) for Books whose data is behind, 50 at a
+time with one transaction per batch, so an interrupted sync picks up where it stopped.</li>
+<li><strong>Stage 3, covers</strong>, four at a time.</li>
+</ol>
+<h3 id="flow-outbox">The Outbox: sending listening back</h3>
+<p>The Player records [[term:Listening session]]s and [[term:Finished change]]s in the database. <code>ListeningReporter</code>
+(UI) triggers <code>SessionOutbox.send</code> on launch, every 60 seconds while playing, on pause, on each Finished
+change, on going to the background, when the network comes back, and once more before sign-out. A send works like
+this:</p>
+<ol>
+<li>Close sessions that have been paused too long.</li>
+<li>If there are Finished changes, fetch progress first, so an older local change doesn't overrule a newer one from
+another device.</li>
+<li>Send sessions in batches of 100 (<code>POST /api/session/local-all</code>). Each one is confirmed at the revision
+that was sent, so a session that kept growing in the meantime is sent again.</li>
+<li>Send Finished changes.</li>
+<li>Fetch progress again.</li>
+</ol>
+<p>Sends are fire-and-forget: playback never waits for them, and a failed send is simply retried at the next
+trigger.</p>
+
+<h2 id="flow-download">Journey: downloading a Book</h2>
+<ol>
+<li><code>DownloadButton</code> → <code>DownloadsModel.startDownload</code> → <code>Downloader.download</code>
+([[Downloads/Downloader.swift]]), which <em>queues a row</em> in the database. The queue lives in the database, so it
+survives a kill.</li>
+<li>Books download one at a time, first in first out. To start a Book, the Downloader:
+<ul>
+<li>makes sure the token has at least 10 minutes left (a background transfer can't refresh mid-request);</li>
+<li>re-reads the Book's file list, matching files by path;</li>
+<li>checks storage (remaining bytes plus 500 MB, otherwise the queue pauses as "Not enough storage");</li>
+<li>marks files that are already complete as verified, and hands the rest to the background session, with resume data
+where it has it.</li>
+</ul></li>
+<li>Transfers continue while the app is suspended or killed. Each task's description carries enough JSON to
+reconnect it to its Book after a relaunch. The file must be moved out of the system's temporary location
+<em>during</em> the "finished downloading" callback, before URLSession deletes it.</li>
+<li>A file is verified when the status is 200/206 and its size on disk equals the Server's size. The failure rules: a
+401 refreshes the token, a 403 fails the Book, a 404 retries once after re-reading the Book, a wrong size is fetched
+again once, and anything else backs off for 1, 5 and then 30 minutes, up to 5 attempts.</li>
+<li>A [[term:Download]] counts as downloaded only when every file and the cover are present and verified. Wi-Fi only,
+unless the user allows cellular.</li>
+<li>The UI never hears from the Downloader directly. <code>DownloadsModel</code> observes the download tables.</li>
+</ol>
+
+<h2 id="flow-play">Journey: playing</h2>
+<ol>
+<li><code>PlayButton</code> → <code>Player.play(bookID:)</code> ([[Playback/Player.swift]]). The Player checks that the
+Book is downloaded and intact, loads its files into one <code>AVPlayer</code> timeline (player time = Book
+time), seeks to the saved position and plays. A <code>loadGeneration</code> counter discards a load that finishes
+after a newer one began.</li>
+<li>While playing, the Player publishes the position about 4 times a second and saves it once a second. Each save also
+extends the current [[term:Listening session]], in the same transaction.</li>
+<li>Seeking moves <code>position</code> immediately and the audio catches up. That is how "seek → UI in the same frame"
+is met.</li>
+<li><strong>Stopping</strong> always has a reason (pause, switched Book, Sleep Timer, interruption, …). The reason
+decides whether the listening session ends. Stopping or skipping within the last 30 seconds marks the Book [[term:Finished]]
+(<code>FinishRule</code>), though a pause the system causes never does, and playing a Finished Book again starts it from the beginning.</li>
+<li><strong>The [[term:Sleep Timer]]</strong> counts Chapters, not minutes. It pauses at the end of the Xth Chapter.</li>
+<li><strong>Interruptions</strong>: a phone call pauses, and playback resumes afterwards only if iOS recommends it.
+Unplugging headphones pauses and never resumes. If the system's media services reset, the AVPlayer is rebuilt.</li>
+<li><strong>Pick up</strong>: if a sync adopts newer progress from another device for the paused Book, the Player
+moves to it and offers Undo.</li>
+<li><code>NowPlaying</code> keeps the lock screen and Control Center in step, showing the current Chapter as the
+title.</li>
+</ol>
+
+<h2 id="flow-sign-out">Journey: signing out</h2>
+<p><code>SignOutModel</code> ([[UI/SignOutModel.swift]]) is a small state machine:</p>
+<ol>
+<li>Pause playback and send the Outbox.</li>
+<li>Ask for confirmation, showing what will be lost (number and size of Downloads, any unsent listening).</li>
+<li>Stop the player and Downloads, sign out of the Server, delete covers and Download files.</li>
+<li><code>database.wipe()</code> empties every table. This is the only place data is deliberately deleted.</li>
+<li>The identity row is gone, so <code>LaunchModel</code> falls back to sign-in, and the app drops its
+<code>Auth</code> and <code>Downloader</code> so a new sign-in builds fresh ones.</li>
+</ol>
+
+<h2 id="persistence">Where data lives</h2>
+<table>
+<tr><th>What</th><th>Where</th><th>Backed up?</th></tr>
+<tr><td>The database, <code>Logos.sqlite</code></td><td>Application Support</td><td>Yes, on purpose</td></tr>
+<tr><td>Downloads (audio files)</td><td>Application Support / <code>Downloads/</code></td><td>No (excluded). Never in
+Caches, which iOS may clear.</td></tr>
+<tr><td>Covers</td><td>Application Support / <code>Covers/</code></td><td>No (excluded)</td></tr>
+<tr><td>Access and refresh tokens</td><td>Keychain, "after first unlock, this device only"</td><td>No</td></tr>
+</table>
+<p>The main tables, all defined in Store:</p>
+<ul>
+<li><code>serverIdentity</code>: the Server, user and Library. Having this row <em>is</em> being signed in.</li>
+<li><code>syncState</code>: when the last sync ran, and whether the Server is too old.</li>
+<li><code>book</code>, <code>chapter</code>, <code>audioTrack</code>, <code>bookSeries</code>: the Library. There is
+no Series table: Series are derived from <code>bookSeries</code>.</li>
+<li><code>progress</code>: position, Finished, and <code>lastChanged</code> (when the <em>listener acted</em>, never
+when the data was sent or fetched).</li>
+<li><code>download</code>, <code>downloadFile</code>, <code>downloadPolicy</code>: the queue, per-file state including
+resume data, and the cellular and storage rules.</li>
+<li><code>listeningSession</code>, <code>finishedChange</code>: the Outbox.</li>
+<li><code>playbackSettings</code>, <code>clientDevice</code>.</li>
+</ul>
+<p>Some details that surprise people:</p>
+<ul>
+<li><code>progress</code>, <code>listeningSession</code> and <code>finishedChange</code> have no foreign key to
+<code>book</code>. Local listening deliberately survives a Book leaving the Library.</li>
+<li>Times compared with the Server's are stored as integer milliseconds.</li>
+<li>There is no "not downloaded" state: no <code>download</code> row means no Download.</li>
+<li>Migrations are hand-written, append-only, and never edited after they ship.</li>
+</ul>
+
+<h2 id="performance">Performance budgets</h2>
+<p>Performance is a requirement with numbers, written down in <code>docs/performance-budgets.md</code> and measured on
+an iPhone 15 Pro with a Release build:</p>
+<table>
+<tr><th>Path</th><th>Median budget</th></tr>
+<tr><td>Cold launch → interactive Library (940 and 3000 Books)</td><td>≤ 400 ms (worst ≤ 700 ms)</td></tr>
+<tr><td>Search keystroke → updated list (3000)</td><td>≤ 50 ms</td></tr>
+<tr><td>Sort change, letter-index jump, tap Book → detail</td><td>≤ 100 ms</td></tr>
+<tr><td>Play another downloaded Book → audio</td><td>≤ 500 ms</td></tr>
+<tr><td>Seek / skip → UI</td><td>same frame</td></tr>
+<tr><td>Scrolling any list</td><td>&lt; 5 ms/s hitches</td></tr>
+<tr><td>Memory while browsing</td><td>≤ 150 MB</td></tr>
+</table>
+<p>How the code meets them:</p>
+<ul>
+<li>Screens read synchronously in <code>init</code>, so there is no loading state on the first frame.</li>
+<li>All slow work waits for the first frame.</li>
+<li><code>LibraryCatalog</code> pre-sorts and pre-folds the search text once per data change, so a sort change is a
+lookup and a keystroke is one linear pass, with no full-text index.</li>
+<li>Cover thumbnails are decoded off the main thread into a bounded cache.</li>
+</ul>
+<p>Each budgeted path is wrapped in a signpost (<code>Signposts.measure</code> or <code>begin</code>/<code>end</code>
+with a <code>BudgetedPath</code> case), which the XCUITest performance tests measure. A PR that touches one records
+iPhone numbers. When persistence and performance conflict, <strong>persistence wins</strong>.</p>
+
+<h2 id="decisions">Decisions in brief</h2>
+<p>Only the database decision is recorded as an ADR so far. The rest are visible in the code, <code>CLAUDE.md</code>
+and the glossary. A new decision worth remembering (or a new dependency) gets an ADR in <code>docs/adr/</code>.</p>
+<table>
+<tr><th>Decision</th><th>What it means for you</th></tr>
+<tr><td>Play only from complete, verified Downloads</td><td>Playback can't import the network layer. Anything
+"online" belongs in Sync or Downloads.</td></tr>
+<tr><td>The database is the single source of truth (ADR 0001)</td><td>Workers write rows and screens observe them.
+Nothing is lost on a kill.</td></tr>
+<tr><td>A local Swift package of modules with an enforced graph</td><td>A wrong <code>import</code> fails the build or
+CI.</td></tr>
+<tr><td>Plain initializer injection in one composition root</td><td>All the wiring is in
+[[Logos/LogosApp.swift]]. To add a long-lived object, add it there and pass it down.</td></tr>
+<tr><td>Hand-written fakes next to the real code</td><td>Reuse <code>FakeServer</code>, <code>TestClock</code> and the
+other fakes. Extend them rather than adding a mocking library.</td></tr>
+<tr><td>GRDB and Apple frameworks only</td><td>A new dependency needs an ADR, and builds resolve only from the
+checked-in <code>Package.resolved</code>.</td></tr>
+<tr><td>Progress is merged last-writer-wins on <em>when the listener acted</em>, and unsent local changes are never
+overwritten</td><td>Keep <code>lastChanged</code> meaning "when the listener acted", never "when it was sent or
+fetched".</td></tr>
+<tr><td>The Sleep Timer counts Chapters</td><td>It is defined that way in the glossary. There is no minutes
+countdown.</td></tr>
+</table>
+</div>

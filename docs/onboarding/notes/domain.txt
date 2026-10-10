@@ -1,0 +1,337 @@
+# order: 110
+# title: Domain
+# subtitle: The shared vocabulary: plain value types and pure rules every other module builds on
+Domain is the bottom of the module graph ([[#module-graph]]). It imports only Apple frameworks (`Foundation`, `os`, `Synchronization`) and every other module may import it. Nothing in here talks to the network, the database, the audio hardware or the screen. What is left is the *language* of the app: the types that name the things in the [Glossary](glossary.html)'s sense ([[term:Book]], [[term:Chapter]], [[term:Download]], [[term:Listening session]], [[term:Finished change]] …) and the small rules that decide things about them ("does stopping here make the Book Finished?", "does the Server's progress win over ours?", "which Book does the Series page's Continue button point at?").
+
+Because those rules are pure functions over plain values, they are the easiest code in the repo to read and to test: `DomainTests` exercises them without a simulator-only dependency, a database or a fake. When a decision is made in one place and used by several modules, it lives here. For example the 30-second Finished window ([[Domain/FinishRule.swift]]) is used by Playback, and the last-writer-wins comparison ([[Domain/Progress.swift]]) by Store's progress merge.
+
+The file groups you will find below, in reading order:
+
+- **Seams**: the `Clock` protocol with `SystemClock` and `TestClock`, plus `Diagnostics` (loggers) and `Signposts` (performance-budget markers). These are the "shared seams" CLAUDE.md talks about ([[#seams]]).
+- **What the Server tells us**: `ServerIdentity`, `ListedBook` (sync stage 1), `BookData` with `AudioTrack` and `SeriesMembership` (sync stage 2), `Chapter`/`ChapterList`, `FetchedProgress`.
+- **What screens show**: `BookDetail`, `LibraryRow` and `LibraryCatalog` (the Library tab's in-memory sort, filter and search), `SeriesSummary`/`SeriesPage`, `InProgressRow`, `DownloadRow`/`DownloadsList`, `PlaybackTimes`, `SignOutSummary`.
+- **Rules**: `FinishRule`, `ProgressMerge`, `FinishedChanges`, `ListeningSessions`, `SeriesOrder`/`SeriesContinue`, `TitleSort`, `SleepTimer`, `PlaybackSpeed`.
+- **Test data**: `FixtureLibrary`, a deterministic made-up Library used by tests and performance launches.
+
+!ios Almost every type here is a `struct` (or an `enum`) rather than a `class`. A Swift `struct` is a *value type*: assigning it or passing it to a function copies it, so nobody else can change "your" copy behind your back. A `class` is a *reference type*: everyone holding it shares one object. Value types make data safe to hand between threads, which is why the Store can read a `BookDetail` on a background queue and give it to the UI on the main thread.
+
+!ios You will see `Sendable, Hashable, Identifiable` on nearly every type. These are *protocols* (Swift's word for interfaces) that the type promises to satisfy. `Sendable` tells the compiler the value is safe to pass between concurrent tasks; with Swift 6 strict concurrency ([[#primer-concurrency]]) the compiler refuses to move non-`Sendable` values across threads. `Hashable` gives `==` and lets the value be a dictionary key or set member; SwiftUI also uses equality to skip redrawing unchanged views. `Identifiable` means "has an `id`", which SwiftUI's `List` and `ForEach` use to keep track of rows.
+
+!ios Every type and member is marked `public`. Each LogosKit module is a separate Swift module, and Swift's default access level (`internal`) is visible only inside its own module. Anything Store, Sync or UI need must be `public`. Struct initialisers are never public automatically, so each public struct spells out its `public init(...)` by hand. That's why so much of this module is boilerplate initialisers; skim past them.
+
+!rule Never call `Date()` or `Task.sleep` in Sync, Downloads or Playback. Take a `Clock` instead, and use `TestClock` in tests (CLAUDE.md, "Shared seams in Domain").
+
+=== LogosKit/Sources/Domain/Clock.swift
+The Clock seam: the one way Sync, Downloads and Playback learn the time or wait. Anything that depends on time (last-writer-wins timestamps, the 60-second session sends, the 10-minute listening-session gap, retry backoff, refreshing tokens ahead of expiry, the Sleep Timer) goes through this protocol, so tests can control time exactly with [[Domain/TestClock.swift]].
+--- 1-15
+!ios A `protocol` lists requirements without an implementation, like an interface in Java or TypeScript. `var now: Date { get }` asks for a readable property. `func sleep(for:) async throws` is an *asynchronous* function: callers must `await` it, which suspends their task without blocking a thread, and it can `throw` (here a `CancellationError` when the waiting task is cancelled). See [[#primer-concurrency]].
+
+!why The doc comment names every timing behaviour in the app that depends on this seam. The point is testability: a test can say "advance 10 minutes" and check that a listening session ended, without waiting 10 real minutes.
+--- 16-36
+`timer(every:)` is built once, on top of the two requirements, for every clock. It returns an `AsyncStream<Date>`, a sequence you consume with `for await tick in clock.timer(every: .seconds(60)) { ... }`. Inside, a `Task` loops: sleep one interval, then `yield` the current time. When the consumer stops iterating, `onTermination` cancels the task, the next `sleep` throws, and the loop ends.
+
+!ios An `extension` adds members to an existing type, here to *every* type that conforms to `Clock` (a "protocol extension"). Swift code is often split into a small core declaration plus extensions. You'll see the same pattern as files named `Player+SleepTimer.swift`, which are extensions of `Player` kept in their own file.
+
+!ios `Task { ... }` starts a new unit of concurrent work. Tasks support *cooperative cancellation*: `task.cancel()` doesn't stop the code by force. It sets a flag that `Task.sleep` and other suspending calls check, and they then throw `CancellationError`.
+--- 37-
+The production clock. `Task.sleep(for:clock: .continuous)` uses the continuous clock, which keeps counting while the device sleeps (unlike `.suspending`). So a timer that was due while the phone was locked fires right away when the process runs again.
+
+=== LogosKit/Sources/Domain/TestClock.swift
+The test implementation of `Clock`. Time stands still until the test calls `advance(by:)`. It sits in the sources (not in a test target) so every module's test target, and the app's test launches, can share it. `FixtureLibrary` and ServerAPI's `FakeServer` are kept in the sources for the same reason.
+--- 1-30
+!ios `final class` means no subclass can inherit from this class. The class keeps all of its mutable state (the current time and the list of sleeping tasks) inside a `Mutex<State>` from the `Synchronization` framework. `withLock { ... }` runs the closure while holding the lock. That is how a class with mutable state can still be `Sendable` (the protocol requires it): every access to that state goes through the lock.
+
+The initial time defaults to the Unix epoch (1 January 1970). Tests usually pass a fixed date so their timestamps are easy to read.
+--- 31-57
+`sleep(for:)` puts the caller into a dictionary of sleepers keyed by an id, with a deadline of `now + duration`. It then suspends on a *continuation* until `advance` resumes it. If the task is cancelled while it waits, the `onCancel` handler takes the sleeper out and resumes it with `CancellationError`, just as a real `Task.sleep` would.
+
+!ios `withCheckedThrowingContinuation` connects callback-style code to `async/await`. The task suspends and is handed a `continuation` object. Calling `continuation.resume()` (or `resume(throwing:)`) exactly once wakes the task up. You'll meet the same tool wherever the app wraps an Apple callback API.
+
+The `(any Error)??` double optional encodes three outcomes from inside the lock: `.none` (really sleep), `.some(nil)` (resume now, the duration was zero), `.some(error)` (throw now, the task was already cancelled). The continuation is resumed *outside* the lock, which avoids running other code while holding it.
+--- 58-84
+`advance(by:)` steps through the sleepers' deadlines in order. It sets `now` to the earliest due deadline, wakes those sleepers, lets them run, and repeats until it reaches the target time. Because of this, advancing by 3 minutes makes a 1-minute `timer` tick three separate times, each time with the correct `now`, rather than once.
+
+`settle()` yields a hundred times. That's a pragmatic way to let freshly woken (or freshly started) tasks run until they suspend again, so that when `advance` returns, the code under test has reacted.
+--- 85-
+A small helper that converts Swift's `Duration` (seconds plus attoseconds) to Foundation's `TimeInterval` (a `Double` of seconds). Its access level is `internal`, so it's visible only inside Domain.
+
+=== LogosKit/Sources/Domain/Diagnostics.swift
+Logging set-up for the whole app. Each module has a tiny `Log.swift` (for example [[Sync/Log.swift]]) that makes its own `log` constant from its category here.
+--- 1-13
+!ios An `enum` whose cases have a `rawValue` (`: String`) maps each case to a fixed string. `CaseIterable` gives `LogCategory.allCases`. Here the raw value is the category name you'll see and filter on in Console.app or Xcode's log view.
+--- 14-
+!ios `Logger` (from Apple's `os` framework) is the unified logging system. Messages go to the system log with very low overhead, and you can filter them by *subsystem* and *category* in Console.app or Instruments. An `enum` with no cases, like `Diagnostics`, is a common Swift idiom for a namespace: it holds `static` members and nobody can create an instance of it.
+
+!why The subsystem is the fixed string `"Logos"` rather than the bundle identifier. Signposts are measured by subsystem, category and name (`XCTOSSignpostMetric` in the performance tests), and the bundle identifier varies by developer (`BUNDLE_ID_PREFIX`).
+
+=== LogosKit/Sources/Domain/Signposts.swift
+Markers for the performance budgets ([[#performance]], `docs/performance-budgets.md`). Each budgeted path, such as "cold launch → interactive Library" or "search keystroke → updated list", is wrapped in a signpost *interval*. Instruments and the XCUITest performance tests can then measure exactly that span.
+--- 1-41
+One case per row of the budget table. `signpostName` must be a `StaticString` (a string literal known when the code is compiled, which `OSSignposter` requires), so the names are spelled out in a `switch` rather than computed from the case name.
+
+!ios A Swift `switch` must be exhaustive: if you add a case to `BudgetedPath` and forget it here, the code doesn't compile. Since Swift 5.9 a `switch` (and `if`) can be an expression, as in `case .x: "Name"` with no `return`.
+
+!rule A new budget gets a new `BudgetedPath` case, and the work is wrapped in `Signposts.measure`/`measureSync`, or `begin` and `end()` (docs/performance-budgets.md, "Rules").
+--- 42-72
+Three ways to mark a path:
+
+- `measureSync` for synchronous work, as in [[UI/LibraryModel.swift:34]] around a sort change.
+- `measure` for `async` work.
+- `begin`/`end()` for a path that starts in one callback and ends in another, for example "tap a Book" ([[UI/BookDetailView.swift:19]]) up to the first frame of the detail screen.
+
+!ios `defer { ... }` runs its block when the current scope exits, however it exits (`return` or `throw`), so the interval always ends. `throws(E)` is *typed throws*: the wrapper throws exactly the error type the wrapped closure throws, no wider. `isolation: isolated (any Actor)? = #isolation` makes `measure` run on whatever actor the caller is on (for example the main actor), so `work` isn't moved to another thread.
+--- 73-
+The handle `begin` returns. Call `end()` exactly once. It's `Sendable`, so it can be carried into a task or callback that finishes the path.
+
+=== LogosKit/Sources/Domain/ServerIdentity.swift
+"Who and where" Logos is signed in as. This one record is the app's sign-in state: if the database holds a `ServerIdentity` at launch, the app shows the Library; if not, it shows sign-in. See [[#flow-sign-in]].
+--- 1-
+!ios `Codable` lets Swift encode the value to and decode it from formats such as JSON automatically, from its stored properties. Here it's how the Store saves the identity.
+
+!rule The password is never kept. The username is stored only to pre-fill the "sign in again" sheet. Signing in again must match the same Server URL and user id, so a different account can't take over this device's data (see [[Sync/SignIn.swift]]).
+
+=== LogosKit/Sources/Domain/ListedBook.swift
+A [[term:Book]] as it appears in the Server's Library list (`GET /api/libraries/:id/items?limit=0`): stage 1 of the sync ([[#flow-sync]]). This is the cheap, whole-Library fetch that fills in the list rows. Chapters, audio files and Series membership come later, in `BookData`.
+--- 1-32
+Things worth knowing:
+
+- `id` is the Server's *library item* id. Every Server call names a Book by it. `mediaID` is a different id that listening sessions call `bookId`; mixing the two up is an easy mistake.
+- `authorNameLF` ("Last, First") is what Author sort uses.
+- `seriesName` is only a display string ("Saga #1.5, Other #2"). Real Series membership is in `BookData.series`.
+- `updatedAt` is the Server's version stamp in milliseconds. Later sync stages compare it *for equality only* to decide whether a Book's full data or cover needs fetching again.
+
+!ios `String?` is an *optional*: either a `String` or `nil`. Swift makes you unwrap optionals before using them (`if let`, `guard let`, `??` for a default), so a missing subtitle can't crash the app by accident.
+--- 33-
+The member-wise public initialiser (see the note on `public` in the page intro).
+
+=== LogosKit/Sources/Domain/BookData.swift
+Full Book data, stage 2 of the sync: the `ListedBook` plus its Chapters, its audio files (`AudioTrack`s) and its Series memberships. It comes from `POST /api/items/batch/get` (many Books in one request) or `GET /api/items/:id?expanded=1`. Downloads needs the tracks to know which files to fetch, and Playback needs them to map Book time to a file.
+--- 1-39
+An `AudioTrack` is one audio file of a Book. A Book is often several MP3s or one big `.m4b`. `startOffset` places the file on the Book's timeline. All positions in Logos are *Book seconds* (time from the start of the whole Book), and the player converts them to "file N, offset t".
+
+!why Downloads key files on `relPath`, not on `ino`. The doc comment explains that the Server's `ino` (its inode-number file id) can change when files are replaced, so it's always re-read from fresh data before a transfer.
+--- 40-53
+A Book can be in several [[term:Series]], each with its own place. `sequence` is a string because the Server allows `"1.5"` or `"1a"`. The UI shows it exactly as given, and sorting interprets it carefully ([[Domain/Series.swift]]).
+--- 54-
+
+=== LogosKit/Sources/Domain/Chapter.swift
+[[term:Chapter]]s and `ChapterList`, the type that answers "which Chapter is this position in?" for the detail screen, the player's Chapter-scoped scrubber and the [[term:Sleep Timer]].
+--- 1-20
+A Chapter is a named span of Book seconds. `duration` is a *computed property*: it's worked out from `end - start` each time it's read, not stored.
+--- 21-37
+!why The glossary says "a Book the Server reports no Chapters for is a single Chapter". This initialiser enforces that, so the rest of the app never has to handle an empty Chapter list. The list is also sorted here, once, with the id as a tie-break, so equal start times always end up in the same order.
+
+!ios `($0.start, $0.id) < ($1.start, $1.id)` compares *tuples* element by element: first by start, then by id. `$0` and `$1` are the closure's first and second arguments, written in shorthand.
+--- 38-
+
+`index(at:)` is a binary search for the last Chapter starting at or before `position`. The doc comment spells out the edge cases: a boundary belongs to the Chapter it starts, a gap belongs to the Chapter before it, and positions past the end belong to the last Chapter. Binary search keeps this fast: the player calls it every time the position updates.
+
+=== LogosKit/Sources/Domain/BookDetail.swift
+Everything the Book detail screen shows, read from the Store in one query. It's the shape of the screen, not of the Server's data. Before sync stage 2 has fetched the Book's full data, it has only the list data, and `hasCurrentFullData` is `false`, so the screen can show what it has right away and fill in Chapters and Series when they arrive.
+--- 1-28
+`isNotOnServer` marks a downloaded Book the Server no longer lists ([[term:Not on Server]]). It stays playable and its data is frozen. The UI explains this to the listener rather than hiding the Book.
+--- 29-
+A default argument (`isNotOnServer: Bool = false`) lets most call sites, tests in particular, leave it out.
+
+=== LogosKit/Sources/Domain/LibraryRow.swift
+One Library row, plus `TitleSort`, the app's idea of alphabetical order. The Library tab keeps *every* row in memory (3000 in the performance fixture), so the type is deliberately small.
+--- 1-50
+!why "keep this small": the rows come from one lightweight query and are sorted, filtered and searched in memory. That's how the budgets of ≤ 50 ms per search keystroke and ≤ 100 ms per sort change are met on 3000 Books ([[#performance]]). Description, Chapters and tracks live elsewhere.
+
+`sortTitle` is computed once in `init` and stored, rather than recomputed on every comparison during a sort.
+--- 51-73
+`TitleSort` is the collation rule. A leading "The", "A" or "An" is ignored, but only when more of the title follows it, so a Book called just "The" keeps its title. Case, diacritics (é vs e) and character width are ignored too. `.numeric` sorts "Book 2" before "Book 10".
+
+!ios `title.drop(while: \.isWhitespace)` uses a *key path* (`\.isWhitespace`) as a function: "for each character, read its `isWhitespace`". The result is a `Substring`, a cheap view into the original string, and `String(...)` turns it back into an owned string.
+--- 74-88
+The letter shown in the A–Z index at the side of the list. The first character is folded ("É" becomes "E") and upper-cased. Anything that isn't then a single A–Z letter (digits, "Ø", emoji) files under `#`.
+
+!ios `guard condition else { return ... }` is Swift's early exit: if the condition fails, the `else` block must leave the scope. It keeps the main path unindented. `guard let x = optional` also unwraps, and `x` is available for the rest of the function.
+--- 89-
+`TitleSection` is one letter's run of rows. `sortedByTitle` breaks ties by id, so the order is *stable*: the same data always gives the same order, which matters for tests and for the list not jumping around. `sectionedByTitle` puts `#` first, then A–Z.
+
+!ios `extension Sequence<LibraryRow>` adds methods only to sequences (arrays and similar) whose elements are `LibraryRow`. That's why `rows.sortedByTitle()` reads naturally at call sites.
+
+=== LogosKit/Sources/Domain/LibraryCatalog.swift
+The Library tab's sort, filter and search, done entirely in memory over `LibraryRow`s. [[UI/LibraryModel.swift]] builds one `LibraryCatalog` whenever the rows change, then asks it for results on each keystroke. It's one of the most performance-sensitive pieces of the app.
+--- 1-34
+The three inputs of the Library screen: sort (Title, Author, Recently added, Recently listened), filter (by progress) and search text, bundled as `LibraryQuery`.
+
+!ios `progress.map { ... } ?? true` maps over an *optional*. If there is progress, it runs the closure. If not, `map` gives `nil` and `?? true` provides the default. So "no progress at all" counts as Not started.
+--- 35-66
+Output types. During a search, matching Series are shown above the Books. The letter index shows only for Title and Author order, and never while searching (a search result isn't alphabetical in a meaningful way).
+--- 67-80
+!why "No FTS": search is plain substring matching over folded text, not SQLite full-text search. Folding (ignoring case, diacritics and width) makes "bronte" find "Brontë". Blank search text gives `nil`, which means "not searching".
+--- 81-118
+The core design, stated in the doc comment. Building a catalog does the expensive work *once*: it sorts every row into Title order, remembers each row's rank in that order, and folds each row's title, author, narrator and Series name into one searchable "haystack" string. After that:
+
+- a sort change is one `ordered(by:)` call, which uses `titleRank` as the tie-break;
+- a keystroke or filter change is one linear pass of `contains` checks over rows that are already in order.
+
+`Entry` and `SeriesEntry` have no `public`, so other modules can't see inside the catalog. They only get `LibraryResults`.
+--- 119-151
+Recently listened is the only order that needs progress. Books with progress come first, newest first, followed by everything never listened to, still in Title order. Every comparison falls back to `titleRank`, so the order is fully stable.
+
+!ios `entries.compactMap { ... }` transforms each element and drops the `nil` results: a filter and a map in one step.
+--- 152-186
+`LibraryOrder` is a catalog already sorted one way. Keeping it around between keystrokes is what makes typing cheap (see the comment on `results(_:progress:)`). `reserveCapacity` allocates room for the result array up front, so it doesn't grow repeatedly in the loop.
+
+Series results go through `.lazy`, which runs the filters only as elements are pulled out instead of building temporary arrays in between. A Series matches a filter if any of its Books does.
+--- 187-
+Groups ordered rows by index letter for Author order (by the author's last name) and Title order. Within a letter, the order of the input is kept.
+
+=== LogosKit/Sources/Domain/Series.swift
+[[term:Series]] for the Series tab and the Series page, including the rules for reading order and for the page's one "Continue" button.
+--- 1-28
+!why "There are no `/series` calls": the Series tab is built from the `series[]` of each Book's full data, which the sync already has. That avoids extra Server endpoints.
+--- 29-79
+A `SeriesBook` carries just enough for the page: sequence, year, position, Finished and whether it's downloaded. `SeriesPage`'s initialiser sorts the Books into reading order itself, so no caller can forget to.
+--- 80-127
+`SeriesOrder` turns the free-text sequence into a number with a deliberately strict parser: digits, optionally a dot and more digits, nothing else. Books with no usable number go last, sorted by published year, then title, then id.
+
+!ios `switch (a, b)` over a tuple with patterns like `case (let x?, let y?) where x != y` matches "both are non-nil and different" in one line. `x?` in a pattern unwraps an optional. This is a compact way to write a multi-key comparison.
+
+!ios `Decimal` is used instead of `Double` because `1.5` and `1.10` must compare exactly as written, without binary rounding. The fixed `en_US_POSIX` locale makes "." the decimal separator whatever language the phone is set to.
+--- 128-
+The Continue button. Its target is the first unfinished Book at or after the furthest-along started Book. If the furthest-along started Book is unfinished, it is the target itself. If nothing has been started, the target is the first unfinished Book. If that Book is downloaded, the button plays it; if not, it offers to download it. Remember: only a downloaded Book can be played ([[term:Download]]).
+
+!ios `enum Action { case play, download }` nested inside a struct is just a namespaced type. You write `SeriesContinue.Action.play`, or simply `.play` where the type is known.
+
+=== LogosKit/Sources/Domain/Progress.swift
+Progress, and the rule that decides whose progress wins when this device and the Server disagree: *last-writer-wins on when the user acted*. See [[#flow-sync]].
+--- 1-19
+`FetchedProgress` is the Server's view (`GET /api/me/progress`). `lastUpdate` is in milliseconds since 1970, the Server's own unit.
+--- 20-40
+`BookProgress` is the local view. The key field is `lastChanged`: the wall-clock moment the *listener acted* (played, sought, marked Finished), **never** when the data was sent or fetched. Comparing "when did the human last touch this Book" on both sides makes the merge correct when two devices are used offline.
+
+[[term:In Progress]] is defined here in code: started (position > 0) and not Finished.
+--- 41-67
+The merge rule. A fetched value replaces local progress only if the Server's `lastUpdate` is *strictly* newer (ties keep the local value), and the change is real: a position more than 2 seconds away, or a different Finished. It returns `nil` for "keep local". The Store calls this for every fetched Book inside one database transaction ([[Store/ProgressStore.swift:82]]).
+
+!why Store's progress merge also never overwrites a Book that has anything in the [[term:Outbox]] (glossary). That check happens in the Store, on top of this rule.
+--- 68-78
+Times are kept to the millisecond everywhere, because that's what the Server stores. Rounding both sides to whole milliseconds keeps "strictly newer" comparisons honest.
+--- 79-
+The In Progress tab's row type.
+
+=== LogosKit/Sources/Domain/FinishRule.swift
+When leaving a Book makes it [[term:Finished]]: when playback reaches the end, or pauses or skips to within the last 30 seconds. Playback asks this when the listener pauses ([[Playback/Player.swift:347]]) and when they skip ([[Playback/Player.swift:435]]).
+--- 1-
+!why Audiobooks often end with credits or silence, so a listener who stops 10 seconds from the end has finished. The glossary's definition of Finished writes the 30 seconds into the domain language. A Book of unknown length (duration 0) never finishes this way, so bad data can't mark it Finished by accident.
+
+=== LogosKit/Sources/Domain/FinishedChange.swift
+A [[term:Finished change]]: a local change to a Book's Finished state, waiting in the [[term:Outbox]] to be sent (`PATCH /api/me/progress/:libraryItemId`), with the rules for sending it. Sync's [[Sync/SessionOutbox+Finished.swift]] uses them.
+--- 1-22
+A Book has at most one pending change. A later change replaces it, because the Server only needs the latest state. `lastUpdate` records when the listener acted, for last-writer-wins.
+--- 23-35
+What's actually sent: the change plus the Book's duration. When marking Finished, the Server is sent the position as the end of the Book.
+--- 36-
+Two checks made before sending:
+
+- `isOverruled`: the Server's progress changed *after* the listener acted, so the local change is dropped and the Server wins. A tie keeps the local change.
+- `isOnServer`: the Server already has this Finished state, so there's nothing to send. That happens, for example, when a listening session that reached the end has already finished the Book on the Server.
+
+!why The comment on `isOverruled` warns about ordering. Ask before sending the Book's listening sessions, because the Server stamps progress that a session *creates* with its own time. A session sent first could make the Server look newer than the listener's own change.
+
+=== LogosKit/Sources/Domain/ListeningSession.swift
+[[term:Listening session]]s: stretches of listening reported to the Server's history and stats (`POST /api/session/local-all`). This file holds the type and the pure state machine that decides which sessions start, continue or end on each position write.
+--- 1-50
+Logos makes the session id itself (a UUID), so a session can be created offline and sent later, and re-sending it is safe: the Server recognises the id. `timeListening` counts *real* seconds, whatever the playback speed, which is what the Server's stats expect. `listenedUntil` and `isPlaying` let the next write work out how much listening happened in between.
+--- 51-67
+`ended()` returns a closed copy. Because `ListeningSession` is a struct, `var ended = self` makes a copy, so the original is untouched.
+
+!ios A method on a struct can't change `self` unless it's marked `mutating`. Returning a modified copy, as `ended()` does, is the usual non-mutating style.
+--- 68-114
+The heart of the file: given one position write and every open session, which sessions change? The doc comment is the spec:
+
+- Only one Book plays at a time, so a write *while playing* ends every other Book's open session.
+- A pause of 10 minutes or more (`maxPause`) ends a session. A shorter one keeps it open.
+- The written Book's open session takes the new position and adds the real seconds since the last write, if it was playing.
+- Playing with no open session starts a new one.
+- Reaching Finished ends the session.
+
+The Store calls this inside one transaction on each position write ([[Store/ListeningSessionStore.swift:93]]), so the [[term:Outbox]] always holds each session's latest state.
+
+!why `newID: () -> UUID = UUID.init` is a seam for tests. Production gets random UUIDs, and tests pass a function that gives predictable ones. Time comes in as data (`progress.lastChanged`), not from a clock, which keeps the function pure.
+--- 115-140
+A session as it waits in the outbox. `revision` goes up on every change. When the Server confirms "revision 7 delivered", only that state counts as sent. If the session has changed since (revision 8), it stays in the outbox.
+--- 141-
+The Server's per-session answer, and the device description the Server uses to keep a single device row for this install.
+
+=== LogosKit/Sources/Domain/PlaybackSettings.swift
+The listener's playback settings: one global speed, plus the Skip back and Skip forward intervals.
+--- 1-28
+!ios `static let `default` = ...`: the backticks let you use a reserved word (`default`) as a name. An `enum SkipInterval: Int` with explicit raw values (`case ten = 10`) gives each case a number, which is convenient to store in the database.
+--- 29-
+Speeds run from 0.5× to 3.0× in 0.05 steps. `normalized` snaps any value to the nearest allowed speed, and turns NaN or infinity into 1×. The initialiser calls it, so a stored or typed-in value can never be off the grid. `label` formats "1.0×" and "1.25×".
+
+=== LogosKit/Sources/Domain/PlaybackTimes.swift
+The numbers the player screen shows for one position: elapsed and remaining time in the current Chapter (the scrubber is Chapter-scoped), and progress through the whole Book. The `…AtSpeed` values convert "Book seconds left" into "real seconds left at this speed": 60 minutes of Book at 2× takes 30 real minutes.
+--- 1-
+!why Every input is clamped (the position kept within the Book, a speed of 0 or NaN treated as 1), and every fraction checks for division by zero. A value type that can't hold nonsense means the views never need to guard against it.
+
+=== LogosKit/Sources/Domain/SleepTimer.swift
+The [[term:Sleep Timer]]: "stop at the end of the Xth Chapter from now", turned into a fixed stop point in Book seconds. It's Chapter-based only (there are no "30 minutes" timers). Playback holds it in memory ([[Playback/Player+SleepTimer.swift]]).
+--- 1-21
+!ios `init?` is a *failable initialiser*: it returns `nil` instead of a value when the input makes no sense, for example asking for 5 more Chapters when only 2 are left. Callers handle it as an optional.
+
+The current Chapter counts as the first: `count: 1` means "End of this Chapter".
+--- 22-31
+`resumeAt` is where the saved position goes after the stop: the start of the *next* Chapter. Next time the listener presses Play, they start on a fresh Chapter rather than at the last second of the old one. If the stop is the end of the Book, `endsBook` tells the player to let its normal end-of-Book handling (Finished) take over.
+--- 32-
+The picker offers every possible stop from the current Chapter to the last. `extended` is the "+1 Chapter" button. `timeLeft` divides by the playback rate to estimate wall-clock time ("~42 min").
+
+=== LogosKit/Sources/Domain/Download.swift
+The [[term:Download]] types. Remember the glossary rule: a Book counts as downloaded only when *every* file is present and its size verified, and only downloaded Books can be played.
+--- 1-13
+!ios This `enum` is `String`-backed and `Codable`, so the Store can save the state as readable text (`"queued"`, `"downloading"` …) in a database column.
+
+There is no `notDownloaded` case. A Book without a Download simply has no state at all (no row in the database).
+--- 14-38
+What the Book detail screen and list rows show: state plus byte counts. `fractionDone` returns 0 while the total is unknown (just after queueing) and never more than 1.
+--- 39-75
+One file of a Download, as the Downloads module tracks it. Fields to note:
+
+- `size` is what the Server says. A file is verified only when the size on disk matches it exactly.
+- `resumeData` is what URLSession hands back when a transfer stops part-way. Keeping it in the database lets a transfer continue after an app kill ([[#flow-download]]).
+- `attempts` counts failures, but a 401 (expired login) doesn't count. `sizeMismatches` is counted separately.
+
+These properties are `var`, unlike most in Domain, because Downloads updates them as a transfer progresses.
+--- 76-110
+A row of the Downloaded tab. For a Book that's Not on Server, removing its Download deletes the Book entirely, since the Server no longer has it.
+--- 111-
+The Downloaded tab as a whole: the queue in first-in-first-out order (failed Books stay in it so they can be retried), then the downloaded Books. `activeCount` is the tab badge.
+
+=== LogosKit/Sources/Domain/DownloadedOrder.swift
+The Downloaded tab's sort menu: Recently listened (the default, the order the Store already returns) or Largest first (to find what to delete to free space).
+--- 1-18
+`Identifiable` with `var id: Self { self }` is a common trick so an enum's cases can drive a SwiftUI `Picker` or `ForEach` directly.
+--- 19-
+Largest first sorts by size. Equal sizes fall back to the original position (`enumerated()` gives each element its `offset`), so the sort is stable and keeps the recently-listened order among ties.
+
+=== LogosKit/Sources/Domain/DownloadPolicy.swift
+Two switches that govern Downloads: whether cellular is allowed (off by default, so Wi-Fi only; Low Data Mode networks are never used), and whether the queue is paused because the last free-space check failed. Downloads reads it, and the Store keeps it.
+--- 1-
+
+=== LogosKit/Sources/Domain/SignOutSummary.swift
+What signing out will remove, shown in the confirmation dialog ([[#flow-sign-out]]): the number and size of Downloads, and anything still unsent in the [[term:Outbox]] after a last try to send it. Signing out wipes everything, so unsent listening is lost, and `losesListening` lets the UI warn about exactly that.
+--- 1-
+
+=== LogosKit/Sources/Domain/FixtureLibrary.swift
+A made-up Library of any size that comes out the same every time. The performance tests measure the 940- and 3000-Book budgets on it, the app's `library940`/`library3000` test launches seed it ([[Logos/TestLaunch.swift]]), and unit tests use it as realistic data. See [[#ui-tests]] and [[#performance]].
+--- 1-28
+The doc comment lists the shape it imitates: titles spread over every index letter (some with a leading digit or article), several Books per author, about a third of the Books in Series (now and then a "1.5"), 90 % with covers, about 18 % started or Finished, and a few short downloaded Books whose audio can actually be generated on the device.
+--- 29-88
+The generator. It walks the Book indices, sometimes starts a Series that the next 2–8 Books belong to, and gives each Book an author. Progress is then added: the downloaded Books are the most recently listened (the first is the "last played" Book the launch budget measures), and about 18 % of the rest get Finished or In Progress progress spread over the past ~400 days.
+
+!ios `var series: (id: String, name: String, ...)?` is an optional *named tuple*: a quick throwaway record, without declaring a struct. `series?.left -= 1` uses *optional chaining*: the decrement happens only if `series` isn't `nil`.
+--- 89-144
+One Book. Downloaded Books get two 2-minute `.m4a` tracks and 1-minute Chapters, small enough to write real (silent) audio for them when seeding. The others get one long `.m4b` and Chapters of 15–60 minutes. `updatedAt` is derived from the index, so it's stable between runs.
+
+!ios `generator: inout Generator` passes the struct *by reference* for this call (marked `&generator` at the call site), so the function can advance the shared random state.
+--- 145-167
+Word lists for names and titles. The first and last names are Norwegian-flavoured.
+--- 168-
+!why A hand-rolled SplitMix64 random generator instead of `SystemRandomNumberGenerator`: it starts from a fixed seed, so every run, device and OS version gets exactly the same Library. That's what lets a performance measurement or a test be compared with an earlier one.
+
+!ios `&+=` and `&*` are Swift's *overflow* operators. Ordinary `+` and `*` crash on integer overflow, but these wrap around, which is what hash and random-number maths needs.

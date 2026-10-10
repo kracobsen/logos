@@ -1,0 +1,361 @@
+# order: 170
+# title: UI: shell & browsing
+# subtitle: SwiftUI screens, their @Observable models, and how they follow the database
+`UI` is the module the listener actually sees: the sign-in screen, the four-tab shell (In Progress, Library, Series, Downloaded), Settings and every list and row. This page covers the shell, sign-in and sign-out, Settings and the browsing screens. The rest of UI (Book detail, the player, the Downloads tab and the listening reporter) is on the next page.
+
+UI sits at the top of the [[#module-graph]]: it may use Domain, Store, Sync, Downloads and Playback, and **nothing depends on UI**. It never talks to `ServerAPI` directly; anything that needs the network goes through a Sync or Downloads object that the app target hands in. The app target ([[Logos/LogosApp.swift]]) builds one `AppRootView` and passes it the database, the sign-in service and factory closures for the per-identity objects. That is the only door into the module.
+
+!ios **SwiftUI** is Apple's declarative UI framework. A screen is a `struct` that conforms to `View` and has a `body` property describing what to show *for the current state*. You never "update a label"; you change state, and SwiftUI calls `body` again and works out what changed on screen. Chained calls such as `.navigationTitle(…)`, `.toolbar { … }` and `.task { … }` are **view modifiers**: each wraps the view in another one with an extra behaviour. See [[#primer-swiftui]].
+
+Almost every screen here comes as a pair: a **model** (`LibraryModel`, `SignInModel`, `SettingsModel`, …) and a **view** (`LibraryView`, `SignInView`, `SettingsView`, …). The model is a class marked `@Observable` that holds the screen's state and does its work: reading the Store, starting a sync, saving a setting. The view is a thin `struct` that draws the model's properties and calls its methods. Models are `public` so the test target `UITests` can drive them without any SwiftUI; most views are `internal` (no access keyword), since only this module shows them.
+
+!ios **`@Observable`** (from the `Observation` framework) turns a class into something SwiftUI can watch. When `body` reads `model.sections`, SwiftUI remembers that, and when `sections` changes later, that view is redrawn. Nothing else is needed: no publishers, no `objectWillChange`. Properties marked `@ObservationIgnored` aren't tracked: use that for internal bookkeeping that should never cause a redraw. See [[#primer-observable]].
+
+The models follow ADR 0001, [[#single-source-of-truth]]: Sync, Downloads and Playback only ever *write to the database*, and never call back into UI. Each model reads its data once, synchronously, in `init` (so the very first frame already shows real rows), then calls a Store `…Updates()` method in its `observe()` method and loops over the resulting `AsyncThrowingStream`. That stream is backed by GRDB's `ValueObservation`, which runs the query again after every write that could change its answer ([[Store/AppDatabase.swift:94]]). A view starts that loop with `.task { await model.observe() }`; SwiftUI cancels the task when the view goes away, which ends the loop.
+
+!ios UI (like Playback and the app) is compiled with **main-actor isolation by default** (`.defaultIsolation(MainActor.self)` in `Package.swift`). Every type and function in this module runs on the main thread unless it says otherwise, which is exactly what UI code needs: it may touch views and `@Observable` state freely. Heavy work is pushed off the main thread on purpose, with `Task.detached` or a `@concurrent` function, and anything that must run off it is marked `nonisolated`. See [[#primer-concurrency]] and [[#primer-actors]].
+
+Navigation is plain SwiftUI. `AppRootView` chooses between sign-in and the shell. The shell, `RootView`, is a `TabView` with one `NavigationStack` per tab, so each tab keeps its own back stack. Screens push Book detail and Series pages with `.navigationDestination(item:)`: setting an optional `@State` value to non-`nil` pushes the destination, and going back sets it to `nil` again. Settings and "sign in again" are **sheets** (cards that slide up over everything), and the player sits along the bottom as a tab-view accessory ([[UI/PlayerChrome.swift]], on the next page).
+
+=== LogosKit/Sources/UI/AppRootView.swift
+The module's public entry point: the first view the app shows. It decides between **sign-in** and the **tab shell** by asking `LaunchModel` whether a Server identity is saved, and starts the observation that keeps that answer up to date. It also holds `DatabaseErrorView`, shown by the app instead of everything else when the database can't be opened.
+--- 1-6
+!ios `import` makes another module's `public` declarations visible. These imports are checked by `scripts/check-module-graph.sh`: UI may import Domain, Store, Sync, Downloads and Playback, and never `ServerAPI` or `GRDB` (see [[#module-graph]]). `SwiftUI` and other Apple frameworks are always allowed.
+--- 8-17
+The view's stored properties. Some are plain `let`s handed in by the app (the player, the database, the sign-in service); the ones the view *owns* are `@State`.
+
+!ios **`@State`** is a property wrapper: SwiftUI stores the value outside the struct and keeps it across redraws. Views are structs and are rebuilt all the time, so anything a view creates and must keep (here, `LaunchModel` and `SignInModel`) has to live in `@State`, or it would be made again on every redraw. A property wrapper is the `@Something` before a property; it adds behaviour to reading and writing that property.
+
+!ios `struct` vs `class`: a struct is a value (copied on assignment), a class is a reference (shared). SwiftUI views are structs; models are classes, so the view and anything else that holds the model see the same object.
+--- 19-46
+The initializer the app calls. The `- Parameters:` doc comment says what each argument is for; most are optional, so tests and previews can build an `AppRootView` without a player, covers or Downloads.
+
+!ios `_launch = State(initialValue: …)` sets the *wrapper* itself (the underscore names the wrapper behind `launch`). It's the way to give a `@State` its first value from `init` arguments. `@escaping` marks a closure that is kept for later instead of being called before `init` returns, here the factories that build a sync or Downloads once there's an identity.
+
+!why `makeLibrarySync` and `makeDownloader` are *factories*, not ready-made objects: those objects belong to one signed-in identity (one Server, one user, one Library), and there's no identity until sign-in finishes. The app target decides how they're built ([[#composition-root]]).
+--- 48-67
+The body: once the launch model has the three tab models, show `RootView`; otherwise show `SignInView`. When signed out, the sign-in screen is "interactive" at once, so it ends the cold-launch signpost (see [[#performance]]).
+
+`.task { await launch.observe() }` keeps the identity in step with the database for as long as this view lives. When the identity goes to `nil` (sign-out wiped the database), `.onChange` makes a fresh `SignInModel` and cover cache, so the app looks like a fresh install.
+
+!ios `.task { … }` starts an `async` piece of work when the view appears and cancels it when the view disappears, the usual SwiftUI way to run a long-lived loop like an observation. `.onChange(of:)` runs a closure each time a value changes. `if let x = y` unwraps an optional: the block runs only if `y` isn't `nil`, with `x` as its value.
+--- 70-94
+Shown by [[Logos/LogosApp.swift]] when `AppDatabase.open` throws. It says nothing was deleted and shows the error text, which the listener can select and copy.
+
+!rule The database is **never deleted automatically**, even when it can't be opened or migrated; the file is kept as it is. Losing the listener's data is worse than a screen that can't load.
+
+!ios `ContentUnavailableView` is the system's standard "empty state" view (an icon, a title and a description); this module uses it for every empty list. `any Error` is an *existential*: a box holding some value of a type that conforms to `Error`, with the concrete type unknown at compile time. Swift 6 asks you to write `any` for such boxes.
+
+=== LogosKit/Sources/UI/AppTab.swift
+The four tabs of the shell, as an enum. `RootView` loops over `AppTab.allCases`, so adding a case here adds a tab, with its title and icon.
+--- 1-25
+!ios An `enum` lists a fixed set of cases. `CaseIterable` gives it `allCases`; `Hashable` lets it be a selection value and a dictionary key. `Sendable` means values may safely cross between threads ([[#primer-concurrency]]). The `switch` covers every case and returns a value, so the compiler complains if a new case is added without a title. `systemImage` names an **SF Symbol**, one of Apple's built-in icons.
+
+There's no Search tab: search is a field in the Library tab (see [[UI/LibraryView.swift]]).
+
+=== LogosKit/Sources/UI/RootView.swift
+The signed-in shell: four tabs, each with its own navigation stack, plus the Settings gear, the connection banner, the player chrome and the sheets. It is also where the app's **lifecycle triggers** live: what starts after launch, on return to the foreground and on going to the background.
+--- 1-20
+The models arrive from `AppRootView` (built by `LaunchModel`). Several are optional because tests and previews can leave them out; the shell then shows a placeholder or hides a button.
+
+!ios `@Environment(\.scenePhase)` reads a value SwiftUI provides to every view, here whether the app is `.active`, `.inactive` or in the `.background`. The `\.scenePhase` syntax is a *key path*: a reference to a property, not its value.
+--- 22-44
+A plain memberwise initializer, `public` so the app and tests can build it.
+--- 46-82
+The `TabView`. The selection starts at `.inProgress`: the app opens on what you were listening to. Each tab gets its own `NavigationStack`, so going into a Book on the Library tab and switching to Series keeps each tab's place. Every tab gets the same two extras: the connection banner pinned under the navigation bar (`.safeAreaInset`) and the Settings gear in the toolbar. The Downloaded tab carries a badge from `DownloadsModel.badgeCount`.
+
+!ios `$selection` is a **binding**: a two-way reference to a `@State` value, so the `TabView` can read the current tab *and* set it when the listener taps another. The `$` prefix makes a binding from a property wrapper.
+--- 83-100
+Modifiers on the whole shell:
+- `PlayerChrome` adds the mini-player and the player sheet ([[UI/PlayerChrome.swift]]).
+- Two sheets: Settings, and the "sign in again" form. The second sheet's binding is built by hand from `signInAgain?.isPresented`, because that model is optional.
+- `.environment(covers)` and `.environment(downloads)` put these models into the **environment**, so any view below can read them with `@Environment(CoverImages.self)` instead of having them passed down through every initializer. `CoverView` and the Download buttons rely on this.
+- One `.task` per model starts its `observe()` loop. They all run for as long as the shell is on screen.
+--- 101-118
+What runs after launch. The listening reporter's loop starts at once ([[UI/ListeningReporter.swift]]). Everything else waits for `FrameShown.next()`, so the first frame (the Library rows read from the database) is on screen before any background work competes with it. Then three jobs run side by side: the cover file check, the Downloads file check followed by resuming transfers, and the launch sync.
+
+!ios `async`/`await`: a function marked `async` can pause at each `await` without blocking its thread. `withDiscardingTaskGroup` runs several child tasks at the same time and returns when all of them have finished. See [[#primer-concurrency]].
+
+!rule From `docs/performance-budgets.md`: *nothing on the launch path touches the network or runs the file check*. That's why the sync and file checks sit behind `FrameShown.next()`, and why the Downloads check runs before `resume()` (so a Download with missing files isn't treated as done).
+--- 119-135
+The foreground and background triggers. Coming back from the background starts the `returnFromBackground` signpost (ended at the next frame), a foreground sync (which only does anything if the last success is more than about 15 minutes old), resuming Downloads, and tells the listening reporter. Going to the background tells Downloads and the reporter.
+
+!ios `Task { … }` starts a new piece of asynchronous work from code that isn't `async` itself, and doesn't wait for it. Inside this main-actor module, such a task also starts on the main actor.
+
+=== LogosKit/Sources/UI/LaunchModel.swift
+The brain behind `AppRootView`. It holds the saved **Server identity** (who is signed in, to which Server and Library) and, while there is one, builds every per-identity model the shell needs: the three tab models, Downloads, Settings, the listening reporter, the "sign in again" model and sign-out. When the identity changes (sign-in, sign-out), all of them are rebuilt or dropped together.
+--- 1-26
+!ios `@Observable public final class`: `final` means no subclasses. The `didSet` block after a property runs every time the property is assigned; here it compares with `oldValue` and rebuilds the per-identity models only when the identity really changed. `identity.map(makeLibrary)` uses `Optional.map`: it calls `makeLibrary(identity)` if there's an identity, and gives `nil` if there isn't, so "signed out" means "no models".
+--- 27-50
+The models, all `public private(set)`: other code may read them, only this class sets them. The `private let`s are the dependencies handed in by `AppRootView`.
+--- 52-87
+`init` reads the identity **synchronously**, straight from the Store, and builds the models right away. This is what lets a signed-in cold launch show the tab shell, with real Library rows, in its very first frame instead of a flash of the sign-in screen.
+
+!ios `do { try … } catch { … }` is Swift's error handling: a call marked `try` may throw, and the `catch` block receives the `error`. The models are built a second time here because `didSet` doesn't run for assignments made inside `init`.
+
+The `log.error(…)` calls use the module's logger ([[UI/Log.swift]]); `privacy: .public` lets the text show up unredacted in Console and sysdiagnoses.
+--- 89-98
+The observation loop: every time the identity in the database changes (a sign-in saves one, a sign-out wipes it), assigning it triggers the `didSet` above. This is how sign-in "navigates" to the shell: `SignIn` saves an identity to the database and nothing else, and this loop notices ([[#flow-sign-in]]).
+
+!ios `for try await x in stream` loops over an asynchronous sequence: each turn waits for the next value. The loop ends when the stream finishes or the surrounding task is cancelled.
+--- 100-123
+Builds the models that need the sync and the identity together. `SignInAgainModel` gets a `resume` closure: after the same user signs in again, it first sends the [[term:Outbox]], then runs a manual sync while resuming Downloads.
+
+!why The comment says why sending comes first: the sync fetches progress from the Server, and with this device's unsent listening already sent, that fetch never meets local listening it would have to protect. `async let synced = …` starts the sync without waiting, so the Downloads resume runs at the same time; `await synced` then waits for it.
+--- 125-145
+Small factories. Note how the same `Player` is handed to Settings (so skip-interval changes take effect at once) and to Downloads (so removing the Download of the Book that's playing stops it first).
+
+=== LogosKit/Sources/UI/LaunchSignpost.swift
+A one-shot wrapper around the **cold launch → interactive Library** performance signpost. The app creates it at start; whichever screen appears first (Library, In Progress or sign-in) calls `end()`.
+--- 1-17
+`Signposts.begin(_:)` (from [[Domain/Signposts.swift]]) starts a timed interval that shows up in Instruments and in the performance tests. Setting `interval` to `nil` after the first `end()` makes later calls harmless, so every screen can call `end()` without coordinating.
+
+!rule Every budgeted path in `docs/performance-budgets.md` has a signpost; a new budget gets a new `BudgetedPath` case. See [[#performance]].
+
+=== LogosKit/Sources/UI/FrameShown.swift
+A small utility: "wait until the frame being drawn now is actually on the screen". The shell uses it to hold back launch work (sync, file checks) and to end the return-from-background signpost.
+--- 1-17
+!why The comment explains why not just `Task.yield()`: yielding only lets other main-actor work run, and says nothing about rendering. A display link ticks once per screen refresh, so by its second tick the frame being prepared when it started has been shown.
+
+!ios `withCheckedContinuation` turns callback-style code into an `async` function: the code inside gets a `continuation`, and `await` returns when something calls `continuation.resume()`. It's the bridge between old completion handlers and `async`/`await`.
+--- 19-43
+`FrameTicker` wraps a `CADisplayLink`, a Core Animation timer tied to the display's refresh. It's a subclass of `NSObject` because a display link calls its target with an Objective-C *selector* (`#selector(tick)`, with the method marked `@objc`), an older calling style that predates Swift. The display link holds a strong reference to its target, which keeps the ticker alive until it invalidates the link.
+
+=== LogosKit/Sources/UI/Log.swift
+Every module has a two-line `Log.swift` like this one, giving the module its own `log` under its own `LogCategory` ([[Domain/Diagnostics.swift]]). In Console.app you can then filter Logos's logs by module.
+--- 1-8
+!ios `nonisolated` opts these two constants out of the module's main-actor default, so code running on any thread (a detached task, a background decode) can log. See [[#primer-actors]].
+
+!rule Use `log` from your own module, never `print`. See [[#seams]].
+
+=== LogosKit/Sources/UI/SignInModel.swift
+State and logic for the sign-in screen: the three fields, the "working" spinner, the error and where it is shown, and the Library pick when the account can see more than one book Library. The real work is in [[Sync/SignIn.swift]]; this model only turns its results into screen state. `SignInAgainModel` reuses its error placement and messages.
+--- 1-32
+!ios A nested `enum` (`ErrorPlacement`) keeps a type that only makes sense for this screen inside the class. `public var address = ""` is a plain stored property; because the class is `@Observable`, the view can bind text fields straight to it. `libraryOptions` is a **computed property**: it has no storage and is worked out from `pendingChoice` each time it's read.
+--- 34-55
+`submit()` disables the button (`isWorking`), clears any old error and calls `SignIn`. There are two possible results: signed in (nothing more to do here: `SignIn` saved the identity, and `LaunchModel` reacts), or "choose a Library", which keeps the choice and shows the picker. The password is cleared either way.
+
+!ios `defer { … }` runs its block when the function returns, however it returns, so `isWorking` is always reset. `switch try await …` with `case .chooseLibrary(let choice):` matches an **enum case with an associated value** and binds that value to `choice`. `guard canSubmit else { return }` is an early exit: the code after a `guard` only runs if its condition holds.
+--- 57-73
+Picking a Library finishes sign-in (`SignIn` saves the identity). Cancelling revokes the half-made sign-in on the Server in a background `Task`, so the screen doesn't wait for it.
+--- 75-110
+Error presentation, as data: each `SignInError` maps to a place on the form (under the address, under the account fields or under the button) and to a sentence. The `switch` statements list every case, so a new error case won't compile until it has both.
+
+!why Errors appear "in place, under what caused them" (see the type's doc comment), so the listener knows which field to fix. The messages use the [[term:Server]], [[term:Library]] and [[term:Book]] words from the glossary.
+
+=== LogosKit/Sources/UI/SignInView.swift
+The sign-in screen. A `Form` with three fields, or, once the Server has answered with several book Libraries, a list to pick from.
+--- 1-27
+!ios `@Bindable var model` lets the view make bindings (`$model.address`) to properties of an `@Observable` object it doesn't own. `@FocusState` tracks which text field has the keyboard. `Form` is the system's grouped settings-style list, and `.disabled(model.isWorking)` greys out the whole form while signing in.
+--- 29-79
+The three sections. Each field sets its keyboard and autofill hints (`.textContentType(.username)` lets iOS offer saved passwords), and the return key moves focus to the next field, or submits from the password field. Each section's footer shows the error that belongs to it.
+
+!ios `@ViewBuilder` lets a property or function return different views from `if`/`switch` branches (a **result builder**: the same feature that makes `body`'s list of child views work). `some View` means "one specific view type that the compiler knows and I don't have to spell out".
+--- 81-99
+The Library picker: one button per Library, and Cancel. The footer says plainly that Logos shows one Library, and that changing it means signing out.
+--- 101-112
+`submit()` drops the keyboard and starts the async submit in a `Task`, because a button's action can't itself be `async`.
+
+=== LogosKit/Sources/UI/SignInAgainModel.swift
+When the Server stops accepting the saved sign-in (a password change, a revoked token) or is downgraded to an unsupported version, sync stops but the app keeps working: Downloads keep playing and listening is kept in the [[term:Outbox]]. This file has the banner shown above every tab in that state, and the model behind the "Sign In Again" sheet.
+--- 1-26
+`ConnectionBanner` is a small enum: two states, each with its own title and detail text. Note the reassurance in the text: *your Downloads and listening are safe*.
+--- 28-58
+The model is built for one identity. The `resume` closure comes from `LaunchModel` (send, sync, resume Downloads).
+--- 60-70
+Follows the `Connection` state from Sync ([[Sync/Connection.swift]]) and turns it into a banner, or none.
+
+!ios `banner = switch state { … }` uses `switch` as an *expression*: each case gives a value. `await connection.updates()` has an `await` because `Connection` is an **actor** (its methods are called from outside asynchronously); see [[#primer-actors]].
+--- 72-104
+`open()` refills the form with the signed-in Server and username, so only the password is needed. `submit()` goes through `Connection.signInAgain`, which refuses a different user or Server in place; on success it closes the sheet and runs `resume`. Error text and placement are borrowed from `SignInModel`, so both forms say the same thing.
+
+=== LogosKit/Sources/UI/SignOutModel.swift
+Sign-out as a small state machine. The doc comment lists the order, and the order matters: try to send everything first, then show the listener what will be lost, then tear down, then wipe. Afterwards the app is like a fresh install. See [[#flow-sign-out]].
+--- 1-30
+`Step` is the state machine. `.confirming(SignOutSummary)` carries the data the confirmation dialog needs (Download count and size, and unsent listening), so the view can't show the dialog without it.
+--- 32-50
+Everything sign-out has to stop or wipe: the sync (for the outbox and the Server connection), Downloads, the player and the cover files.
+--- 52-71
+Steps 1 and 2. Pausing first means the latest position goes into the listening session that's sent. Whatever the send's outcome, the next step reads the summary from the database and asks.
+
+!why The send result is only logged: if the Server can't be reached, the listener can still sign out, and the confirmation says exactly which [[term:Listening session]]s and [[term:Finished change]]s would be lost.
+--- 73-91
+Steps 3 and 4, in a deliberate order: stop playback, stop Downloads, tell the Server (best effort) and clear the tokens, delete the covers, then wipe the database. The wipe removes the Server identity too, and `LaunchModel`'s observation then swaps the shell for sign-in. `onSignedOut` lets the app target drop its per-identity `Auth` and Downloads ([[Logos/LogosApp.swift]]).
+--- 93-121
+`message(for:)` builds the confirmation's sentence from the summary, with the right singular or plural. It's `static`, so tests can check the wording without building a model.
+
+!ios `if case .failed = step { true } else { false }` is how you ask "is this enum value this case?" when the case has an associated value, since `==` can't be used for that directly.
+
+=== LogosKit/Sources/UI/SignOutViews.swift
+Three small views around signing in and out: the Sign Out section at the bottom of Settings, the connection banner above every tab, and the "Sign In Again" sheet.
+--- 1-50
+The Sign Out button starts step 1; while sending or signing out it shows a spinner and is disabled. The confirmation dialog opens whenever the model's step is `.confirming`. Its binding has a getter that reads the step and a setter that does nothing, because each of the dialog's buttons already moves the model on (the comment explains why closing it changes nothing).
+
+!ios `Binding(get:set:)` makes a binding from two closures. It's the usual way to drive a SwiftUI presentation (sheet, alert, dialog) from a model's state rather than a separate `Bool`. `role: .destructive` makes the button red.
+--- 52-93
+The banner. Needs sign-in is a button that opens the sheet; Server too old is just information. `.background(.regularMaterial)` gives it the system's translucent blur.
+--- 95-170
+The "Sign In Again" sheet: the same fields as `SignInView`, prefilled, with the focus on the password. The footer promises that nothing is removed, which is the difference from signing out.
+
+=== LogosKit/Sources/UI/SettingsModel.swift
+The Settings screen's state: allow Downloads over cellular, and the skip-back and skip-forward intervals. Read from the Store in `init`; changes go to the object that owns the setting, which saves it.
+--- 1-44
+Both settings are read once, with defaults if the read fails. `player` and `signOut` are set afterwards by `LaunchModel`; without a sign-out model, Settings simply has no Sign Out section.
+--- 46-57
+The cellular setting goes through Downloads when there is one, so transfers already running follow it at once; otherwise it is only saved.
+
+!why This is the [[#single-source-of-truth]] rule in practice: the model doesn't keep its own copy of "the setting". The Downloads actor applies it and stores it in the database.
+--- 59-87
+The same pattern for skip intervals: through the player when there is one (its skip buttons and the lock-screen controls use the new interval at once), otherwise straight to the Store.
+
+=== LogosKit/Sources/UI/SettingsView.swift
+The Settings sheet, opened from the gear on every tab.
+--- 1-52
+Two pickers, a toggle and the Sign Out section. Each control binds to the model through `Binding(get:set:)`, so a change calls a model method instead of writing a property. That's how the model can forward the change to the player or Downloads.
+
+!ios `@Environment(\.dismiss)` gives a function that closes whatever is presenting this view, here the sheet. `.tag($0)` tells a `Picker` which value each row stands for.
+
+=== LogosKit/Sources/UI/LibraryModel.swift
+The Library tab: every [[term:Book]] in the Library, sorted, filtered and searched, with a letter index, plus everything about syncing (the launch, foreground and manual triggers, "Syncing Library…", "Last updated …"). It is the largest model on this page and also the "hub" other screens open Book details and Series pages through, because it holds the database and the sync.
+--- 1-29
+The published state: the sectioned rows to show, the Series that match a search, whether the letter index is visible, and the sync status.
+--- 31-56
+Sort, filter and search are plain properties the view binds to; their `didSet` re-runs the query. Sort changes and search keystrokes are wrapped in signposts, because both have performance budgets (100 ms and 50 ms on 3000 Books).
+
+!ios `Signposts.measureSync(.sortChange) { … }` takes a **trailing closure**: the `{ … }` after the call is its last argument. It times whatever the closure does.
+--- 58-67
+The raw data, all `@ObservationIgnored`: the rows, Series and progress as read from the Store, and the `LibraryCatalog` and `LibraryOrder` built from them ([[Domain/LibraryCatalog.swift]]). Only the derived `sections` cause redraws.
+
+!why All rows are held in memory, and sorting, folding and searching happen in Domain code rather than in SQL on each keystroke. The type's doc comment says rows come from "one lightweight Store query"; the budgets in `docs/performance-budgets.md` (search ≤ 50 ms, sort ≤ 100 ms on 3000 Books) are what this has to meet.
+--- 69-92
+Read everything at once in `init`, so a signed-in launch shows real rows in its first frame. This is what the cold-launch budget (≤ 400 ms to an interactive Library) depends on.
+--- 94-104
+`showResults()` applies the current filter and search to the current order; it's cheap, so it runs on the main actor at every keystroke. `showsFirstSync` drives "Syncing Library…" for the very first sync after sign-in, while the list may still be filling in.
+--- 106-150
+Four observations side by side, one per Store query. The `where` clauses skip values equal to what's already shown. Changed rows or Series need a full catalog rebuild; changed progress only needs a re-sort when sorting by Recently Listened, otherwise just re-filtering (the In Progress and Finished filters depend on it).
+--- 152-166
+The rebuild runs **off the main thread** in a detached task, because building a catalog of thousands of rows would drop frames. The generation counter makes sure that if two rebuilds overlap, an older, slower one never replaces the newer result. If the sort changed while the rebuild ran, the order is redone for the current sort.
+
+!ios `Task.detached` starts work that does *not* inherit the main actor, so it runs on a background thread. The values it needs are copied into locals first (`let (rows, series, …) = …`), because a detached task may only capture `Sendable` values, not `self`.
+--- 168-176
+Follows the last-sync time for "Last updated …".
+--- 178-219
+The three sync triggers: launch (from `RootView` after the first frame), foreground (Sync itself skips it if the last success is recent) and manual Refresh. Only Refresh reports failure, as a brief message that clears itself after four seconds.
+
+!rule The wait uses the sync's injected `Clock` (`sync.clock.sleep`), never `Task.sleep`, so tests can move time forward with `TestClock` instead of waiting. See [[#seams]].
+--- 221-230
+The Refresh message for each sync outcome; success says nothing.
+
+=== LogosKit/Sources/UI/LibraryQueryControls.swift
+The Sort and Filter menu, display labels for the Domain's sort and filter enums, and a view modifier that times letter-index jumps.
+--- 1-24
+!ios An `extension` adds members to an existing type, even one from another module: `LibrarySort` is defined in Domain, and the UI adds the `label` it shows. This keeps display text out of Domain.
+--- 26-42
+A toolbar `Menu` with two inline pickers bound straight to the model's `sort` and `filter`. Changing either fires their `didSet` in `LibraryModel`.
+--- 44-75
+Measures the letter-index jump budget (≤ 100 ms). SwiftUI's section index gives no callback, so the modifier guesses a jump from the scroll geometry, as the long comment explains: the offset moved by more than a screen while no scroll gesture was running and the content's height didn't change.
+
+!ios A `ViewModifier` is a reusable bundle of modifiers with its own state, applied with `.modifier(…)`. `onScrollGeometryChange(for:)` reduces the scroll geometry to a small `Equatable` value (`Probe`) and calls `action` only when that value changes.
+
+=== LogosKit/Sources/UI/LibraryView.swift
+The Library tab's screen: a plain `List` of Book rows sectioned by letter with an index on the right, Series results above the Books while searching, a pull-down search field, the Sort and Filter menu and an options menu with Refresh and "Last updated …".
+--- 1-11
+`BookOpener` (defined in [[UI/BookDetailView.swift]]) pushes a Book detail and times tap → detail against its 100 ms budget. `openedSeries` pushes a Series page when set.
+--- 12-48
+The list. Each row is a `Button` that opens the Book. With the index showing, each section gets a letter header and `.sectionIndexLabel`, which builds the A–Z strip.
+
+!ios `ForEach(model.sections) { section in … }` makes one view per element. The element type must be `Identifiable` (have a stable `id`), so SwiftUI can tell which rows were added, removed or moved between updates.
+--- 49-74
+Search and the empty states. `.searchable` adds the pull-down search field bound to `searchText`. The overlay tells apart "nothing matches your search", "nothing matches this filter", "first sync running" and "no Books yet".
+--- 75-108
+A notice bar under the navigation bar for "Syncing Library…" or the Refresh message, which dismisses itself through `.task(id: message)`: the task restarts whenever the message changes. Then the toolbar menus, and the two navigation destinations.
+
+`.onAppear { launch?.end() }` ends the cold-launch signpost if the Library is the first screen shown.
+
+!ios `.navigationDestination(item: $opener.opened) { route in … }`: when `opened` becomes non-`nil`, SwiftUI pushes the view the closure returns onto this tab's `NavigationStack`; going back sets it to `nil`. Book details are made by the Library model (`model.detail(for:)`), so they share its database and sync.
+--- 110-124
+"Last updated 5 minutes ago" uses the system's relative date formatting. `notice` is a helper that returns the styled bar.
+--- 126-149
+A Series row in search results.
+
+!ios `.accessibilityElement(children: .combine)` makes VoiceOver read the row as one element ("Series name, 4 Books") instead of separate pieces; `.accessibilityHint` adds what tapping does.
+--- 151-175
+A Book row: a 48-point cover, title and author, each on one line so every row has the same height (which keeps scrolling smooth on 3000 Books), and the [[term:Not on Server]] label when it applies.
+
+=== LogosKit/Sources/UI/InProgressModel.swift
+The In Progress tab's model, plus the per-Book progress model that Book detail uses. Both follow the same read-in-`init`-then-observe pattern as every model on this page.
+--- 1-36
+The simplest model on this page and a good template: one Store read in `init`, one `observe()` loop. Because the list follows the database, playing a Book or fetching progress from the Server reorders it with no code here (ADR 0001).
+--- 38-59
+How far into a Book the listener is, as an enum with associated values.
+
+!ios `nonisolated public enum` opts this pure value type out of the main-actor default, so it can be built anywhere, including tests and background code. An enum `init` can assign `self = .finished` to choose the case.
+--- 61-93
+`BookProgressModel`: the same pattern for a single Book, for Book detail's progress line.
+
+=== LogosKit/Sources/UI/InProgressView.swift
+The In Progress tab, the tab the app opens on. Each row opens the Book; a button at the end of the row starts the Book's [[term:Download]], or resumes playback once it's downloaded.
+--- 1-13
+!ios `@Environment(DownloadsModel.self) private var downloads: DownloadsModel?` reads an `@Observable` object that a parent put in the environment (here `RootView`). Declaring it optional means the view still works when there isn't one.
+--- 14-52
+The list. A damaged Download of a Book that's [[term:Not on Server]] can't be downloaded again, so it gets a label instead of the button. `DownloadButton` is defined on the next page ([[UI/DownloadsView.swift]]). Book details open through the Library model.
+
+!ios `.buttonStyle(.borderless)` matters inside a `List` row: without it, a tap anywhere in the row would trigger every button in it.
+--- 54-83
+The row: title, author, time left at 1× and a thin progress bar. `.monospacedDigit()` keeps the numbers from jiggling as they change.
+--- 85-115
+Book detail's progress section, and `timeLeftText`, which formats "1 hr, 5 min left" with the system's duration formatter (localised, abbreviated, at most two units).
+
+=== LogosKit/Sources/UI/SeriesModel.swift
+Models for the Series tab (every [[term:Series]], A–Z) and for one Series page (its Books in reading order, and one Continue button). Also the two small extensions that let Book detail and the Library open Series pages.
+--- 1-37
+The Series list: the same read-then-observe pattern.
+--- 39-71
+A Series page. `fallbackName` is shown if the Store no longer has the Series (say, after its last Book left the Library), so a page that's open never goes blank. `continueTarget` comes from the Store's `SeriesPage`; the rule for which Book is next lives in Domain ([[Domain/Series.swift]]).
+--- 73-88
+What the Continue button does: start the next Book's Download and open its detail, or play it and stay on the page. It returns the Book to open, so the *view* does the navigation and the model stays free of SwiftUI.
+
+!rule Only a downloaded Book can be played (see [[term:Download]] in the glossary). That's why there are two kinds of Continue: "Download Book N to continue" and "Continue with Book N".
+--- 90-119
+Observation, and three ways to make related models. They're extensions on `BookDetailModel` and `LibraryModel`, so every screen that can open a Series page or Book detail builds it with the same database and sync.
+
+=== LogosKit/Sources/UI/SeriesView.swift
+The Series tab's list and the Series page.
+--- 1-44
+The list: name and Book count, opening the Series page through `.navigationDestination(item:)`.
+--- 46-104
+The Series page. It owns its model in `@State` (it's made by the screen that pushes it) and starts its observation with `.task`. It reads Downloads and the player from the environment for the Continue button.
+
+!ios `init(model:)` with `_model = State(initialValue: model)` is the usual way to give a view a model created by its parent while still letting the view own it.
+--- 106-124
+A horizontal strip of covers. `LazyHStack` only builds the covers that are on screen, which matters for long Series.
+--- 126-158
+One Book on the page: the sequence number in large type, exactly as the Server gives it (it can be "1.5" or missing, shown as "–"), the next Book's number in the accent colour, then Finished, In Progress or the year it was published.
+
+=== LogosKit/Sources/UI/CoverImages.swift
+The cover image cache for the whole UI. Cover files are saved by Sync ([[Sync/CoverSync.swift]], [[Store/CoverFiles.swift]]); this object turns them into small images for the screen, off the main thread, and keeps recent ones in memory. It also follows each Book's cover *version* in the Store, so a cover that arrives or changes during a sync shows up in rows already on screen.
+--- 1-24
+`versions` is the observed state: which Books have a cover, and which version. Everything else is ignored by observation.
+
+!ios `NSCache` is a Foundation dictionary that evicts entries by itself under memory pressure or past `totalCostLimit` (24 MB here). Its keys must be objects, hence `NSString` and the small `CachedCover` class. `{ … }()` defines a closure and calls it at once, a common way to set up a property in several steps.
+
+!rule The cap exists for the **memory while browsing ≤ 150 MB** budget on 3000 Books ([[#performance]]).
+--- 26-45
+Versions are read in `init`, so the first frame knows which Books have covers. `cachedImage` never decodes; it's for drawing a cover in the first frame when it's already in memory.
+--- 47-60
+The cache is keyed by Book and pixel size, with the version stored alongside. A cached image of an older version is decoded again; the cost is the decoded bitmap's bytes (4 per pixel).
+--- 62-71
+Follows the cover versions in the Store.
+--- 73-85
+The launch file check for covers (started by `RootView` after the first frame): a Book whose cover file is missing, say after restoring from a backup (covers aren't backed up), is marked to be fetched again at the next sync.
+--- 87-116
+The decode. ImageIO reads a *thumbnail* of the requested size straight from the JPEG file, so the full-size image is never decoded into memory.
+
+!ios `@concurrent nonisolated` makes this `async` function run on a background thread instead of the caller's actor (the main actor here), so decoding never blocks scrolling. `CF…` types and `kCGImageSource…` keys are Core Foundation, a C-level API; `as CFDictionary` bridges a Swift dictionary to it.
+
+=== LogosKit/Sources/UI/CoverView.swift
+A Book's cover at a fixed size, for rows and Book detail. It always draws a grey rounded square first and lays the image over it once decoded, so rows never change size or jump.
+--- 1-17
+!ios `@Environment(CoverImages.self)` finds the cache `RootView` put in the environment. `\.displayScale` is the screen's pixels per point (3 on recent iPhones), used to ask for exactly enough pixels. `var cornerRadius: CGFloat = 6` is a stored property with a default, so callers may leave it out.
+--- 19-46
+What to draw: nothing over the placeholder if the Book has no cover version, otherwise the decoded image or, in the first frame, one already in the cache. `.task(id: version)` decodes when the view appears and again whenever the version changes (a new cover arrived), and is cancelled if the row scrolls away first.

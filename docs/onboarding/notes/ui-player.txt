@@ -1,0 +1,317 @@
+# order: 175
+# title: UI: book, player & downloads
+# subtitle: Book detail, the Downloaded tab, the mini-player and player sheet, and listening reporting
+This page is the second half of the `UI` module. The first half ([[UI/RootView.swift]] and friends) is the app shell and the browsing tabs; this half is everything that happens once the listener picks a [[term:Book]]: its detail screen, downloading it, playing it, and telling the [[term:Server]] what was listened to.
+
+`UI` sits at the top of the module graph ([[#module-graph]]): it may import `Domain`, `Store`, `Sync`, `Downloads` and `Playback`, and nothing imports it. The files here lean on three objects from lower modules: the `AppDatabase` (from `Store`), the one `Player` (from `Playback`) and the `Downloader` (from `Downloads`). The app target builds those once and hands them in ([[#composition-root]]).
+
+The pattern is the same on every screen. A **model** class (`BookDetailModel`, `DownloadsModel`) is marked `@Observable`, reads its first values synchronously from the database in `init` so the very first frame has real content, and then follows the database with an `observe()` method that a view runs in `.task`. A **view** `struct` reads the model and calls its methods. Background work (`Downloader`, `LibrarySync`) never calls the UI back; it writes to the database, and the models notice ([[#single-source-of-truth]]).
+
+The `Player` is the exception: it is `@Observable` itself and the player views read it directly (its position changes several times a second, too often to go through the database). It is put into the SwiftUI environment once by [[UI/PlayerChrome.swift]], and so is the shared `DownloadsModel`, so any view deep in the tree can pick them up with `@Environment`.
+
+!ios **SwiftUI in one paragraph.** A screen is a `struct` conforming to `View` with a `body` property that *describes* the UI. You never mutate on-screen widgets; you change state, and SwiftUI calls `body` again and diffs the result. `VStack`/`HStack` stack children vertically/horizontally, `List` is a scrolling table, and chained calls like `.font(.headline)` are **modifiers** that wrap a view in another view. See [[#primer-swiftui]].
+
+!rule ADR 0001: the database is the single source of truth. A model never gets pushed state by Sync or Downloads; it observes the Store. If you add a screen, copy the shape of `BookDetailModel`: read in `init`, follow in `observe()`.
+
+=== LogosKit/Sources/UI/BookDetailModel.swift
+The model behind Book detail. It owns a `BookDetail` value (title, author, Series, Chapters, description, size) read from the Store, plus the small amount of formatting the screen needs. It also contains the HTML-to-plain-text conversion for the Server's descriptions.
+--- 1-14
+!ios `import` brings in other modules. `Domain` holds the value types (`BookDetail`, `Chapter`), `Store` the database, `Sync` the `LibrarySync` this model asks for missing data. `Observation` is Apple's framework that provides `@Observable`.
+
+!ios `@Observable` (a macro, see [[#primer-observable]]) rewrites the class so that SwiftUI records which properties a view's `body` read, and redraws only that view when one of them changes. You write ordinary `var`s; no publishers or bindings needed. It only works on classes, which is why models are `final class` while views are `struct`s.
+
+`final` means no subclasses; `public` because the type is used from the app target and tests, which are other modules.
+--- 15-22
+A nested value type for one Series link: the id to navigate with and the label to show ("Fixture Saga #1.5").
+
+!ios `struct` is a value type (copied on assignment, like a number), `class` a reference type (shared). The protocols after the colon are capabilities: `Sendable` = safe to pass between threads, `Hashable` = usable in sets and as navigation values, `Identifiable` = has an `id`, which `ForEach` and `List` use to tell rows apart. `var id: String { seriesID }` is a *computed property*: no storage, worked out on every read.
+--- 23-33
+The state. `public private(set)` means anyone can read `detail` but only this class can write it. `progress` is a separate small model ([[UI/InProgressModel.swift]]) for "not started / 2 h left / Finished", shared with the In Progress tab.
+--- 34-46
+The initializer reads the Book from the database synchronously. That is deliberate: the screen should open with real content in its first frame (the "Tap Book → detail" budget is 100 ms, see [[#performance]]).
+
+!ios Swift error handling: a function marked `throws` must be called with `try`, inside `do { } catch { }` (or propagated). In `catch`, an implicit `error` constant holds what was thrown. Here a failed read is logged and the screen shows "Book not found".
+
+`log` is this module's logger ([[UI/Log.swift]]). The `privacy: .public` part is from Apple's unified logging: interpolated values are redacted in logs by default, so code opts in per value.
+--- 47-74
+Derived values for the view, all computed properties so they're always in step with `detail`.
+
+!ios `detail?.series ?? []` is *optional chaining* plus the *nil-coalescing* operator: if `detail` is `nil` the whole expression is `nil`, and `??` substitutes an empty array. `guard let detail else { return "" }` unwraps an optional or leaves early; after it, `detail` is non-optional. `series.sequence.map { ... }` on an optional runs the closure only if there is a value.
+
+A Book always has at least one [[term:Chapter]] once stored: no Chapters from the Server means one Chapter covering the whole Book (see [[Domain/Chapter.swift]]).
+--- 75-85
+Follows the Book in the database for as long as the screen is visible.
+
+!ios `async` functions can suspend (wait) without blocking the thread; you call them with `await`. `for try await x in sequence` loops over an *async sequence*: each iteration waits for the next value. Here the sequence is a GRDB `ValueObservation` wrapped by the Store ([[Store/BookDataStore.swift]]), which emits a new `BookDetail` every time the relevant rows change. The loop ends when the task running it is cancelled (when the view goes away), see [[#primer-concurrency]].
+--- 86-93
+Early in the first sync a Book may only have its list row, not its full data (Chapters, description). Rather than show a half-empty screen until the background sync reaches it, the detail asks `LibrarySync` to fetch this one Book now ([[Sync/LibrarySync+BookData.swift]]). The result arrives through the database, so `observe()` picks it up; this method only toggles the spinner. A [[term:Not on Server]] Book is skipped: the Server no longer has it.
+
+!ios `defer { ... }` runs when the scope exits, however it exits. It guarantees `isFetching` goes back to `false`.
+--- 94-109
+Two formatters reused across the player screens: whole durations ("2 h 5 min") and clock times ("4:05", "1:02:05"). `static` means they belong to the type, not an instance: `BookDetailModel.clock(...)`.
+--- 110-116
+!ios An `extension` adds methods to an existing type, even one declared elsewhere. The project uses them a lot to split a type across files by topic (`BookDetailModel+Finished.swift`, `Player+SleepTimer.swift`). Here `LibraryModel` ([[UI/LibraryModel.swift]]) gets a factory, so every list that opens a detail builds it the same way with the same database and sync.
+--- 117-133
+The Server's description is HTML. Converting it with `NSAttributedString` would pull in WebKit and must run on the main thread, which would hurt the detail's open time, so the code does a small regex pass instead: line and block breaks become newlines, other tags go, entities are decoded, whitespace tidied.
+
+!ios `#"...<br\s*/?>..."#` is a *raw string*: backslashes are literal, handy for regular expressions. `private` at file level means only this file can see the function.
+--- 134-
+A hand-written HTML entity decoder: named ones (`&amp;`, `&nbsp;`…) plus numeric `&#233;` and `&#xE9;`. Anything it can't decode is left as a literal `&`.
+
+!ios `Substring` is a view into part of a `String` without copying it. String indices in Swift are opaque (`String.Index`), not integers, because characters can be several bytes long; hence `firstIndex(of:)` and `index(after:)` rather than `i + 1`.
+
+=== LogosKit/Sources/UI/BookDetailModel+Finished.swift
+Mark as Finished / Clear Finished for the detail screen, split into its own file because it is the one place the detail model needs `Playback`.
+--- 1-
+Setting [[term:Finished]] always goes through the `Player`, even for a Book that isn't loaded, because the player is the one path that stamps the change with the injected `Clock` and records a [[term:Finished change]] for the [[term:Outbox]] (see [[Playback/Player.swift:381]]). Marking a playing Book Finished also stops it.
+
+!why Keeping a single write path for Finished means the timestamp the Server sees, and the "Finished wins over progress from another device" rule, can't be bypassed by a screen writing to the database directly.
+
+=== LogosKit/Sources/UI/BookDetailView.swift
+The Book detail screen, plus the small object that opens it and times the transition.
+--- 1-8
+`BookRoute` is the value pushed onto a navigation stack to say "show this Book". It is `Hashable` because SwiftUI's navigation compares routes by value.
+--- 9-27
+`BookOpener` is shared by every list that opens a detail (Library, In Progress, Downloaded, Series). Besides setting `opened`, it starts the `tapBookToDetail` signpost at the tap and ends it when the detail appears.
+
+!ios `@ObservationIgnored` excludes a property from observation: changing `interval` shouldn't redraw anything.
+
+!rule Every budgeted path gets a signpost (`Signposts.begin` / `end`, [[Domain/Signposts.swift]]) so the performance tests and Instruments can measure it. See [[#performance]].
+--- 28-43
+!ios **Property wrappers** are the `@Something` before a stored property. `@State` gives a view its own storage that survives `body` being recomputed (views are throw-away structs, so a plain `var` would be reset). `@Environment(DownloadsModel.self)` reads an object some ancestor put into the environment with `.environment(...)`; declaring it optional (`DownloadsModel?`) means the view still works, minus the download button, when none is provided (previews, tests).
+
+Because `model` is `@State`, the `init` must set the wrapper itself: `_model` is the underlying `State` storage. This is the standard way to keep an `@Observable` model alive for the life of the view.
+--- 44-60
+!ios `some View` means "one specific view type, which I'm not spelling out" (an *opaque type*). `body` is built with a **result builder**: the `if`/`else` inside `Group { }` isn't ordinary control flow but a description of two possible children. `ContentUnavailableView` is Apple's standard empty state.
+
+`.navigationDestination(item:)` pushes the Series page when `openedSeries` becomes non-nil; the `$` gives a `Binding` (read/write handle) to the `@State` so navigation can set it back to `nil` on pop.
+
+!ios `.task { }` starts an async task when the view appears and **cancels it automatically when the view disappears**. That is how `observe()`'s endless loop is stopped. Two separate `.task`s run concurrently: one follows the database, one fetches missing data.
+--- 61-106
+The content, as a plain `List` of sections: header, the Download/Play button (or the "damaged and not on Server" label, see [[UI/DamagedDownloadViews.swift]]), progress, an expandable description, the Chapter list, and the Finished / Remove Download actions.
+
+!ios `ForEach(Array(model.chapters.enumerated()), id: \.element.id)` loops over (index, chapter) pairs. `\.element.id` is a *key path*, a reference to a property that SwiftUI uses as each row's identity. `Section { } header: { }` is a trailing-closure syntax with labels for the extra closures.
+
+Accessibility modifiers (`accessibilityAddTraits`, `accessibilityHint`) appear throughout: the tappable description is announced as a button by VoiceOver. The UI tests also find elements by what the listener sees ([[#ui-tests]]), so labels matter twice.
+--- 107-
+The header: cover ([[UI/CoverView.swift]]), title, author, one borderless button per Series, the summary line, and the Not on Server marker.
+
+=== LogosKit/Sources/UI/PlayActions.swift
+What the primary button of a downloaded Book says and does: Play, Resume or Pause.
+--- 1-24
+!ios A Swift `enum` lists a fixed set of cases, and can carry computed properties. `switch` must handle every case (the compiler checks), and in Swift 5.9+ a single-expression `switch` can be used directly as a property's value, as in `title` here. Strings like `"play.fill"` name **SF Symbols**, Apple's built-in icon set.
+--- 25-46
+The logic lives in an extension on `Player` (from `Playback`) so any button can ask the player the same question. If this Book is loaded: Pause while playing or loading, Resume if it's part-way and not [[term:Finished]], else Play. If another Book is loaded, `resumes` (the listener has started this Book before) decides Resume vs Play.
+
+`tapped` either pauses or starts playback; `play(bookID:)` is `async` (it opens the files, see [[Playback/Player.swift:131]]), so a button action wraps it in `Task { }`.
+
+!ios `Task { await ... }` starts new asynchronous work from synchronous code, such as a button action. In `UI` it inherits the main actor, so it is safe to touch the player from inside it.
+--- 47-
+!ios `if case .inProgress = self` matches one enum case without a full `switch`; useful when the case carries associated values (like `.inProgress(left:)`) you don't care about.
+
+=== LogosKit/Sources/UI/PickUpNotice.swift
+"Picked up from another device", shown when a paused Book's position was moved to where another device left it (detected by `Player.observePickUps()`, [[Playback/Player+PickUp.swift]]). The listener can Undo it.
+--- 1-10
+The text, shared by the mini-player (where it replaces the Chapter line) and the sheet's banner. An `enum` with no cases is used as a namespace for static helpers: it can't be instantiated.
+--- 11-
+The banner in the player sheet: the notice, Undo, and a close button. `.background(.thinMaterial, in: .rect(cornerRadius: 12))` gives the frosted-glass system background.
+
+!ios A view whose `body` has an `if` with no `else` simply renders nothing when the condition is false; that's how the banner appears and disappears as `player.pickedUp` changes.
+
+=== LogosKit/Sources/UI/DownloadsModel.swift
+The model for everything about [[term:Download]]s in the UI: the Downloaded tab's list and badge, each Book's Download button state, the Wi-Fi/storage notice, and the actions (download, cancel). One per signed-in identity, created by [[UI/LaunchModel.swift:132]] and shared through the environment.
+--- 1-20
+The Download button's possible states, as an enum.
+
+!ios Enum cases can carry **associated values**: `.download(label: "Download · 480 MB")` or `.downloading(fraction: 0.4)`. You get them back out with pattern matching, e.g. `case .downloading(let fraction):`.
+--- 21-43
+!why The comment states the rule: the `Downloader` only writes to the database; this model reads from it. That's why there are no callbacks from Downloads into the UI, and why the Downloader keeps working with no screen open (for example on a background launch to finish transfers).
+
+The `player` property is set after creation; cancelling the Download of the Book that's playing must stop the player first. `network` is a protocol (`any NetworkMonitor`, [[Downloads/NetworkMonitor.swift]]) so tests can fake Wi-Fi.
+
+!ios `any NetworkMonitor` is an *existential*: "some value of a type conforming to this protocol, decided at run time". It is how the project injects fakes in tests (a **seam**, see [[#seams]]).
+--- 44-61
+As on Book detail, the first values are read synchronously so the Downloaded tab and every button are correct in the first frame.
+--- 62-95
+Derived state. The notice explains why waiting Downloads aren't moving: storage pause first, then "Waiting for Wi-Fi" when cellular isn't allowed. `isDamagedNotOnServer` covers an awkward edge: a [[term:Not on Server]] Book whose Download was found damaged and removed can't be downloaded again, so it offers no Download button at all.
+--- 96-120
+The actions just forward to the `Downloader` (an actor, so each call is `await`ed). `startDownload` is the button-friendly synchronous wrapper. `resume()` and `enteredBackground()` are called from the shell on scene-phase changes ([[UI/RootView.swift]]); see [[#flow-download]].
+--- 121-167
+!ios `withTaskGroup` runs several child tasks concurrently and waits for all of them. Here four endless observation loops (list, per-Book statuses, policy, network) run side by side; cancelling the parent `.task` cancels all four.
+
+Each loop just assigns the latest value; `@Observable` takes care of redrawing whatever read it.
+--- 168-
+
+=== LogosKit/Sources/UI/DownloadsModel+Manage.swift
+The Downloaded tab's management features: sorting and reordering the queue, and the launch file check.
+--- 1-19
+Reordering by drag. Only queued Books move; the active one and failed ones keep their places. The model updates `list` straight away so the row doesn't jump back, then tells the Downloader, which writes the new order to the database, which the observation then confirms.
+
+!ios `IndexSet` and `move(fromOffsets:toOffset:)` are the shapes SwiftUI's `.onMove` hands you. `\.id` used as a function (`queued.map(\.id)`) is a key path standing in for `{ $0.id }`.
+--- 20-
+The file check (are all Download files still there?) runs in the background after the first frame, never on the launch path.
+
+!rule "Nothing on the launch path touches the network or runs the file check" ([[#performance]]).
+
+=== LogosKit/Sources/UI/DownloadsNotice.swift
+The two reasons the queue can be stuck, with the text, icon and explanation shown above the queue.
+--- 1-31
+!ios `public enum DownloadsNotice: Sendable, Hashable` with only plain cases gets `Hashable` and `Sendable` for free. Text lives next to the case so every screen words it the same way.
+--- 32-
+`.accessibilityElement(children: .combine)` makes VoiceOver read the headline and explanation as one element.
+
+=== LogosKit/Sources/UI/DownloadsView.swift
+The Downloaded tab, the per-row view, and the reusable `DownloadButton` used on Book detail (full width) and In Progress rows (compact).
+--- 1-13
+The view takes the shared `DownloadsModel` and the `LibraryModel` (to build Book details). `removal` holds a pending "are you sure?" request.
+--- 14-41
+The list: the notice, the queue (reorderable), then the downloaded Books with their total size in the footer.
+
+!ios `.onMove` enables drag-to-reorder in edit mode; `.moveDisabled(...)` pins rows that aren't queued. `Section("Queue")` is the short form with a text header.
+--- 42-72
+!ios `.overlay { }` draws on top of the list; here the empty state shows when there is nothing. `.toolbar { ToolbarItem(...) }` adds navigation bar buttons. `EditButton()` toggles the list's edit mode (needed for dragging), shown only when there are at least two queued Books to reorder.
+
+`Bindable(model).order` produces a two-way `Binding` to a property of an `@Observable` object you don't own as `@State`, so the `Picker` can write the chosen sort back.
+
+`.confirmsDownloadRemoval` is a custom modifier from [[UI/RemoveDownload.swift]].
+--- 73-89
+Each row is a button that opens Book detail, with a trailing swipe action to Cancel (active) or Remove (downloaded).
+
+!why The comment explains a trap: a swipe button with the `.destructive` role makes SwiftUI animate the row away immediately, before the confirmation dialog has been answered. So it uses a plain button tinted red.
+--- 90-137
+One row: title, author, then size, progress or a reason ("Waiting for Wi-Fi") on the right, plus a progress bar while downloading.
+
+!ios `.monospacedDigit()` keeps numbers from jiggling as they change. `formatted(.percent...)` is Foundation's locale-aware formatting API.
+--- 138-158
+The Download button reads the `DownloadsModel` from the environment and chooses the full or compact layout.
+
+!ios `if let downloads { ... }` is shorthand for `if let downloads = downloads`. Inside `body`, `let action = ...` is allowed in result builders as a local constant.
+--- 159-203
+The full-width button for Book detail, one branch per `BookDownloadAction`. Once downloaded it becomes a `PlayButton` ([[UI/PlayerViews.swift]]): in Logos only a downloaded Book can play ([[term:Download]]).
+
+!ios `@ViewBuilder` on a function lets its body use the same `if`/`switch`-produces-views syntax as `body`, returning a different view per case.
+--- 204-
+
+=== LogosKit/Sources/UI/DamagedDownloadViews.swift
+What the listener sees when the `Player` finds a Download damaged (a file missing or unreadable, [[Playback/DamagedDownload.swift]]): an alert, or the player sheet's content if it was open. Also the Mark as Finished button.
+--- 1-20
+Text for the two cases. A damaged Download of a Book still on the Server can simply be downloaded again (position kept); a damaged [[term:Not on Server]] Book cannot, so the only way out is removing it.
+--- 21-39
+The shared action buttons, as a free `@ViewBuilder` function used by both the alert and the sheet so the choices are identical. `done` closes whatever presented them.
+
+!ios `@escaping` marks a closure parameter that may be called after the function returns (it's stored in a button). Swift requires you to say so.
+--- 40-60
+!ios A `ViewModifier` packages a reusable set of modifiers: `body(content:)` receives the view it's applied to. `.alert(_:isPresented:presenting:)` shows an alert while a binding is `true`; here the binding is *computed* with `Binding(get:set:)`: shown when the player has a damage to report, and dismissing it tells the player.
+
+`isEnabled` avoids showing an alert on top of the player sheet, which shows the damage itself.
+--- 61-78
+The sheet variant: `ContentUnavailableView` with a label, description and the actions.
+--- 79-97
+A small label for Book detail (or an icon on In Progress rows) when a Not on Server Book's Download was found damaged: it can't be downloaded again.
+--- 98-
+Mark as Finished / Clear Finished, shown only when a `Player` is in the environment (setting Finished always goes through the player; see [[UI/BookDetailModel+Finished.swift]]).
+
+=== LogosKit/Sources/UI/RemoveDownload.swift
+Removing or cancelling a Download, always after exactly one confirmation, and the Not on Server marker.
+--- 1-38
+`DownloadRemoval` is the pending request, with all the wording in one place. Removing a downloaded Book keeps its progress and its place in the [[term:Library]]; removing a Not on Server Book deletes it from Logos entirely, and the dialog says so.
+--- 39-63
+!ios Extending `View` itself adds a new modifier to every view: `someView.confirmsDownloadRemoval($removal, downloads:)`. `Binding<DownloadRemoval?>` is the read/write handle; `removal.wrappedValue` reads or writes the value behind it. `confirmationDialog` is iOS's action sheet.
+
+Cancel and Remove go through the same `DownloadsModel.cancel`, which stops the player first if it is playing that Book.
+--- 64-85
+The Remove Download button at the bottom of Book detail. It shows when the Book has a Download that isn't active (active ones have Cancel on the main button), or for a Not on Server Book whose damaged Download is gone.
+
+!ios `@Environment(\.dismiss)` is a system action that closes the current screen. After removing a Not on Server Book there's no Book left to show, so the detail pops itself.
+--- 86-
+
+=== LogosKit/Sources/UI/PlayerChrome.swift
+The glue that puts the player into the tab shell: the mini-player above the tab bar, the full player sheet, damage handling, restoring the last-played Book, and the background save. Applied once to the tab view by [[UI/RootView.swift]].
+--- 1-14
+!ios `@Environment(\.scenePhase)` tells you whether the app is active, inactive or in the background. Watching it is the SwiftUI way to react to the app being sent to the background.
+--- 15-31
+`.tabViewBottomAccessory` (iOS 26+) hosts the mini-player in the tab bar area; it's only enabled once a Book is loaded. Tapping the mini-player sets `showsPlayer`, which presents the full-height sheet.
+
+!ios `.sheet(isPresented:)` presents a modal card while the binding is `true`; `.presentationDetents([.large])` fixes its height. `onDismiss` runs when the listener swipes it away.
+--- 32-41
+When the loaded Book goes away (stop, Download removed, damage found), the sheet closes — unless the reason was damage found while the sheet was open, in which case the sheet stays and shows the damage view instead of an alert popping over it.
+--- 42-49
+!ios `.environment(player)` makes the `Player` available to every view below; that's what `@Environment(Player.self)` in `PlayButton` and `BookChapterRow` reads.
+
+Three long-running tasks for the life of the shell:
+- After the first frame (`FrameShown.next()`, [[UI/FrameShown.swift]]), restore the last-played Book, paused. It never auto-plays.
+- Stop playback if the loaded Book's Download is removed.
+- Watch for progress from other devices to pick up ([[term:In Progress]] on two devices).
+
+!rule Launch must not do avoidable work before the Library is interactive (cold launch budget ≤ 400 ms; last-played Book ready ≤ 300 ms *after* that). Hence the wait for the first frame.
+--- 50-
+
+Going to the background saves the position immediately (the player otherwise writes it on a fixed cadence, see ADR 0001's exception in [[#single-source-of-truth]]).
+
+=== LogosKit/Sources/UI/PlayerViews.swift
+The player's views: the Play/Resume/Pause button, the mini-player, the full player sheet, and the two Chapter lists.
+--- 1-30
+The primary action for a downloaded Book. It asks the player what to show (`action(forBook:resumes:)`, [[UI/PlayActions.swift]]) and delegates the tap. It reads the player from the environment, and renders nothing without one.
+--- 31-42
+A tiny `ViewModifier` to apply the prominent full-width style only when not compact. Modifiers can't be applied conditionally with a plain `if` in a chain, so wrapping the choice in a modifier is a common trick.
+--- 43-91
+The mini-player: cover, title, and a second line that is the pick-up notice, else the current Chapter, else the author; then Undo (when there's a pick-up) and Play/Pause. Play/Pause is disabled while the player is loading audio.
+
+!ios `.contentShape(Rectangle())` makes the whole row tappable, including the empty space from `Spacer`. `.accessibilityIdentifier("miniPlayer")` is a stable handle used by the XCUITest smoke test ([[#ui-tests]]).
+--- 92-147
+The full player sheet. Times come from `PlaybackTimes` ([[Domain/PlaybackTimes.swift]]), a pure value computed from position, Chapters, duration and speed; while the listener drags the scrubber, the dragged position is used instead of the player's, so the labels follow the finger.
+
+"Left" times are real time at the current speed: at 2×, an hour of audio shows as 30 minutes left.
+
+!why Keeping the arithmetic in a `Domain` value type (rather than in the view) makes it unit-testable in `DomainTests` without any UI.
+--- 148-173
+The Chapter-scoped scrubber. The `Slider` writes into `scrubbing` during the drag and only seeks when the drag ends (`editing == false`), so the player isn't asked to seek dozens of times per second.
+
+!ios `Binding(get:set:)` builds a custom two-way connection; `chapter.start...max(...)` is a `ClosedRange`. The `max(..., start + 0.001)` guards against a zero-length Chapter, which `Slider` doesn't accept.
+--- 174-214
+The thin whole-Book progress line and the transport controls. The skip icons use SF Symbols named after the configured interval (`gobackward.15`, `goforward.30`), set in Settings and stored in `PlaybackSettings`.
+--- 215-259
+The Chapters sheet from the player: current one highlighted, scrolled to on appear, tapping jumps there.
+
+!ios `ScrollViewReader` gives a `proxy` that can scroll to a row by its `.id`. `AnyShapeStyle(...)` erases two different style types into one, since both branches of a `?:` must have the same type.
+--- 260-
+
+On Book detail each Chapter row plays from that Chapter's start, but only if the Book is downloaded; otherwise it is just a label.
+
+=== LogosKit/Sources/UI/ListeningReporter.swift
+Decides *when* to send the [[term:Outbox]] ([[term:Listening session]]s and [[term:Finished change]]s) to the Server. The *what* and *how* live in `SessionOutbox` ([[Sync/SessionOutbox.swift]]). Created for a signed-in identity in [[UI/LaunchModel.swift:139]] and run by the shell.
+--- 1-25
+The first seam: is any network usable? The real implementation wraps `NWPathMonitor` from Apple's `Network` framework in an `AsyncStream`.
+
+!ios `protocol` declares a set of requirements a type can conform to, like an interface. `AsyncStream` turns callback-based APIs into an async sequence: the closure gets a `continuation`, you `yield` values from the callback, and `onTermination` cleans up when the consumer stops listening. `.bufferingNewest(1)` keeps only the latest status if nobody is reading.
+--- 26-53
+The second seam: a short **background task**. When the app goes to the background iOS suspends it within seconds; `beginBackgroundTask` asks for a little more time so a send can finish. If time runs out the task just ends, and the send is retried at the next trigger. See [[#primer-background]].
+
+!ios `UIApplication` is UIKit, the older UI framework underneath SwiftUI; some system services are still only reachable through it. The private `Running` class holds the task identifier so both the expiry handler and the returned closure can end it exactly once.
+--- 54-79
+!why Sends are fire-and-forget: playback never waits for the network. A failed send costs nothing because the outbox is in the database and is retried on the next trigger. The defaults (`SystemConnectivityMonitor()`, `SystemBackgroundTasks()`) mean production code passes nothing, and tests pass fakes ([[#seams]]).
+--- 80-93
+`run()` is the whole schedule: send once now (launch), every 60 s while playing, whenever a Finished change is recorded, when playing stops, and when the network comes back.
+
+!ios `withDiscardingTaskGroup` is a task group whose children return nothing; it runs them all concurrently until cancelled. The `stops` stream is subscribed *before* the group starts so no stop is missed in between.
+--- 94-
+Foreground and background triggers are called by the shell on scene-phase changes. "Network came back" only fires on a change from disconnected to connected, not on every path update.
+
+=== LogosKit/Sources/UI/SleepTimerMenu.swift
+The [[term:Sleep Timer]] menu in the player sheet. The timer counts [[term:Chapter]]s, not minutes: "stop at the end of the 3rd Chapter from now, counting this one". The logic is `SleepTimer` in [[Domain/SleepTimer.swift]] and `Player+SleepTimer` ([[Playback/Player+SleepTimer.swift]]); this file only words and presents it.
+--- 1-19
+How an option reads: "End of this Chapter" or "3 Chapters", with a projected stop in wall-clock time at the current speed ("Stops at end of Chapter 7 · ~42 min").
+--- 20-53
+!ios `Menu { } label: { }` is a button that opens a pop-up menu of buttons; nested `Menu`s become submenus. `Section(text)` inside a menu adds a titled group.
+
+Unset, the menu lists the options. Set, it shows the projected stop, "+1 Chapter" (only if there is a next Chapter), Cancel, and Change.
+--- 54-
+
+=== LogosKit/Sources/UI/SpeedControl.swift
+The speed button and picker. Speed is global (one setting for all Books), from 0.5× to 3.0× in 0.05 steps, applied immediately. The constants live in `PlaybackSpeed` ([[Domain/PlaybackSettings.swift]]).
+--- 1-24
+The button shows the current speed ("1.5×") and opens a short sheet (`.presentationDetents([.height(300)])`).
+--- 25-
+The picker: preset buttons, a slider with − and + buttons for fine steps. Each change calls `player.setSpeed`, which also saves it.
+
+!why Speed changes sound natural thanks to the player's time-domain pitch algorithm (`AVAudioTimePitchAlgorithm.timeDomain`, Apple's speech algorithm, set in [[Playback/SystemAudioPlayer.swift:57]]); this view doesn't need to know about that.
