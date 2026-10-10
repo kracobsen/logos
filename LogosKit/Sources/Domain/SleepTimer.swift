@@ -32,18 +32,6 @@ public struct SleepTimer: Sendable, Hashable {
     /// The Chapter's number as the listener counts them, from 1 ("Stops at end of Chapter 7").
     public var chapterNumber: Int { chapterIndex + 1 }
 
-    /// What the picker offers at `position`: "End of this Chapter", then 2, 3 … Chapters, up to the last Chapter.
-    public static func options(from position: Double, in chapters: ChapterList, bookDuration: Double) -> [SleepTimer] {
-        (chapters.index(at: position)..<chapters.count).compactMap {
-            SleepTimer(chapterIndex: $0, in: chapters, bookDuration: bookDuration)
-        }
-    }
-
-    /// The same timer one Chapter later (+1 Chapter), or `nil` if this one stops in the last Chapter.
-    public func extended(in chapters: ChapterList, bookDuration: Double) -> SleepTimer? {
-        SleepTimer(chapterIndex: chapterIndex + 1, in: chapters, bookDuration: bookDuration)
-    }
-
     /// The projected wall-clock seconds from `position` to the stop at `rate` ("~42 min").
     public func timeLeft(from position: Double, rate: Float) -> Double {
         max(stopAt - position, 0) / Double(rate > 0 ? rate : 1)
