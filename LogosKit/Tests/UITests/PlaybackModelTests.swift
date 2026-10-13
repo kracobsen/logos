@@ -37,7 +37,7 @@ extension DownloadsModelTests {
         #expect(try database.downloadStatus(ofBook: "first") == nil)
     }
 
-    @Test("The Series \"Continue with Book N\" button plays that Book and stays on the page")
+    @Test("The Series \"Continue with Book N\" button plays that Book and opens the player")
     func seriesContinuePlays() async throws {
         await downloaded("first")
         let player = try player()
@@ -46,7 +46,7 @@ extension DownloadsModelTests {
 
         let opened = page.continueTapped(downloads: model(), player: player)
 
-        #expect(opened == nil)
+        #expect(opened == .openPlayer)
         await eventually { player.state == .playing }
         #expect(player.book?.id == "first")
     }
@@ -60,14 +60,29 @@ extension DownloadsModelTests {
         #expect(player.action(forBook: "first", resumes: false) == .play)
         #expect(player.action(forBook: "first", resumes: true) == .resume)
 
-        player.tapped(bookID: "first")
+        #expect(player.tapped(bookID: "first"))
         await eventually { player.state == .playing }
         #expect(player.action(forBook: "first", resumes: false) == .pause)
         #expect(player.action(forBook: "second", resumes: false) == .play)
 
         audio.advance(to: 5)
-        player.tapped(bookID: "first")
+        #expect(!player.tapped(bookID: "first"))
         #expect(player.state == .paused)
         #expect(player.action(forBook: "first", resumes: false) == .resume)
+    }
+
+    @Test("Play or Resume on a Book opens the player, the loaded one too; Pause doesn't")
+    func playOpensThePlayer() async throws {
+        await downloaded("first")
+        await downloaded("second")
+        let player = try player()
+
+        #expect(player.tapped(bookID: "first"))
+        await eventually { player.state == .playing }
+        #expect(!player.tapped(bookID: "first"))
+        #expect(player.tapped(bookID: "first"))
+        await eventually { player.state == .playing }
+        #expect(player.tapped(bookID: "second"))
+        await eventually { player.book?.id == "second" && player.state == .playing }
     }
 }

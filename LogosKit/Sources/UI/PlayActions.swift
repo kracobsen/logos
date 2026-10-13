@@ -36,12 +36,15 @@ extension Player {
     }
 
     /// The Book's play button was tapped: pauses it if it's playing, else plays it (switching Books if needed).
-    public func tapped(bookID: String) {
+    /// Returns whether it plays the Book, so the player opens.
+    @discardableResult
+    public func tapped(bookID: String) -> Bool {
         if book?.id == bookID, state == .playing {
             pause()
-        } else {
-            Task { await play(bookID: bookID) }
+            return false
         }
+        Task { await play(bookID: bookID) }
+        return true
     }
 }
 

@@ -143,7 +143,7 @@ struct DownloadsModelTests {
 
         let opened = page.continueTapped(downloads: model)
 
-        #expect(opened == target)
+        #expect(opened == .openBook(target))
         await eventually { server.transfers.pending.count == 1 }
         #expect(server.transfers.pending.map(\.transfer.bookID) == [target])
     }

@@ -3,17 +3,19 @@ import Playback
 import SwiftUI
 
 /// A downloaded Book's primary action: Play, Resume or Pause. Full width on Book detail, an icon on In Progress rows.
+/// Play and Resume open the player.
 struct PlayButton: View {
     let bookID: String
     var resumes = false
     var compact = false
     @Environment(Player.self) private var player: Player?
+    @Environment(\.openPlayer) private var openPlayer
 
     var body: some View {
         if let player {
             let action = player.action(forBook: bookID, resumes: resumes)
             Button {
-                player.tapped(bookID: bookID)
+                if player.tapped(bookID: bookID) { openPlayer() }
             } label: {
                 if compact {
                     Image(systemName: action == .pause ? "pause.circle.fill" : "play.circle.fill")
