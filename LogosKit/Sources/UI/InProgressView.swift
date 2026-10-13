@@ -52,32 +52,36 @@ struct InProgressView: View {
     }
 }
 
-/// One In Progress row: title, author and time left (and at the speed), with a thin progress line. Bounded height.
+/// One In Progress row: cover, then title, author and time left (and at the speed) on their own lines, with a thin
+/// progress line. Bounded height.
 struct InProgressRowView: View {
     let row: InProgressRow
     @Environment(Player.self) private var player: Player?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(row.title)
-                .font(.body)
-                .lineLimit(1)
-            HStack {
-                if !row.authorName.isEmpty {
-                    Text(row.authorName)
-                        .lineLimit(1)
+        HStack(spacing: 12) {
+            CoverView(bookID: row.id, side: 48)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(row.title)
+                    .font(.body)
+                    .lineLimit(1)
+                Group {
+                    if !row.authorName.isEmpty {
+                        Text(row.authorName)
+                            .lineLimit(1)
+                    }
+                    if row.duration > 0 {
+                        Text(timeLeftText(max(row.duration - row.position, 0), speed: player?.speed ?? 1))
+                            .monospacedDigit()
+                            .lineLimit(1)
+                    }
                 }
-                Spacer(minLength: 8)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
                 if row.duration > 0 {
-                    Text(timeLeftText(max(row.duration - row.position, 0), speed: player?.speed ?? 1))
-                        .monospacedDigit()
+                    ProgressView(value: min(row.position / row.duration, 1))
+                        .accessibilityHidden(true)
                 }
-            }
-            .font(.subheadline)
-            .foregroundStyle(.secondary)
-            if row.duration > 0 {
-                ProgressView(value: min(row.position / row.duration, 1))
-                    .accessibilityHidden(true)
             }
         }
         .accessibilityElement(children: .combine)

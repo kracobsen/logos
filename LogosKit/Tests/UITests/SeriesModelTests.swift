@@ -86,7 +86,7 @@ struct SeriesModelTests {
         try finish("first")
         let model = SeriesPageModel(seriesID: "saga", name: "Fixture Saga", database: database, sync: sync)
 
-        #expect(model.continueTapped() == "between")
+        #expect(model.continueTapped() == .openBook("between"))
         #expect(model.detail(for: "between").detail?.title == "Between Lights")
     }
 
@@ -97,7 +97,7 @@ struct SeriesModelTests {
         let model = SeriesPageModel(seriesID: "saga", name: "Fixture Saga", database: database, sync: sync)
 
         #expect(model.continueTarget == nil)
-        #expect(model.continueTapped() == nil)
+        #expect(model.continueTapped() == .stay)
     }
 
     @Test("The page follows the Store: finishing a Book moves the button on")

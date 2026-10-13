@@ -3,7 +3,8 @@ import Playback
 import SwiftUI
 
 /// Puts the player into the tab shell: the player in the environment, the mini-player as the tab view's bottom
-/// accessory (once a Book is loaded) opening the full-height player sheet, the last-played Book restored paused just
+/// accessory (once a Book is loaded) opening the full-height player sheet (which ``EnvironmentValues/openPlayer`` also
+/// opens, when the listener plays a Book), the last-played Book restored paused just
 /// after launch, playback stopped when the loaded Book's Download goes away, the paused Book picked up from another device, and a save on going to the background.
 struct PlayerChrome: ViewModifier {
     let player: Player?
@@ -40,6 +41,7 @@ struct PlayerChrome: ViewModifier {
             }
             .modifier(DamagedDownloadAlert(player: player, isEnabled: !showsPlayer && !sheetShowsDamage))
             .environment(player)
+            .environment(\.openPlayer, OpenPlayerAction { [$showsPlayer] in $showsPlayer.wrappedValue = true })
             .task {
                 // Off the critical path: after the first frame, once the Library is interactive. Never plays.
                 await FrameShown.next()
@@ -57,4 +59,16 @@ struct PlayerChrome: ViewModifier {
         player?.dismissDamage()
         sheetShowsDamage = false
     }
+}
+
+/// Opens the full player sheet: a Book started from a button in the app shows the player.
+struct OpenPlayerAction: Sendable {
+    let open: @MainActor @Sendable () -> Void
+
+    func callAsFunction() { open() }
+}
+
+extension EnvironmentValues {
+    /// Opens the player sheet; does nothing outside the tab shell.
+    @Entry var openPlayer = OpenPlayerAction {}
 }

@@ -53,13 +53,11 @@ final class SmokeTests: XCTestCase {
         let play = app.buttons["Play"].firstMatch
         require(play, in: app, timeout: 120, "The Download didn't finish")
 
-        // Play it: the button turns to Pause, and the position moves on.
+        // Play it: the player opens, the button turns to Pause, and the position moves on.
         play.tap()
-        XCTAssertTrue(app.buttons["Pause"].firstMatch.waitForExistence(timeout: 30), "It didn't start playing")
-        XCTAssertTrue(app.miniPlayer.waitForExistence(timeout: 10), "No mini-player")
-        app.miniPlayer.tap()
         let position = app.sliders["Position in Chapter"]
         XCTAssertTrue(position.waitForExistence(timeout: 10), "The player didn't open")
+        XCTAssertTrue(app.buttons["Pause"].firstMatch.waitForExistence(timeout: 30), "It didn't start playing")
         let started = position.value as? String
         let moved = expectation(
             for: NSPredicate { element, _ in (element as? XCUIElement)?.value as? String != started },

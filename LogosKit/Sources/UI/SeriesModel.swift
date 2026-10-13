@@ -36,6 +36,13 @@ public final class SeriesListModel {
     }
 }
 
+/// What a Series page shows after its Continue button: nothing new, the target Book's detail, or the player.
+public enum SeriesContinueOutcome: Sendable, Hashable {
+    case stay
+    case openBook(String)
+    case openPlayer
+}
+
 /// One Series page: its Books in reading order (a strip of covers and big sequence numbers) and the one Continue
 /// button.
 ///
@@ -70,20 +77,20 @@ public final class SeriesPageModel {
     /// "Continue with Book N" / "Download Book N to continue", or `nil` for no button.
     public var continueTarget: SeriesContinue? { page?.continueTarget }
 
-    /// The Continue button was tapped. Returns the Book to open, or `nil` to stay on the page.
+    /// The Continue button was tapped. Returns what the page shows next.
     ///
     /// `.download` starts the target Book's Download and opens it (its detail shows the progress). `.play` plays the
-    /// target Book and stays on the page (without a player it opens the Book instead).
-    public func continueTapped(downloads: DownloadsModel? = nil, player: Player? = nil) -> String? {
-        guard let target = continueTarget else { return nil }
+    /// target Book and opens the player (without a player it opens the Book instead).
+    public func continueTapped(downloads: DownloadsModel? = nil, player: Player? = nil) -> SeriesContinueOutcome {
+        guard let target = continueTarget else { return .stay }
         switch target.action {
         case .download:
             downloads?.startDownload(target.book.id)
-            return target.book.id
+            return .openBook(target.book.id)
         case .play:
-            guard let player else { return target.book.id }
+            guard let player else { return .openBook(target.book.id) }
             Task { await player.play(bookID: target.book.id) }
-            return nil
+            return .openPlayer
         }
     }
 

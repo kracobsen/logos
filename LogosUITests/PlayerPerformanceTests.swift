@@ -32,7 +32,7 @@ final class PlayerPerformanceTests: XCTestCase {
     }
 
     /// Play, another downloaded Book → audio: In Progress lists the downloaded Books most recent first, so the
-    /// second row's Resume is always a Book that isn't loaded.
+    /// second row's Resume is always a Book that isn't loaded. Resume opens the player; each run closes it again.
     func testPlayOtherBook() {
         app.openTab("In Progress")
         let resumes = app.buttons.matching(NSPredicate(format: "label == 'Resume'"))
@@ -44,6 +44,8 @@ final class PlayerPerformanceTests: XCTestCase {
             XCTAssertTrue(pause.waitForExistence(timeout: 5), "It didn't start playing")
             stopMeasuring()
             pause.tap()
+            app.swipeDown(velocity: .fast)
+            XCTAssertTrue(app.miniPlayer.waitForExistence(timeout: 5), "The player didn't close")
         }
     }
 
