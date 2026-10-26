@@ -13,7 +13,7 @@ Every timed path below has a signpost (`BudgetedPath` in `LogosKit/Sources/Domai
 
 The tests are in `LogosUITests/*PerformanceTests.swift`. Each measures 5 runs.
 
-1. Plug in the iPhone 15 Pro, unlocked, and make sure `Config/Local.xcconfig` has your team (see CLAUDE.md). Quit other apps; let the phone cool down and keep it on the charger or above 50 %.
+1. Plug in the iPhone 15 Pro, unlocked. Quit other apps; let the phone cool down and keep it on the charger or above 50 %.
 2. Run the `LogosPerformance` scheme's tests. It builds the **Performance** configuration (Release optimisation, plus the `LOGOS_TEST_LAUNCH` test launches; never archive it) and runs without a debugger:
 
    ```sh

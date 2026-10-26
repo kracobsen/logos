@@ -39,11 +39,11 @@ INFOPLIST_KEY_UILaunchScreen_Generation = YES
 INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait
 INFOPLIST_KEY_LSApplicationCategoryType = public.app-category.books
 
-// Signing. The team and bundle-ID prefix come from the git-ignored Config/Local.xcconfig
-// (copy Config/Local.xcconfig.template). Without it, simulator builds still work.
+// Signing. The team and bundle-ID prefix are committed so Xcode Cloud can archive for TestFlight. To build under your
+// own team, override them in the git-ignored Config/Local.xcconfig (copy Config/Local.xcconfig.template).
 CODE_SIGN_STYLE = Automatic
 CODE_SIGN_ENTITLEMENTS = Config/Logos.entitlements
-DEVELOPMENT_TEAM =
-BUNDLE_ID_PREFIX = local.dev
+DEVELOPMENT_TEAM = 7Y9AX736P5
+BUNDLE_ID_PREFIX = no.kracobsen
 
 #include? "Local.xcconfig"

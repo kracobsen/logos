@@ -19,28 +19,30 @@ No setup needed: open `Logos.xcodeproj`, pick the `Logos` scheme and an iPhone s
 
 ## Running on an iPhone
 
-1. **Configure signing.** Copy the template and fill it in:
+Signing (team and bundle-ID prefix) is committed in `Config/Base.xcconfig`, so the project builds for the owner's iPhone as it is.
 
-   ```sh
-   cp Config/Local.xcconfig.template Config/Local.xcconfig
-   ```
+> **Building under your own team (forks):** copy the template and fill it in. `Config/Local.xcconfig` is git-ignored and overrides the committed values.
+>
+> ```sh
+> cp Config/Local.xcconfig.template Config/Local.xcconfig
+> ```
+>
+> ```
+> DEVELOPMENT_TEAM = ABCDE12345
+> BUNDLE_ID_PREFIX = com.yourname
+> ```
+>
+> - `DEVELOPMENT_TEAM` is your 10-character Team ID. Find it in Xcode → Settings → Accounts → your Apple ID → the team, or at [developer.apple.com/account](https://developer.apple.com/account) under Membership details.
+> - `BUNDLE_ID_PREFIX` must be unique to you; the app's bundle ID becomes `<prefix>.logos`.
+> - Don't set signing in the project file; all build settings live in `Config/*.xcconfig`.
 
-   ```
-   DEVELOPMENT_TEAM = ABCDE12345
-   BUNDLE_ID_PREFIX = com.yourname
-   ```
+1. **Prepare the iPhone.** Connect it by cable (or pair it over Wi-Fi in Xcode → Window → Devices and Simulators), unlock it and tap *Trust This Computer*. Turn on Developer Mode in Settings → Privacy & Security → Developer Mode and restart when asked.
 
-   - `DEVELOPMENT_TEAM` is your 10-character Team ID. Find it in Xcode → Settings → Accounts → your Apple ID → the team, or at [developer.apple.com/account](https://developer.apple.com/account) under Membership details.
-   - `BUNDLE_ID_PREFIX` must be unique to you; the app's bundle ID becomes `<prefix>.logos`.
-   - `Config/Local.xcconfig` is git-ignored. Don't set signing in the project file; all build settings live in `Config/*.xcconfig`.
+2. **Build and run.** Open `Logos.xcodeproj`, choose the `Logos` scheme and your iPhone as the run destination, and press Run. Xcode creates the provisioning profile automatically (signing is Automatic).
 
-2. **Prepare the iPhone.** Connect it by cable (or pair it over Wi-Fi in Xcode → Window → Devices and Simulators), unlock it and tap *Trust This Computer*. Turn on Developer Mode in Settings → Privacy & Security → Developer Mode and restart when asked.
+3. **Trust the developer certificate** (first install with a free account only): on the iPhone, Settings → General → VPN & Device Management → your Apple ID → Trust.
 
-3. **Build and run.** Open `Logos.xcodeproj`, choose the `Logos` scheme and your iPhone as the run destination, and press Run. Xcode creates the provisioning profile automatically (signing is Automatic).
-
-4. **Trust the developer certificate** (first install with a free account only): on the iPhone, Settings → General → VPN & Device Management → your Apple ID → Trust.
-
-5. **Sign in** with your Server's `https://` address, username and password, then pick the Library.
+4. **Sign in** with your Server's `https://` address, username and password, then pick the Library.
 
 Notes:
 
@@ -61,7 +63,7 @@ xcodebuild build \
 
 xcrun devicectl device install app --device "<your iPhone>" \
     .build/DerivedData/Build/Products/Release-iphoneos/Logos.app
-xcrun devicectl device process launch --device "<your iPhone>" <BUNDLE_ID_PREFIX>.logos
+xcrun devicectl device process launch --device "<your iPhone>" no.kracobsen.logos   # or <your prefix>.logos
 ```
 
 ## Project layout
@@ -70,7 +72,7 @@ xcrun devicectl device process launch --device "<your iPhone>" <BUNDLE_ID_PREFIX
 - `LogosKit/`: a local Swift package holding every module: `Domain`, `ServerAPI`, `Store` (GRDB), `Sync`, `Downloads`, `Playback` and `UI`. Allowed dependencies between them are listed in `LogosKit/Package.swift` and enforced by `scripts/check-module-graph.sh`.
 - `LogosUITests/`: the XCUITest smoke test and performance tests.
 - `Config/`: all build settings (`*.xcconfig`), `Info.plist` and entitlements.
-- `docs/adr/`: architecture decisions. `docs/performance-budgets.md`: the performance budgets.
+- `docs/adr/`: architecture decisions. `docs/performance-budgets.md`: the performance budgets. `docs/releasing.md`: TestFlight releases.
 
 The only third-party dependency is [GRDB](https://github.com/groue/GRDB.swift); packages resolve only from the checked-in `LogosKit/Package.resolved`.
 
@@ -86,3 +88,7 @@ The only third-party dependency is [GRDB](https://github.com/groue/GRDB.swift); 
 | `scripts/integration-test.sh --serve` | starts and seeds the Docker Server and prints its address, for manual poking |
 
 CI runs the first three on every pull request. More detail on the tests, test launches and contribution rules is in [CLAUDE.md](CLAUDE.md).
+
+## Releasing
+
+TestFlight builds come from an Xcode Cloud workflow started by hand (Start Build in Xcode or App Store Connect); it always builds the head of `main`. See [docs/releasing.md](docs/releasing.md).

@@ -14,7 +14,7 @@ Single-context: one `GLOSSARY.md` and `docs/adr/` at the repo root. See `docs/ag
 
 ## Project layout
 
-- `Logos.xcodeproj` is a thin app target only: entitlements, Info, signing and `@main` (`Logos/`, a buildable folder). It is the composition root (plain initializer injection). Build settings live in `Config/*.xcconfig`, never in the project file. Team and bundle-ID prefix go in the git-ignored `Config/Local.xcconfig` (copy `Config/Local.xcconfig.template`).
+- `Logos.xcodeproj` is a thin app target only: entitlements, Info, signing and `@main` (`Logos/`, a buildable folder). It is the composition root (plain initializer injection). Build settings live in `Config/*.xcconfig`, never in the project file. Team and bundle-ID prefix are committed in `Config/Base.xcconfig`; `Config/Local.xcconfig` (git-ignored, from `Config/Local.xcconfig.template`) may override them.
 - Everything else is in the local Swift package `LogosKit/`. All structural changes (targets, edges, dependencies) happen in `LogosKit/Package.swift`, never in the project file.
 - iOS 27, iPhone only, Swift 6 language mode (complete strict concurrency), warnings as errors. UI, Playback and the app default to `@MainActor`.
 
@@ -70,3 +70,7 @@ A PR touching device-only behaviour (interruptions and routes; lock screen and C
 ## Performance budgets
 
 The budget table, how it's measured and how it's enforced live in `docs/performance-budgets.md`. A PR touching a budgeted path records iPhone measurements against it.
+
+## Releasing
+
+TestFlight builds come from an Xcode Cloud workflow the human starts by hand; it always builds the head of `main`. The workflow settings, release steps and versioning are in `docs/releasing.md`. TestFlight builds don't replace manual checklists or performance measurements, which use builds installed from Xcode.
