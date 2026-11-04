@@ -44,16 +44,16 @@ extension BookDetailModelTests {
         let model = library().detail(for: "first-light")
         let observing = Task { await model.progress.observe() }
         defer { observing.cancel() }
-        #expect(model.finishedToggle.label == "Mark as Finished")
+        #expect(model.finishedToggle.title == "Mark as Finished")
         #expect(model.finishedToggle.systemImage == "checkmark.circle")
 
         model.setFinished(true, player: player)
         await eventually { model.isFinished }
-        #expect(model.finishedToggle.label == "Clear Finished")
+        #expect(model.finishedToggle.title == "Clear Finished")
         #expect(model.finishedToggle.systemImage == "checkmark.circle.fill")
 
         model.setFinished(false, player: player)
         await eventually { !model.isFinished }
-        #expect(model.finishedToggle.label == "Mark as Finished")
+        #expect(model.finishedToggle.title == "Mark as Finished")
     }
 }

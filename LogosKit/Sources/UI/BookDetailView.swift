@@ -26,8 +26,8 @@ final class BookOpener {
     }
 }
 
-/// Book detail: cover space, title, author, Series links, "duration · Chapters · size", the primary button with the
-/// Finished and Remove Download icons beside it, the description and the Chapter list. Everything comes from the Store, so it opens at once; a Book whose data hasn't arrived yet is
+/// Book detail: cover space, title, author, Series links, "duration · Chapters · size", the primary button with
+/// the Finished and Remove Download icons beside it, the description and the Chapter list. Everything comes from the Store, so it opens at once; a Book whose data hasn't arrived yet is
 /// fetched right away.
 struct BookDetailView: View {
     @State private var model: BookDetailModel

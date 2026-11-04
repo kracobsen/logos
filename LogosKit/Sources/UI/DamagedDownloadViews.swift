@@ -106,22 +106,15 @@ struct FinishedButton: View {
         if let player {
             let toggle = model.finishedToggle
             Button {
-                model.setFinished(toggle == .mark, player: player)
+                model.setFinished(toggle.setsFinished, player: player)
             } label: {
                 Image(systemName: toggle.systemImage)
                     .contentTransition(.symbolEffect(.replace))
             }
             .tint(toggle == .clear ? .green : nil)
             .bookDetailIcon()
-            .accessibilityLabel(toggle.label)
-            .accessibilityHint(toggle == .clear ? "Moves the Book back to its start" : "")
+            .accessibilityLabel(toggle.title)
+            .accessibilityHint(toggle.hint)
         }
-    }
-}
-
-extension View {
-    /// The look of Book detail's icon buttons beside the primary button.
-    func bookDetailIcon() -> some View {
-        buttonStyle(.bordered).buttonBorderShape(.circle).controlSize(.large)
     }
 }

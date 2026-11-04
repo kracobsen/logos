@@ -6,7 +6,10 @@ public enum FinishedToggle: Sendable, Hashable {
     case mark
     case clear
 
-    public var label: String {
+    /// Tapping it sets Finished (Mark as Finished) or clears it.
+    public var setsFinished: Bool { self == .mark }
+
+    public var title: String {
         switch self {
         case .mark: "Mark as Finished"
         case .clear: "Clear Finished"
@@ -17,6 +20,13 @@ public enum FinishedToggle: Sendable, Hashable {
         switch self {
         case .mark: "checkmark.circle"
         case .clear: "checkmark.circle.fill"
+        }
+    }
+
+    public var hint: String {
+        switch self {
+        case .mark: "Puts the Book at its end"
+        case .clear: "Moves the Book back to its start"
         }
     }
 }
