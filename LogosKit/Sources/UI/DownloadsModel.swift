@@ -82,6 +82,12 @@ public final class DownloadsModel {
         isNotOnServer && statuses[bookID] == nil
     }
 
+    /// Book detail offers Remove Download: the Book has a Download that isn't queued or downloading (those have
+    /// Cancel instead), or it's a damaged Not on Server Book, which offers nothing else.
+    public func offersRemoval(of bookID: String, isNotOnServer: Bool) -> Bool {
+        statuses[bookID].map { !$0.isActive } ?? isNotOnServer
+    }
+
     /// The Book's Download button; `size` is the Book's size in bytes, shown on "Download".
     public func action(forBook bookID: String, size: Int64) -> BookDownloadAction {
         guard let status = statuses[bookID] else { return .download(label: "Download · \(Self.size(size))") }

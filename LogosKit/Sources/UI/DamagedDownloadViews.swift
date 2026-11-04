@@ -96,27 +96,32 @@ struct DamagedNotOnServerLabel: View {
     }
 }
 
-/// Book detail's Mark as Finished / Clear Finished (through the player, so not without one).
+/// Book detail's Finished icon beside the primary button: Mark as Finished, or Clear Finished once the Book is
+/// (through the player, so not without one).
 struct FinishedButton: View {
     let model: BookDetailModel
     @Environment(Player.self) private var player: Player?
 
     var body: some View {
         if let player {
-            button(player)
+            let toggle = model.finishedToggle
+            Button {
+                model.setFinished(toggle == .mark, player: player)
+            } label: {
+                Image(systemName: toggle.systemImage)
+                    .contentTransition(.symbolEffect(.replace))
+            }
+            .tint(toggle == .clear ? .green : nil)
+            .bookDetailIcon()
+            .accessibilityLabel(toggle.label)
+            .accessibilityHint(toggle == .clear ? "Moves the Book back to its start" : "")
         }
     }
+}
 
-    @ViewBuilder private func button(_ player: Player) -> some View {
-        if model.isFinished {
-            Button("Clear Finished", systemImage: "arrow.counterclockwise") {
-                model.setFinished(false, player: player)
-            }
-            .accessibilityHint("Moves the Book back to its start")
-        } else {
-            Button("Mark as Finished", systemImage: "checkmark.circle") {
-                model.setFinished(true, player: player)
-            }
-        }
+extension View {
+    /// The look of Book detail's icon buttons beside the primary button.
+    func bookDetailIcon() -> some View {
+        buttonStyle(.bordered).buttonBorderShape(.circle).controlSize(.large)
     }
 }

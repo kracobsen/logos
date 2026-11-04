@@ -104,6 +104,26 @@ struct DownloadsModelTests {
         #expect(model.totalSize.contains("1"))
     }
 
+    @Test(
+        "Book detail offers Remove Download for a finished Download or a damaged Not on Server Book, not while it downloads"
+    )
+    func offersRemoval() async throws {
+        let model = model()
+        let observing = Task { await model.observe() }
+        defer { observing.cancel() }
+        #expect(!model.offersRemoval(of: "first", isNotOnServer: false))
+        // Not on Server without a Download: its Download was found damaged, and removing it is all that's left.
+        #expect(model.offersRemoval(of: "first", isNotOnServer: true))
+
+        await model.download("first")
+        await eventually { model.status(of: "first") != nil }
+        #expect(!model.offersRemoval(of: "first", isNotOnServer: false))
+
+        await server.transfers.completeAll()
+        await eventually { model.action(forBook: "first", size: 1000) == .downloaded }
+        #expect(model.offersRemoval(of: "first", isNotOnServer: false))
+    }
+
     @Test("Cancel stops the Download and the Book is back to Download")
     func cancel() async throws {
         let model = model()

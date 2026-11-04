@@ -21,13 +21,32 @@ struct PlayButton: View {
                     Image(systemName: action == .pause ? "pause.circle.fill" : "play.circle.fill")
                         .font(.title2)
                 } else {
-                    Label(action.title, systemImage: action.systemImage)
-                        .frame(maxWidth: .infinity)
+                    WideButtonLabel(action.title, systemImage: action.systemImage)
                 }
             }
             .accessibilityLabel(action.title)
             .modifier(FullWidthProminent(isOn: !compact))
         }
+    }
+}
+
+/// A full-width button's icon and title, centred together. (A `Label` here leaves its icon undrawn but keeps its
+/// space, which pushes the title off centre.)
+struct WideButtonLabel: View {
+    let title: String
+    let systemImage: String
+
+    init(_ title: String, systemImage: String) {
+        self.title = title
+        self.systemImage = systemImage
+    }
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: systemImage)
+            Text(title)
+        }
+        .frame(maxWidth: .infinity)
     }
 }
 
