@@ -62,8 +62,8 @@ extension View {
     }
 }
 
-/// Book detail's Remove Download, at the bottom: shown once the Book has a Download that isn't queued or downloading
-/// (those have Cancel on the primary action). Removing a Not on Server Book closes the detail.
+/// Book detail's Remove Download icon beside the primary button (see `DownloadsModel.offersRemoval`). Removing a
+/// Not on Server Book closes the detail.
 struct RemoveDownloadButton: View {
     let detail: BookDetail
     @Environment(DownloadsModel.self) private var downloads: DownloadsModel?
@@ -71,12 +71,15 @@ struct RemoveDownloadButton: View {
     @State private var removal: DownloadRemoval?
 
     var body: some View {
-        // A Not on Server Book without a Download had a damaged one: Remove Download is all it offers.
-        if downloads?.status(of: detail.id).map({ !$0.isActive }) ?? detail.isNotOnServer {
-            Button("Remove Download", systemImage: "trash", role: .destructive) {
+        if let downloads, downloads.offersRemoval(of: detail.id, isNotOnServer: detail.isNotOnServer) {
+            Button(role: .destructive) {
                 removal = DownloadRemoval(
                     bookID: detail.id, title: detail.title, isNotOnServer: detail.isNotOnServer, isActive: false)
+            } label: {
+                Image(systemName: "trash")
             }
+            .bookDetailIcon()
+            .accessibilityLabel("Remove Download")
             .confirmsDownloadRemoval($removal, downloads: downloads) { removed in
                 if removed.isNotOnServer { dismiss() }
             }

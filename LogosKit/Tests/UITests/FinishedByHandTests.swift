@@ -34,4 +34,26 @@ extension BookDetailModelTests {
             try database.progress(ofBook: "first-light")
                 == BookProgress(bookID: "first-light", position: 0, lastChanged: clock.now, isFinished: false))
     }
+
+    @Test("Book detail's Finished icon offers Mark as Finished (empty check), then Clear Finished (filled check)")
+    func finishedToggle() async throws {
+        try database.applyLibraryList([book(duration: 120)], syncedAt: clock.now)
+        let player = Player(
+            database: database, files: try DownloadFiles(directory: directory.appending(path: "Downloads")),
+            audio: FakeAudioPlayer(), clock: clock)
+        let model = library().detail(for: "first-light")
+        let observing = Task { await model.progress.observe() }
+        defer { observing.cancel() }
+        #expect(model.finishedToggle.label == "Mark as Finished")
+        #expect(model.finishedToggle.systemImage == "checkmark.circle")
+
+        model.setFinished(true, player: player)
+        await eventually { model.isFinished }
+        #expect(model.finishedToggle.label == "Clear Finished")
+        #expect(model.finishedToggle.systemImage == "checkmark.circle.fill")
+
+        model.setFinished(false, player: player)
+        await eventually { !model.isFinished }
+        #expect(model.finishedToggle.label == "Mark as Finished")
+    }
 }

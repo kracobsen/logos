@@ -164,7 +164,7 @@ struct DownloadButton: View {
             Button {
                 downloads.startDownload(bookID)
             } label: {
-                Label(label, systemImage: "arrow.down.circle").frame(maxWidth: .infinity)
+                WideButtonLabel(label, systemImage: "arrow.down.circle")
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
@@ -194,8 +194,7 @@ struct DownloadButton: View {
             Button {
                 downloads.startDownload(bookID)
             } label: {
-                Label("Download failed · Try again", systemImage: "exclamationmark.arrow.circlepath")
-                    .frame(maxWidth: .infinity)
+                WideButtonLabel("Download failed · Try again", systemImage: "exclamationmark.arrow.circlepath")
             }
             .buttonStyle(.bordered)
             .controlSize(.large)

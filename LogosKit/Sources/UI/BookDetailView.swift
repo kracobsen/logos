@@ -26,8 +26,8 @@ final class BookOpener {
     }
 }
 
-/// Book detail: cover space, title, author, Series links, "duration · Chapters · size", the description and the
-/// Chapter list. Everything comes from the Store, so it opens at once; a Book whose data hasn't arrived yet is
+/// Book detail: cover space, title, author, Series links, "duration · Chapters · size", the primary button with the
+/// Finished and Remove Download icons beside it, the description and the Chapter list. Everything comes from the Store, so it opens at once; a Book whose data hasn't arrived yet is
 /// fetched right away.
 struct BookDetailView: View {
     @State private var model: BookDetailModel
@@ -64,12 +64,14 @@ struct BookDetailView: View {
             Section {
                 header(detail)
                     .listRowSeparator(.hidden)
-                Group {
+                HStack(spacing: 8) {
                     if downloads?.isDamagedNotOnServer(detail.id, isNotOnServer: detail.isNotOnServer) == true {
                         DamagedNotOnServerLabel()
                     } else {
                         DownloadButton(bookID: detail.id, size: detail.size, resumes: model.progress.status.isStarted)
                     }
+                    FinishedButton(model: model)
+                    RemoveDownloadButton(detail: detail)
                 }
                 .listRowSeparator(.hidden)
                 BookProgressSection(model: model.progress)
@@ -96,10 +98,6 @@ struct BookDetailView: View {
                             .controlSize(.small)
                     }
                 }
-            }
-            Section {
-                FinishedButton(model: model)
-                RemoveDownloadButton(detail: detail)
             }
         }
         .listStyle(.plain)
