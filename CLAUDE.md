@@ -73,4 +73,4 @@ The budget table, how it's measured and how it's enforced live in `docs/performa
 
 ## Releasing
 
-TestFlight builds come from an Xcode Cloud workflow the human starts by hand; it always builds the head of `main`. The workflow settings, release steps and versioning are in `docs/releasing.md`. TestFlight builds don't replace manual checklists or performance measurements, which use builds installed from Xcode.
+TestFlight builds come from an Xcode Cloud workflow the human starts by hand, with `scripts/release.sh` (App Store Connect API key in `ASC_*` variables) or Start Build; it always builds the head of `main`. Never run `scripts/release.sh` yourself unless asked: it ships to TestFlight. The workflow settings, release steps and versioning are in `docs/releasing.md`. TestFlight builds don't replace manual checklists or performance measurements, which use builds installed from Xcode.

@@ -22,10 +22,22 @@ If you change the workflow in App Store Connect, update this table. Whether Xcod
 ## How to release
 
 1. Merge what you want to ship to `main`.
-2. Press Start Build: in Xcode, Report navigator → Cloud → Start Build; or in App Store Connect, the app's Xcode Cloud tab. A build always uses the head of `main`; it can't pick an older commit. To ship an older build again, redistribute it in TestFlight.
+2. Run `scripts/release.sh`. It fetches `origin/main`, shows the commit and version that will be built, asks, and starts the workflow through the App Store Connect API. `--wait` also waits for the build and fails if it does; `--yes` skips the question. Without the script, press Start Build: in Xcode, Report navigator → Cloud → Start Build; or in App Store Connect, the app's Xcode Cloud tab. A build always uses the head of `main` on GitHub, not your checkout; it can't pick an older commit. To ship an older build again, redistribute it in TestFlight.
 3. Optionally, once the build is in TestFlight, type "What to Test" for it in App Store Connect.
 
 A successful build shows up in the TestFlight app on the iPhone. A failed one sends an email. Each build number is tied to its commit in Xcode Cloud.
+
+### The API key for `scripts/release.sh`
+
+Once: in App Store Connect, Users and Access → Integrations → App Store Connect API, create a Team key with the App Manager role and download its `.p8` (it can only be downloaded once). Keep it outside the repo, at `~/.appstoreconnect/private_keys/AuthKey_<key ID>.p8`, and export these in your shell:
+
+| Variable | Value |
+|---|---|
+| `ASC_KEY_ID` | the key's ID |
+| `ASC_ISSUER_ID` | the issuer ID shown above the key list |
+| `ASC_KEY_PATH` | optional; the `.p8` file if it isn't at the path above |
+
+The script signs a short-lived token with the key (CryptoKit, in `scripts/release/start-build.swift`); the key never leaves your Mac. It finds the app by its bundle ID (from `Config/Base.xcconfig` on `origin/main`), the workflow by its name "TestFlight" and the branch `main`, so renaming the workflow means changing `scripts/release.sh` too.
 
 ## Versioning
 

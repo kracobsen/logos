@@ -91,4 +91,4 @@ CI runs the first three on every pull request. More detail on the tests, test la
 
 ## Releasing
 
-TestFlight builds come from an Xcode Cloud workflow started by hand (Start Build in Xcode or App Store Connect); it always builds the head of `main`. See [docs/releasing.md](docs/releasing.md).
+TestFlight builds come from an Xcode Cloud workflow started by hand with `scripts/release.sh` (or Start Build in Xcode or App Store Connect); it always builds the head of `main`. See [docs/releasing.md](docs/releasing.md).
