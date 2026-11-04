@@ -1,5 +1,5 @@
 #!/bin/bash
-# Starts the Xcode Cloud "TestFlight" workflow, which archives the head of main on GitHub and sends it to TestFlight.
+# Starts the Xcode Cloud "Default" workflow, which archives the head of main on GitHub and sends it to TestFlight.
 # Shows what will be built and asks first. See docs/releasing.md for the API key it needs.
 #
 # Usage:
@@ -14,7 +14,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
 
-workflow=TestFlight
+workflow=Default
 branch=main
 
 yes=false

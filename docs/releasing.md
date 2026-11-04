@@ -8,7 +8,7 @@ The workflow's configuration lives in App Store Connect, not in the repo. It is 
 
 | Setting | Value |
 |---|---|
-| Name | TestFlight |
+| Name | Default |
 | Start condition | Manual Start, limited to the branch `main` |
 | Environment | Xcode 27.0 (pinned, to match GitHub Actions) |
 | Action | Archive: iOS, scheme `Logos`, configuration Release |
@@ -37,7 +37,7 @@ Once: in App Store Connect, Users and Access → Integrations → App Store Conn
 | `ASC_ISSUER_ID` | the issuer ID shown above the key list |
 | `ASC_KEY_PATH` | optional; the `.p8` file if it isn't at the path above |
 
-The script signs a short-lived token with the key (CryptoKit, in `scripts/release/start-build.swift`); the key never leaves your Mac. It finds the app by its bundle ID (from `Config/Base.xcconfig` on `origin/main`), the workflow by its name "TestFlight" and the branch `main`, so renaming the workflow means changing `scripts/release.sh` too.
+The script signs a short-lived token with the key (CryptoKit, in `scripts/release/start-build.swift`); the key never leaves your Mac. It finds the app by its bundle ID (from `Config/Base.xcconfig` on `origin/main`), the workflow by its name "Default" and the branch `main`, so renaming the workflow means changing `scripts/release.sh` too.
 
 ## Versioning
 
